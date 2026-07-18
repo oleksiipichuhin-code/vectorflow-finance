@@ -27,7 +27,7 @@ Status key:
 | F1A | FinanceWorkspace Domain Foundation | Complete |
 | F1B | Finance Workspace Application Boundary | Complete |
 | F1C | Finance Workspace Persistence | Complete |
-| F1D | Finance Workspace HTTP Surface | Planned |
+| F1D | Finance Workspace HTTP Surface | Implemented (unpublished) |
 | F1E | Membership and Authorization Foundation | Planned |
 | F1F | Runtime and UI Acceptance | Planned |
 

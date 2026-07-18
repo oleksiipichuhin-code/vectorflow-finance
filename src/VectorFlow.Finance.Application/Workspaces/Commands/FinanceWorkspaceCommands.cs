@@ -14,6 +14,11 @@ public sealed record ChangeFinanceWorkspaceDefaultCurrencyCommand(
     Guid Id,
     string DefaultCurrency);
 
+public sealed record UpdateFinanceWorkspaceCommand(
+    Guid Id,
+    string? Name,
+    string? DefaultCurrency);
+
 public sealed record SuspendFinanceWorkspaceCommand(Guid Id);
 
 public sealed record ReactivateFinanceWorkspaceCommand(Guid Id);
