@@ -5,6 +5,7 @@ Status key:
 - **Complete** — published milestone
 - **In Progress** — actively being delivered
 - **Planned** — approved direction, not started
+- **Implemented (unpublished)** — present in working tree, not yet committed/published
 
 | Phase | Name | Status |
 |-------|------|--------|
@@ -24,7 +25,7 @@ Status key:
 | Slice | Name | Status |
 |-------|------|--------|
 | F1A | FinanceWorkspace Domain Foundation | Complete |
-| F1B | Finance Workspace Application Boundary | Planned |
+| F1B | Finance Workspace Application Boundary | Complete |
 | F1C | Finance Workspace Persistence | Planned |
 | F1D | Finance Workspace HTTP Surface | Planned |
 | F1E | Membership and Authorization Foundation | Planned |
