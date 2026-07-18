@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>VectorFlow.Finance.Infrastructure</RootNamespace>
+    <AssemblyName>VectorFlow.Finance.Infrastructure</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\VectorFlow.Finance.Application\VectorFlow.Finance.Application.csproj" />
+    <ProjectReference Include="..\VectorFlow.Finance.Domain\VectorFlow.Finance.Domain.csproj" />
+    <ProjectReference Include="..\VectorFlow.Finance.Contracts\VectorFlow.Finance.Contracts.csproj" />
+  </ItemGroup>
+</Project>

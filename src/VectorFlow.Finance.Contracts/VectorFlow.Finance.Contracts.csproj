@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>VectorFlow.Finance.Contracts</RootNamespace>
+    <AssemblyName>VectorFlow.Finance.Contracts</AssemblyName>
+  </PropertyGroup>
+</Project>

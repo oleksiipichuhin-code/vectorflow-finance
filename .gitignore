@@ -1,0 +1,68 @@
+## .NET
+bin/
+obj/
+[Bb]uild/
+[Ll]og/
+[Ll]ogs/
+*.user
+*.userosscache
+*.suo
+*.userprefs
+*.sln.docstates
+*.dbmdl
+*.jfm
+project.lock.json
+artifacts/
+TestResults/
+coverage/
+coverage.*/
+*.coverage
+*.coveragexml
+*.DotSettings.user
+
+## Node / frontend
+node_modules/
+dist/
+dist-ssr/
+*.local
+.npm
+.yarn/
+.pnpm-store/
+
+## Environment and secrets
+.env
+.env.*
+!.env.example
+secrets.json
+**/appsettings.*.local.json
+**/secrets/
+
+## IDE
+.vs/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.swp
+*~
+
+## OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+## Databases and runtime
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+*.mdf
+*.ldf
+*.log
+
+## Temporary
+tmp/
+temp/
+*.tmp
+*.temp

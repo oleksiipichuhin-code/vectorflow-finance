@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>VectorFlow.Finance.Application</RootNamespace>
+    <AssemblyName>VectorFlow.Finance.Application</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\VectorFlow.Finance.Domain\VectorFlow.Finance.Domain.csproj" />
+    <ProjectReference Include="..\VectorFlow.Finance.Contracts\VectorFlow.Finance.Contracts.csproj" />
+  </ItemGroup>
+</Project>

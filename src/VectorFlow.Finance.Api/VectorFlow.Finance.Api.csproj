@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <RootNamespace>VectorFlow.Finance.Api</RootNamespace>
+    <AssemblyName>VectorFlow.Finance.Api</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\VectorFlow.Finance.Application\VectorFlow.Finance.Application.csproj" />
+    <ProjectReference Include="..\VectorFlow.Finance.Infrastructure\VectorFlow.Finance.Infrastructure.csproj" />
+    <ProjectReference Include="..\VectorFlow.Finance.Contracts\VectorFlow.Finance.Contracts.csproj" />
+  </ItemGroup>
+</Project>

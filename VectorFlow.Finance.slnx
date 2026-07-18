@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/VectorFlow.Finance.Domain/VectorFlow.Finance.Domain.csproj" />
+    <Project Path="src/VectorFlow.Finance.Application/VectorFlow.Finance.Application.csproj" />
+    <Project Path="src/VectorFlow.Finance.Infrastructure/VectorFlow.Finance.Infrastructure.csproj" />
+    <Project Path="src/VectorFlow.Finance.Api/VectorFlow.Finance.Api.csproj" />
+    <Project Path="src/VectorFlow.Finance.Contracts/VectorFlow.Finance.Contracts.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/VectorFlow.Finance.Domain.Tests/VectorFlow.Finance.Domain.Tests.csproj" />
+    <Project Path="tests/VectorFlow.Finance.Application.Tests/VectorFlow.Finance.Application.Tests.csproj" />
+    <Project Path="tests/VectorFlow.Finance.Infrastructure.Tests/VectorFlow.Finance.Infrastructure.Tests.csproj" />
+    <Project Path="tests/VectorFlow.Finance.Api.Tests/VectorFlow.Finance.Api.Tests.csproj" />
+  </Folder>
+</Solution>

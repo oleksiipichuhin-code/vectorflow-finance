@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>VectorFlow.Finance.Domain</RootNamespace>
+    <AssemblyName>VectorFlow.Finance.Domain</AssemblyName>
+  </PropertyGroup>
+</Project>
