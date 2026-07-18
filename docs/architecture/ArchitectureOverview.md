@@ -65,11 +65,18 @@ F0 includes:
 - `PlatformWorkspaceId`
 - `Money`
 
-These support later cross-product correlation and monetary correctness. They do not introduce finance workspaces, accounts, invoices, payments, or ledger entries.
+F1A adds Finance-owned workspace types:
+
+- `FinanceWorkspace`
+- `FinanceWorkspaceId`
+- `FinanceWorkspaceStatus`
+- `Currency` (shared currency-code value object aligned with `Money` normalization)
+
+See `docs/architecture/FinanceWorkspace.md`. F1A does not introduce accounts, invoices, payments, ledger entries, persistence, or HTTP workspace APIs.
 
 ## Persistence posture
 
-F0 does not introduce a finance database. When persistence appears in later phases, Finance will own its own data store and will not share tables or schemas with CRM or other products.
+F0/F1A do not introduce a finance database. When persistence appears in later phases, Finance will own its own data store and will not share tables or schemas with CRM or other products.
 
 ## Integration posture
 

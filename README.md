@@ -2,13 +2,13 @@
 
 VectorFlow Finance is a separate financial product in the VectorFlow ecosystem. It owns finance workspaces, financial accounts, documents, payments, allocations, cash-flow planning, and an immutable financial ledger.
 
-This repository currently contains **F0 — Product and Architecture Foundation**.
+This repository currently contains **F0 — Product and Architecture Foundation** and **F1A — FinanceWorkspace Domain Foundation** (published). F1 remains in progress through later sub-slices.
 
 ## Solution layout
 
 | Path | Role |
 |------|------|
-| `src/VectorFlow.Finance.Domain` | Domain value types and rules |
+| `src/VectorFlow.Finance.Domain` | Domain value types, aggregates, and rules |
 | `src/VectorFlow.Finance.Application` | Application services |
 | `src/VectorFlow.Finance.Infrastructure` | Composition and infrastructure adapters |
 | `src/VectorFlow.Finance.Api` | HTTP composition root |
@@ -17,6 +17,8 @@ This repository currently contains **F0 — Product and Architecture Foundation*
 | `tests/*` | Automated tests by layer |
 
 Solution file: `VectorFlow.Finance.slnx`
+
+Domain workspace model details: `docs/architecture/FinanceWorkspace.md`
 
 ## Prerequisites
 
@@ -69,4 +71,4 @@ Primary UI language is Ukrainian. The F0 shell displays foundation status only a
 
 Finance is a separate bounded context, deployable product, and Git repository. It does not share internal databases with CRM or other VectorFlow products. Cross-product integration will use public HTTP contracts, events, stable external references, idempotency, and inbox/outbox patterns when persistence is introduced.
 
-F1 and later financial capabilities are intentionally not implemented in this foundation.
+F1 is in progress via focused sub-slices. F1A publishes the Finance workspace domain foundation only; application, persistence, HTTP, membership, and UI remain deferred to F1B–F1F.

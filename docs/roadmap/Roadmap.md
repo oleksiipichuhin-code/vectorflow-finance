@@ -2,13 +2,14 @@
 
 Status key:
 
-- **In Progress** — actively being reconstructed or delivered
+- **Complete** — published milestone
+- **In Progress** — actively being delivered
 - **Planned** — approved direction, not started
 
 | Phase | Name | Status |
 |-------|------|--------|
-| F0 | Product and Architecture Foundation | In Progress |
-| F1 | Organization Finance Context | Planned |
+| F0 | Product and Architecture Foundation | Complete |
+| F1 | Organization Finance Context | In Progress |
 | F2 | Money and Financial Accounts | Planned |
 | F3 | Counterparty Financial Snapshots | Planned |
 | F4 | Invoice and Accrual Foundation | Planned |
@@ -18,6 +19,19 @@ Status key:
 | F8 | Cross-Product Integrations | Planned |
 | F9 | Bank Statement Import and Reconciliation | Planned |
 
+## F1 sub-slices
+
+| Slice | Name | Status |
+|-------|------|--------|
+| F1A | FinanceWorkspace Domain Foundation | Complete |
+| F1B | Finance Workspace Application Boundary | Planned |
+| F1C | Finance Workspace Persistence | Planned |
+| F1D | Finance Workspace HTTP Surface | Planned |
+| F1E | Membership and Authorization Foundation | Planned |
+| F1F | Runtime and UI Acceptance | Planned |
+
+F1 as a whole remains incomplete until later sub-slices are delivered and published.
+
 ## Phase intent
 
 ### F0 — Product and Architecture Foundation
@@ -26,7 +40,7 @@ Establish the repository, solution structure, architecture decisions, foundation
 
 ### F1 — Organization Finance Context
 
-Introduce finance organization and workspace context without absorbing CRM master data.
+Introduce finance organization and workspace context without absorbing CRM master data. Delivery is sliced as F1A–F1F above.
 
 ### F2 — Money and Financial Accounts
 
@@ -59,7 +73,3 @@ Connect Finance to other VectorFlow products through public HTTP contracts, even
 ### F9 — Bank Statement Import and Reconciliation
 
 Import bank statements and reconcile them against finance records without storing banking secrets or auto-executing payments.
-
-## Publication note
-
-This recovery reconstructs F0 locally and publishes it as a new root commit. Future phases remain planned until deliberately started. F1 must not be implemented as part of F0 publication.

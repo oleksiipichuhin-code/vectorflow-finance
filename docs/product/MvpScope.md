@@ -43,7 +43,7 @@ F0 includes only:
 
 F0 excludes:
 
-- finance workspaces;
+- finance workspace persistence and HTTP;
 - financial accounts;
 - invoices;
 - payments;
@@ -51,6 +51,17 @@ F0 excludes:
 - operational navigation;
 - authorization persistence;
 - database persistence.
+
+## F1A scope (published)
+
+F1A adds the Finance workspace **domain** foundation only:
+
+- `FinanceWorkspace`, `FinanceWorkspaceId`, `FinanceWorkspaceStatus`, `Currency`;
+- domain invariants and lifecycle transitions;
+- focused domain tests;
+- architecture and ADR documentation.
+
+F1A excludes application handlers, repositories, EF Core, HTTP workspace endpoints, membership/authorization, and UI.
 
 ## Acceptance posture
 
