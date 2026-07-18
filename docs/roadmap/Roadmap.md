@@ -11,7 +11,7 @@ Status key:
 |-------|------|--------|
 | F0 | Product and Architecture Foundation | Complete |
 | F1 | Organization Finance Context | In Progress |
-| F2 | Money and Financial Accounts | Planned |
+| F2 | Money and Financial Accounts | In Progress |
 | F3 | Counterparty Financial Snapshots | Planned |
 | F4 | Invoice and Accrual Foundation | Planned |
 | F5 | Payment and Allocation Foundation | Planned |
@@ -27,11 +27,20 @@ Status key:
 | F1A | FinanceWorkspace Domain Foundation | Complete |
 | F1B | Finance Workspace Application Boundary | Complete |
 | F1C | Finance Workspace Persistence | Complete |
-| F1D | Finance Workspace HTTP Surface | Implemented (unpublished) |
+| F1D | Finance Workspace HTTP Surface | Complete |
 | F1E | Membership and Authorization Foundation | Planned |
 | F1F | Runtime and UI Acceptance | Planned |
 
 F1 as a whole remains incomplete until later sub-slices are delivered and published.
+
+## F2 sub-slices
+
+| Slice | Name | Status |
+|-------|------|--------|
+| F2A | Chart of Accounts Domain Foundation | Implemented (unpublished) |
+| F2B+ | Remaining Money and Financial Accounts work | Planned |
+
+F2 as a whole remains incomplete until later sub-slices are delivered and published.
 
 ## Phase intent
 
@@ -45,7 +54,7 @@ Introduce finance organization and workspace context without absorbing CRM maste
 
 ### F2 — Money and Financial Accounts
 
-Operationalize monetary representation and financial account structures.
+Operationalize monetary representation and financial account structures. Delivery begins with F2A; remaining F2 work stays planned until separately designed.
 
 ### F3 — Counterparty Financial Snapshots
 
