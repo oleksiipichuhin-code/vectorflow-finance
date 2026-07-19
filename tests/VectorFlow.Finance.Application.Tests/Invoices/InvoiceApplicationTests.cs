@@ -1,0 +1,462 @@
+using Microsoft.Extensions.DependencyInjection;
+using VectorFlow.Finance.Application;
+using VectorFlow.Finance.Application.Abstractions;
+using VectorFlow.Finance.Application.Invoices;
+using VectorFlow.Finance.Application.Invoices.Commands;
+using VectorFlow.Finance.Application.Invoices.Handlers;
+using VectorFlow.Finance.Application.Invoices.Queries;
+using VectorFlow.Finance.Application.Tests.Workspaces;
+using VectorFlow.Finance.Application.Workspaces.Commands;
+using VectorFlow.Finance.Application.Workspaces.Handlers;
+using VectorFlow.Finance.Domain.Invoices;
+using Xunit;
+
+namespace VectorFlow.Finance.Application.Tests.Invoices;
+
+public sealed class InvoiceApplicationTests
+{
+    private static readonly DateTimeOffset T0 =
+        new(2026, 7, 19, 10, 0, 0, TimeSpan.Zero);
+
+    private static readonly DateTimeOffset T1 =
+        new(2026, 7, 19, 11, 0, 0, TimeSpan.Zero);
+
+    private static readonly DateTimeOffset T2 =
+        new(2026, 7, 19, 12, 0, 0, TimeSpan.Zero);
+
+    private static readonly DateTimeOffset DueNextDay =
+        new(2026, 7, 20, 0, 0, 0, TimeSpan.Zero);
+
+    private static readonly Guid OrganizationId =
+        Guid.Parse("aaaaaaaa-1111-1111-1111-111111111111");
+
+    private static readonly Guid PlatformWorkspaceId =
+        Guid.Parse("bbbbbbbb-2222-2222-2222-222222222222");
+
+    private static (
+        InMemoryInvoiceRepository Invoices,
+        InMemoryFinanceWorkspaceRepository Workspaces,
+        FixedClock Clock) CreateHarness()
+    {
+        var invoices = new InMemoryInvoiceRepository();
+        var workspaces = new InMemoryFinanceWorkspaceRepository();
+        var clock = new FixedClock(T0);
+        return (invoices, workspaces, clock);
+    }
+
+    private static async Task<Guid> SeedWorkspaceAsync(
+        InMemoryFinanceWorkspaceRepository workspaces,
+        FixedClock clock,
+        Guid? organizationId = null,
+        Guid? platformWorkspaceId = null,
+        string name = "Primary Finance")
+    {
+        var result = await new CreateFinanceWorkspaceHandler(workspaces, clock).HandleAsync(
+            new CreateFinanceWorkspaceCommand(
+                organizationId ?? OrganizationId,
+                platformWorkspaceId ?? PlatformWorkspaceId,
+                name,
+                "UAH"));
+
+        Assert.True(result.IsSuccess);
+        return result.Value!.Id;
+    }
+
+    private static async Task<InvoiceDto> CreateInvoiceAsync(
+        InMemoryInvoiceRepository invoices,
+        InMemoryFinanceWorkspaceRepository workspaces,
+        FixedClock clock,
+        Guid workspaceId,
+        string documentNumber = "INV-1001",
+        string counterparty = "crm-partner-1",
+        string currency = "UAH")
+    {
+        var result = await new CreateInvoiceHandler(invoices, workspaces, clock).HandleAsync(
+            new CreateInvoiceCommand(workspaceId, documentNumber, counterparty, currency));
+
+        Assert.True(result.IsSuccess);
+        return result.Value!;
+    }
+
+    private static async Task<InvoiceDto> CreateIssuableAsync(
+        InMemoryInvoiceRepository invoices,
+        InMemoryFinanceWorkspaceRepository workspaces,
+        FixedClock clock,
+        Guid workspaceId)
+    {
+        var created = await CreateInvoiceAsync(invoices, workspaces, clock, workspaceId);
+        clock.UtcNow = T1;
+
+        var withLine = await new AddInvoiceLineHandler(invoices, clock).HandleAsync(
+            new AddInvoiceLineCommand(workspaceId, created.Id, 2m, 50m, "Service"));
+        Assert.True(withLine.IsSuccess);
+
+        var withDue = await new SetInvoiceDueDateHandler(invoices, clock).HandleAsync(
+            new SetInvoiceDueDateCommand(workspaceId, created.Id, DueNextDay));
+        Assert.True(withDue.IsSuccess);
+        return withDue.Value!;
+    }
+
+    [Fact]
+    public async Task Create_returns_draft_dto_and_persists_once()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        var result = await new CreateInvoiceHandler(invoices, workspaces, clock).HandleAsync(
+            new CreateInvoiceCommand(workspaceId, "  INV-42  ", "  partner-7  ", "eur"));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(workspaceId, result.Value!.FinanceWorkspaceId);
+        Assert.Equal("INV-42", result.Value.DocumentNumber);
+        Assert.Equal("partner-7", result.Value.CounterpartyReference);
+        Assert.Equal("EUR", result.Value.Currency);
+        Assert.Equal(nameof(InvoiceStatus.Draft), result.Value.Status);
+        Assert.Equal(T0, result.Value.CreatedAtUtc);
+        Assert.Equal(T0, result.Value.UpdatedAtUtc);
+        Assert.Null(result.Value.DueDateUtc);
+        Assert.Null(result.Value.IssuedAtUtc);
+        Assert.Empty(result.Value.Lines);
+        Assert.Equal(0m, result.Value.TotalAmount);
+        Assert.NotEqual(Guid.Empty, result.Value.Id);
+        Assert.Equal(1, invoices.AddCallCount);
+        Assert.Equal(1, invoices.SaveChangesCallCount);
+    }
+
+    [Fact]
+    public async Task Create_rejects_missing_workspace_without_persist()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+
+        var result = await new CreateInvoiceHandler(invoices, workspaces, clock).HandleAsync(
+            new CreateInvoiceCommand(Guid.NewGuid(), "INV-1", "partner", "UAH"));
+
+        Assert.Equal(ApplicationErrorKind.NotFound, result.ErrorKind);
+        Assert.Equal(0, invoices.AddCallCount);
+        Assert.Equal(0, invoices.SaveChangesCallCount);
+    }
+
+    [Fact]
+    public async Task Create_domain_validation_failure_does_not_persist()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        var result = await new CreateInvoiceHandler(invoices, workspaces, clock).HandleAsync(
+            new CreateInvoiceCommand(workspaceId, "   ", "partner", "UAH"));
+
+        Assert.Equal(ApplicationErrorKind.ValidationFailed, result.ErrorKind);
+        Assert.Equal(0, invoices.AddCallCount);
+        Assert.Equal(0, invoices.SaveChangesCallCount);
+    }
+
+    [Fact]
+    public async Task Get_returns_invoice_from_same_workspace()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        var created = await CreateInvoiceAsync(invoices, workspaces, clock, workspaceId);
+        var savesBefore = invoices.SaveChangesCallCount;
+
+        var result = await new GetInvoiceHandler(invoices).HandleAsync(
+            new GetInvoiceByIdQuery(workspaceId, created.Id));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(created.Id, result.Value!.Id);
+        Assert.Equal(savesBefore, invoices.SaveChangesCallCount);
+    }
+
+    [Fact]
+    public async Task Get_wrong_workspace_returns_NotFound()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceA = await SeedWorkspaceAsync(workspaces, clock);
+        var workspaceB = await SeedWorkspaceAsync(
+            workspaces,
+            clock,
+            Guid.Parse("cccccccc-3333-3333-3333-333333333333"),
+            Guid.Parse("dddddddd-4444-4444-4444-444444444444"),
+            "Other");
+        var created = await CreateInvoiceAsync(invoices, workspaces, clock, workspaceA);
+
+        var result = await new GetInvoiceHandler(invoices).HandleAsync(
+            new GetInvoiceByIdQuery(workspaceB, created.Id));
+
+        Assert.Equal(ApplicationErrorKind.NotFound, result.ErrorKind);
+        Assert.Equal("Invoice was not found.", result.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task ChangeDocumentNumber_updates_and_saves_once()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        var created = await CreateInvoiceAsync(invoices, workspaces, clock, workspaceId);
+        clock.UtcNow = T1;
+        var savesBefore = invoices.SaveChangesCallCount;
+
+        var result = await new ChangeInvoiceDocumentNumberHandler(invoices, clock).HandleAsync(
+            new ChangeInvoiceDocumentNumberCommand(workspaceId, created.Id, " INV-9 "));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("INV-9", result.Value!.DocumentNumber);
+        Assert.Equal(T1, result.Value.UpdatedAtUtc);
+        Assert.Equal(savesBefore + 1, invoices.SaveChangesCallCount);
+    }
+
+    [Fact]
+    public async Task ChangeCounterparty_updates_reference()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        var created = await CreateInvoiceAsync(invoices, workspaces, clock, workspaceId);
+        clock.UtcNow = T1;
+
+        var result = await new ChangeInvoiceCounterpartyHandler(invoices, clock).HandleAsync(
+            new ChangeInvoiceCounterpartyCommand(workspaceId, created.Id, "partner-9"));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("partner-9", result.Value!.CounterpartyReference);
+    }
+
+    [Fact]
+    public async Task ChangeCurrency_updates_currency()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        var created = await CreateInvoiceAsync(invoices, workspaces, clock, workspaceId);
+        clock.UtcNow = T1;
+
+        var result = await new ChangeInvoiceCurrencyHandler(invoices, clock).HandleAsync(
+            new ChangeInvoiceCurrencyCommand(workspaceId, created.Id, "usd"));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("USD", result.Value!.Currency);
+    }
+
+    [Fact]
+    public async Task SetDueDate_updates_due_date()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        var created = await CreateInvoiceAsync(invoices, workspaces, clock, workspaceId);
+        clock.UtcNow = T1;
+
+        var result = await new SetInvoiceDueDateHandler(invoices, clock).HandleAsync(
+            new SetInvoiceDueDateCommand(workspaceId, created.Id, DueNextDay));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(DueNextDay, result.Value!.DueDateUtc);
+    }
+
+    [Fact]
+    public async Task AddLine_updates_total_and_ordering()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        var created = await CreateInvoiceAsync(invoices, workspaces, clock, workspaceId);
+        clock.UtcNow = T1;
+
+        var first = await new AddInvoiceLineHandler(invoices, clock).HandleAsync(
+            new AddInvoiceLineCommand(workspaceId, created.Id, 1m, 10.5m, "  A  "));
+        Assert.True(first.IsSuccess);
+
+        var second = await new AddInvoiceLineHandler(invoices, clock).HandleAsync(
+            new AddInvoiceLineCommand(workspaceId, created.Id, 2m, 3m, "B"));
+
+        Assert.True(second.IsSuccess);
+        Assert.Equal(2, second.Value!.Lines.Count);
+        Assert.Equal(1, second.Value.Lines[0].Sequence);
+        Assert.Equal(2, second.Value.Lines[1].Sequence);
+        Assert.Equal("A", second.Value.Lines[0].Description);
+        Assert.Equal(10.5m, second.Value.Lines[0].LineAmount);
+        Assert.Equal(16.5m, second.Value.TotalAmount);
+    }
+
+    [Fact]
+    public async Task UpdateLine_replaces_amounts()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        var created = await CreateInvoiceAsync(invoices, workspaces, clock, workspaceId);
+        clock.UtcNow = T1;
+        var withLine = await new AddInvoiceLineHandler(invoices, clock).HandleAsync(
+            new AddInvoiceLineCommand(workspaceId, created.Id, 1m, 10m, "Old"));
+        var lineId = withLine.Value!.Lines[0].Id;
+        clock.UtcNow = T2;
+
+        var result = await new UpdateInvoiceLineHandler(invoices, clock).HandleAsync(
+            new UpdateInvoiceLineCommand(workspaceId, created.Id, lineId, 3m, 4m, "New"));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(12m, result.Value!.TotalAmount);
+        Assert.Equal(3m, result.Value.Lines[0].Quantity);
+        Assert.Equal(4m, result.Value.Lines[0].UnitPrice);
+        Assert.Equal("New", result.Value.Lines[0].Description);
+    }
+
+    [Fact]
+    public async Task RemoveLine_updates_total()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        var created = await CreateInvoiceAsync(invoices, workspaces, clock, workspaceId);
+        clock.UtcNow = T1;
+        await new AddInvoiceLineHandler(invoices, clock).HandleAsync(
+            new AddInvoiceLineCommand(workspaceId, created.Id, 1m, 10m, null));
+        var withTwo = await new AddInvoiceLineHandler(invoices, clock).HandleAsync(
+            new AddInvoiceLineCommand(workspaceId, created.Id, 1m, 5m, null));
+        var dropId = withTwo.Value!.Lines[1].Id;
+
+        var result = await new RemoveInvoiceLineHandler(invoices, clock).HandleAsync(
+            new RemoveInvoiceLineCommand(workspaceId, created.Id, dropId));
+
+        Assert.True(result.IsSuccess);
+        Assert.Single(result.Value!.Lines);
+        Assert.Equal(10m, result.Value.TotalAmount);
+    }
+
+    [Fact]
+    public async Task Mutation_missing_invoice_returns_NotFound_without_save()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        var result = await new ChangeInvoiceDocumentNumberHandler(invoices, clock).HandleAsync(
+            new ChangeInvoiceDocumentNumberCommand(workspaceId, Guid.NewGuid(), "INV-X"));
+
+        Assert.Equal(ApplicationErrorKind.NotFound, result.ErrorKind);
+        Assert.Equal(0, invoices.SaveChangesCallCount);
+    }
+
+    [Fact]
+    public async Task AddLine_validation_failure_does_not_save()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        var created = await CreateInvoiceAsync(invoices, workspaces, clock, workspaceId);
+        var savesBefore = invoices.SaveChangesCallCount;
+        clock.UtcNow = T1;
+
+        var result = await new AddInvoiceLineHandler(invoices, clock).HandleAsync(
+            new AddInvoiceLineCommand(workspaceId, created.Id, 0m, 10m, null));
+
+        Assert.Equal(ApplicationErrorKind.ValidationFailed, result.ErrorKind);
+        Assert.Equal(savesBefore, invoices.SaveChangesCallCount);
+    }
+
+    [Fact]
+    public async Task Update_missing_line_returns_Conflict_without_save()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        var created = await CreateInvoiceAsync(invoices, workspaces, clock, workspaceId);
+        clock.UtcNow = T1;
+        await new AddInvoiceLineHandler(invoices, clock).HandleAsync(
+            new AddInvoiceLineCommand(workspaceId, created.Id, 1m, 10m, null));
+        var savesBefore = invoices.SaveChangesCallCount;
+
+        var result = await new UpdateInvoiceLineHandler(invoices, clock).HandleAsync(
+            new UpdateInvoiceLineCommand(workspaceId, created.Id, Guid.NewGuid(), 1m, 5m, null));
+
+        Assert.Equal(ApplicationErrorKind.Conflict, result.ErrorKind);
+        Assert.Equal(savesBefore, invoices.SaveChangesCallCount);
+    }
+
+    [Fact]
+    public async Task Issue_succeeds_and_maps_issued_state()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        var ready = await CreateIssuableAsync(invoices, workspaces, clock, workspaceId);
+        clock.UtcNow = T2;
+        var savesBefore = invoices.SaveChangesCallCount;
+
+        var result = await new IssueInvoiceHandler(invoices, clock).HandleAsync(
+            new IssueInvoiceCommand(workspaceId, ready.Id));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(nameof(InvoiceStatus.Issued), result.Value!.Status);
+        Assert.Equal(T2, result.Value.IssuedAtUtc);
+        Assert.Equal(T2, result.Value.UpdatedAtUtc);
+        Assert.Equal(savesBefore + 1, invoices.SaveChangesCallCount);
+    }
+
+    [Fact]
+    public async Task Issue_repeated_returns_Conflict_without_save()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        var ready = await CreateIssuableAsync(invoices, workspaces, clock, workspaceId);
+        clock.UtcNow = T2;
+        await new IssueInvoiceHandler(invoices, clock).HandleAsync(
+            new IssueInvoiceCommand(workspaceId, ready.Id));
+        var savesBefore = invoices.SaveChangesCallCount;
+
+        var result = await new IssueInvoiceHandler(invoices, clock).HandleAsync(
+            new IssueInvoiceCommand(workspaceId, ready.Id));
+
+        Assert.Equal(ApplicationErrorKind.Conflict, result.ErrorKind);
+        Assert.Equal(savesBefore, invoices.SaveChangesCallCount);
+    }
+
+    [Fact]
+    public async Task Issued_invoice_rejects_mutations_as_Conflict()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        var ready = await CreateIssuableAsync(invoices, workspaces, clock, workspaceId);
+        clock.UtcNow = T2;
+        await new IssueInvoiceHandler(invoices, clock).HandleAsync(
+            new IssueInvoiceCommand(workspaceId, ready.Id));
+        var later = T2.AddHours(1);
+        clock.UtcNow = later;
+        var savesBefore = invoices.SaveChangesCallCount;
+        var lineId = ready.Lines[0].Id;
+
+        Assert.Equal(
+            ApplicationErrorKind.Conflict,
+            (await new ChangeInvoiceDocumentNumberHandler(invoices, clock).HandleAsync(
+                new ChangeInvoiceDocumentNumberCommand(workspaceId, ready.Id, "X"))).ErrorKind);
+        Assert.Equal(
+            ApplicationErrorKind.Conflict,
+            (await new ChangeInvoiceCounterpartyHandler(invoices, clock).HandleAsync(
+                new ChangeInvoiceCounterpartyCommand(workspaceId, ready.Id, "other"))).ErrorKind);
+        Assert.Equal(
+            ApplicationErrorKind.Conflict,
+            (await new ChangeInvoiceCurrencyHandler(invoices, clock).HandleAsync(
+                new ChangeInvoiceCurrencyCommand(workspaceId, ready.Id, "USD"))).ErrorKind);
+        Assert.Equal(
+            ApplicationErrorKind.Conflict,
+            (await new SetInvoiceDueDateHandler(invoices, clock).HandleAsync(
+                new SetInvoiceDueDateCommand(workspaceId, ready.Id, DueNextDay.AddDays(1)))).ErrorKind);
+        Assert.Equal(
+            ApplicationErrorKind.Conflict,
+            (await new AddInvoiceLineHandler(invoices, clock).HandleAsync(
+                new AddInvoiceLineCommand(workspaceId, ready.Id, 1m, 1m, null))).ErrorKind);
+        Assert.Equal(
+            ApplicationErrorKind.Conflict,
+            (await new UpdateInvoiceLineHandler(invoices, clock).HandleAsync(
+                new UpdateInvoiceLineCommand(workspaceId, ready.Id, lineId, 1m, 1m, null))).ErrorKind);
+        Assert.Equal(
+            ApplicationErrorKind.Conflict,
+            (await new RemoveInvoiceLineHandler(invoices, clock).HandleAsync(
+                new RemoveInvoiceLineCommand(workspaceId, ready.Id, lineId))).ErrorKind);
+
+        Assert.Equal(savesBefore, invoices.SaveChangesCallCount);
+    }
+
+    [Fact]
+    public void AddFinanceInvoiceApplication_registers_handlers()
+    {
+        var services = new ServiceCollection();
+        services.AddFinanceInvoiceApplication();
+
+        Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(CreateInvoiceHandler));
+        Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(GetInvoiceHandler));
+        Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(IssueInvoiceHandler));
+        Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(AddInvoiceLineHandler));
+        Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(UpdateInvoiceLineHandler));
+        Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(RemoveInvoiceLineHandler));
+    }
+}

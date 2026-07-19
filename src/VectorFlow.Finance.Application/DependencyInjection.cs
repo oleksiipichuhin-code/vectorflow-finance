@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using VectorFlow.Finance.Application.AccountBalances.Handlers;
 using VectorFlow.Finance.Application.Accounts.Handlers;
 using VectorFlow.Finance.Application.GeneralLedger.Handlers;
+using VectorFlow.Finance.Application.Invoices.Handlers;
 using VectorFlow.Finance.Application.JournalEntries.Handlers;
 using VectorFlow.Finance.Application.Ledger.Handlers;
 using VectorFlow.Finance.Application.TrialBalances.Handlers;
@@ -69,6 +70,22 @@ public static class DependencyInjection
     public static IServiceCollection AddFinanceGeneralLedgerApplication(this IServiceCollection services)
     {
         services.AddScoped<GetAccountStatementHandler>();
+
+        return services;
+    }
+
+    public static IServiceCollection AddFinanceInvoiceApplication(this IServiceCollection services)
+    {
+        services.AddScoped<CreateInvoiceHandler>();
+        services.AddScoped<GetInvoiceHandler>();
+        services.AddScoped<ChangeInvoiceDocumentNumberHandler>();
+        services.AddScoped<ChangeInvoiceCounterpartyHandler>();
+        services.AddScoped<ChangeInvoiceCurrencyHandler>();
+        services.AddScoped<SetInvoiceDueDateHandler>();
+        services.AddScoped<AddInvoiceLineHandler>();
+        services.AddScoped<UpdateInvoiceLineHandler>();
+        services.AddScoped<RemoveInvoiceLineHandler>();
+        services.AddScoped<IssueInvoiceHandler>();
 
         return services;
     }

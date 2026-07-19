@@ -52,3 +52,14 @@ Repeated issue is rejected. Paid / partially paid / cancelled statuses are out o
 - Accruals
 - Full `CounterpartySnapshot`
 - Credit notes / recurring invoices
+
+## Application boundary (F4E2)
+
+Application use cases over the F4E aggregate (no persistence implementation, no HTTP):
+
+- create invoice in an existing finance workspace;
+- get invoice by id (workspace-scoped);
+- draft mutations: document number, counterparty reference, currency, due date, add/update/remove line;
+- issue invoice (`Draft` → `Issued`).
+
+`IInvoiceRepository` is the Application persistence port (`GetByIdAsync` always workspace-scoped, `AddAsync`, `SaveChangesAsync`). Listing, get-by-document-number, EF Core, migrations, and HTTP remain later slices. Issue does not create journal entries or ledger postings.

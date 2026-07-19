@@ -67,9 +67,10 @@ F3A–F3F are published. Decimal precision policy for Debit/Credit remains an op
 | F4C | Trial Balance Foundation | Complete |
 | F4D | Trial Balance HTTP API | Complete |
 | F4E | Invoice Domain Foundation | Complete |
+| F4E2 | Invoice Application Boundary | Complete |
 | F4F+ | Accrual foundation and later invoice work | Planned |
 
-F4A–F4E are delivered (F4A–F4D published; F4E Domain-only complete in working tree until separately published). Accrual and later invoice application/persistence/HTTP remain planned. F4 as a whole remains incomplete.
+F4A–F4E2 are delivered (F4A–F4E published; F4E2 Application-only complete in working tree until separately published). Accrual and later invoice persistence/HTTP remain planned. F4 as a whole remains incomplete.
 
 ## F5 sub-slices
 
