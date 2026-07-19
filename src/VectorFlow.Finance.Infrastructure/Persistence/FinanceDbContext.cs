@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using VectorFlow.Finance.Domain.Accounts;
 using VectorFlow.Finance.Domain.JournalEntries;
+using VectorFlow.Finance.Domain.Ledger;
 using VectorFlow.Finance.Domain.Workspaces;
 using VectorFlow.Finance.Infrastructure.Persistence.Configurations;
 
@@ -20,6 +21,10 @@ public sealed class FinanceDbContext : DbContext
     public DbSet<JournalEntry> JournalEntries => Set<JournalEntry>();
 
     public DbSet<JournalEntryLine> JournalEntryLines => Set<JournalEntryLine>();
+
+    public DbSet<LedgerPosting> LedgerPostings => Set<LedgerPosting>();
+
+    public DbSet<LedgerPostingLine> LedgerPostingLines => Set<LedgerPostingLine>();
 
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {

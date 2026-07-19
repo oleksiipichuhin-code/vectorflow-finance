@@ -1,9 +1,11 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using VectorFlow.Finance.Application.Abstractions;
+using VectorFlow.Finance.Application.AccountBalances;
 using VectorFlow.Finance.Application.Accounts;
 using VectorFlow.Finance.Application.Health;
 using VectorFlow.Finance.Application.JournalEntries;
+using VectorFlow.Finance.Application.Ledger;
 using VectorFlow.Finance.Application.Workspaces;
 using VectorFlow.Finance.Infrastructure;
 using VectorFlow.Finance.Infrastructure.Persistence;
@@ -48,6 +50,8 @@ public sealed class DependencyInjectionTests
         Assert.NotNull(provider.GetRequiredService<IFinanceWorkspaceRepository>());
         Assert.NotNull(provider.GetRequiredService<IAccountRepository>());
         Assert.NotNull(provider.GetRequiredService<IJournalEntryRepository>());
+        Assert.NotNull(provider.GetRequiredService<ILedgerPostingRepository>());
+        Assert.NotNull(provider.GetRequiredService<IAccountBalanceReader>());
         Assert.NotNull(provider.GetRequiredService<FinanceDbContext>());
 
         if (File.Exists(databasePath))

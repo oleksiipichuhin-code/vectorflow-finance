@@ -1,7 +1,10 @@
 using Microsoft.EntityFrameworkCore;
 using VectorFlow.Finance.Api;
+using VectorFlow.Finance.Api.AccountBalances;
 using VectorFlow.Finance.Api.Accounts;
 using VectorFlow.Finance.Api.JournalEntries;
+using VectorFlow.Finance.Api.Ledger;
+using VectorFlow.Finance.Api.TrialBalances;
 using VectorFlow.Finance.Api.Workspaces;
 using VectorFlow.Finance.Application.Health;
 using VectorFlow.Finance.Infrastructure;
@@ -70,6 +73,9 @@ app.MapGet("/health", (HealthStatusService health) =>
 app.MapFinanceWorkspaceEndpoints();
 app.MapAccountEndpoints();
 app.MapJournalEntryEndpoints();
+app.MapLedgerPostingEndpoints();
+app.MapAccountBalanceEndpoints();
+app.MapTrialBalanceEndpoints();
 
 app.Run();
 
