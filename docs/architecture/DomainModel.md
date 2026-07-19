@@ -52,28 +52,54 @@ Finance-owned aggregate referencing `PlatformOrganizationId` and `PlatformWorksp
 
 Details: `docs/architecture/FinanceWorkspace.md`.
 
+## Invoice (F4E)
+
+Namespace: `VectorFlow.Finance.Domain.Invoices`
+
+### InvoiceId / InvoiceLineId
+
+Strongly typed Guid identifiers. Empty Guid is invalid. Created via constructor or `New()`.
+
+### InvoiceStatus
+
+| Value | Name | Meaning |
+|------:|------|---------|
+| 1 | Draft | Metadata and lines may change |
+| 2 | Issued | Content immutable in this slice |
+
+### CounterpartyReference
+
+Opaque trimmed external counterparty identifier (max 128). Not a CRM master and not a full `CounterpartySnapshot`.
+
+### Invoice
+
+Workspace-scoped commercial document aggregate. Holds `DocumentNumber`, `CounterpartyReference`, `Currency`, draft/issued lifecycle, due date, and lines. Line amounts use `Quantity × UnitPrice` as exact `decimal` in the invoice currency. `TotalAmount` is the sum of line amounts. Domain events: `InvoiceCreated`, `InvoiceIssued`.
+
+Details: `docs/architecture/Invoice.md`.
+
+F4E excludes application/persistence/HTTP, ledger posting, payments, accruals, and counterparty snapshots.
+
 ## Planned ownership (later phases)
 
 Finance will eventually own:
 
 - finance workspaces (domain foundation exists in F1A; persistence/HTTP later);
-- financial accounts;
+- financial accounts (domain through HTTP published for chart of accounts);
+- invoices (domain foundation exists in F4E; application/persistence/HTTP later);
 - accruals;
-- invoices and other financial documents;
 - payments;
 - payment allocations;
 - cash-flow plans;
-- immutable financial ledger records.
+- immutable financial ledger records;
+- historical counterparty snapshots.
 
-The following types remain out of F1A implementation:
+The following remain later / out of F4E:
 
-- `FinancialAccount`
-- `Invoice`
+- `Accrual`
 - `Payment`
-- `LedgerEntry`
-- `Budget`
-- `CashFlow`
 - `CounterpartySnapshot`
+- invoice application boundary, persistence, and HTTP
+- invoice ledger posting
 
 ## Money and ledger principles
 
