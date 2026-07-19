@@ -12,7 +12,7 @@ Status key:
 | F0 | Product and Architecture Foundation | Complete |
 | F1 | Organization Finance Context | In Progress |
 | F2 | Money and Financial Accounts | In Progress |
-| F3 | Counterparty Financial Snapshots | Planned |
+| F3 | Journal Entry and Ledger Foundation | In Progress |
 | F4 | Invoice and Accrual Foundation | Planned |
 | F5 | Payment and Allocation Foundation | Planned |
 | F6 | Cash-Flow Planning | Planned |
@@ -45,6 +45,16 @@ F1 as a whole remains incomplete until later sub-slices are delivered and publis
 
 F2A–F2D are published. Remaining F2 work after F2D requires design; there are no approved implementation slices beyond F2D yet. F2 as a whole remains incomplete until later sub-slices are designed, delivered, and published.
 
+## F3 sub-slices
+
+| Slice | Name | Status |
+|-------|------|--------|
+| F3A | Journal Entry Domain Foundation | Complete |
+| F3B | Journal Entry Application and Persistence | Complete |
+| F3C | Journal Entry HTTP Surface | Complete |
+
+F3A–F3C are published. Decimal precision policy for Debit/Credit remains an open architectural decision. F3 as a whole remains incomplete until later ledger slices are delivered and published.
+
 ## Phase intent
 
 ### F0 — Product and Architecture Foundation
@@ -59,9 +69,9 @@ Introduce finance organization and workspace context without absorbing CRM maste
 
 Operationalize monetary representation and financial account structures. F2A–F2D (domain through HTTP surface for Accounts) are complete and published. Remaining F2 work stays planned until separately designed.
 
-### F3 — Counterparty Financial Snapshots
+### F3 — Journal Entry and Ledger Foundation
 
-Capture financially significant counterparty details as immutable historical snapshots at document and operation creation time.
+Introduce double-entry journal entries as the ledger posting foundation. Draft entries may be unbalanced; posted entries are immutable and must balance. Counterparty financial snapshots remain planned for a later slice once journal posting exists.
 
 ### F4 — Invoice and Accrual Foundation
 

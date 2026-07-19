@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using VectorFlow.Finance.Api;
 using VectorFlow.Finance.Api.Accounts;
+using VectorFlow.Finance.Api.JournalEntries;
 using VectorFlow.Finance.Api.Workspaces;
 using VectorFlow.Finance.Application.Health;
 using VectorFlow.Finance.Infrastructure;
@@ -68,6 +69,7 @@ app.MapGet("/health", (HealthStatusService health) =>
 
 app.MapFinanceWorkspaceEndpoints();
 app.MapAccountEndpoints();
+app.MapJournalEntryEndpoints();
 
 app.Run();
 

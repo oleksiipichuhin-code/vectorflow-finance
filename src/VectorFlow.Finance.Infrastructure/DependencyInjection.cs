@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using VectorFlow.Finance.Application.Abstractions;
 using VectorFlow.Finance.Application.Accounts;
 using VectorFlow.Finance.Application.Health;
+using VectorFlow.Finance.Application.JournalEntries;
 using VectorFlow.Finance.Application.Workspaces;
 using VectorFlow.Finance.Infrastructure.Persistence;
 using VectorFlow.Finance.Infrastructure.Persistence.Repositories;
@@ -32,6 +33,7 @@ public static class DependencyInjection
         services.AddSingleton<IClock, SystemClock>();
         services.AddScoped<IFinanceWorkspaceRepository, FinanceWorkspaceRepository>();
         services.AddScoped<IAccountRepository, AccountRepository>();
+        services.AddScoped<IJournalEntryRepository, JournalEntryRepository>();
 
         services.AddDbContext<FinanceDbContext>((serviceProvider, options) =>
         {

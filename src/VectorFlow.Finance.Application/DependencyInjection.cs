@@ -1,10 +1,11 @@
 using Microsoft.Extensions.DependencyInjection;
 using VectorFlow.Finance.Application.Accounts.Handlers;
+using VectorFlow.Finance.Application.JournalEntries.Handlers;
 
 namespace VectorFlow.Finance.Application;
 
 /// <summary>
-/// Application-layer composition for Account use-case handlers (F2B).
+/// Application-layer composition for use-case handlers.
 /// Repository and clock implementations remain in Infrastructure.
 /// </summary>
 public static class DependencyInjection
@@ -18,6 +19,20 @@ public static class DependencyInjection
         services.AddScoped<ChangeAccountCodeHandler>();
         services.AddScoped<ChangeAccountTypeHandler>();
         services.AddScoped<ArchiveAccountHandler>();
+
+        return services;
+    }
+
+    public static IServiceCollection AddFinanceJournalEntryApplication(this IServiceCollection services)
+    {
+        services.AddScoped<CreateJournalEntryHandler>();
+        services.AddScoped<GetJournalEntryHandler>();
+        services.AddScoped<GetJournalEntriesHandler>();
+        services.AddScoped<RenameJournalEntryHandler>();
+        services.AddScoped<AddJournalEntryLineHandler>();
+        services.AddScoped<UpdateJournalEntryLineHandler>();
+        services.AddScoped<RemoveJournalEntryLineHandler>();
+        services.AddScoped<PostJournalEntryHandler>();
 
         return services;
     }
