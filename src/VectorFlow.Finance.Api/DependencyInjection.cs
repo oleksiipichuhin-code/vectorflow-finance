@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.OpenApi.Models;
 using VectorFlow.Finance.Application.AccountBalances.Handlers;
 using VectorFlow.Finance.Application.Accounts.Handlers;
+using VectorFlow.Finance.Application.GeneralLedger.Handlers;
 using VectorFlow.Finance.Application.JournalEntries.Handlers;
 using VectorFlow.Finance.Application.Ledger.Handlers;
 using VectorFlow.Finance.Application.TrialBalances.Handlers;
@@ -10,7 +11,8 @@ using VectorFlow.Finance.Application.Workspaces.Handlers;
 namespace VectorFlow.Finance.Api;
 
 /// <summary>
-/// API-layer composition: workspace, account, journal entry, ledger posting, account balance, and trial balance handlers and OpenAPI/Swagger surface.
+/// API-layer composition: workspace, account, journal entry, ledger posting, account balance,
+/// trial balance, and account statement handlers and OpenAPI/Swagger surface.
 /// Infrastructure registrations remain in <c>AddFinanceInfrastructure</c>.
 /// </summary>
 public static class DependencyInjection
@@ -54,6 +56,8 @@ public static class DependencyInjection
 
         services.AddScoped<GetTrialBalanceHandler>();
 
+        services.AddScoped<GetAccountStatementHandler>();
+
         services.AddEndpointsApiExplorer();
         services.AddSwaggerGen(options =>
         {
@@ -61,7 +65,7 @@ public static class DependencyInjection
             {
                 Title = "VectorFlow Finance API",
                 Version = "v1",
-                Description = "Finance Workspace, Account, Journal Entry, Ledger Posting, Account Balance, and Trial Balance HTTP surface."
+                Description = "Finance Workspace, Account, Journal Entry, Ledger Posting, Account Balance, Trial Balance, and Account Statement HTTP surface."
             });
         });
 

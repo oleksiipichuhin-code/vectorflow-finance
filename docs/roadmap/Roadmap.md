@@ -75,10 +75,10 @@ F4A–F4D are published. F4 invoice/accrual work remains planned. F4 as a whole 
 | Slice | Name | Status |
 |-------|------|--------|
 | F5A | General Ledger Account Statement Foundation | Complete |
-| F5B | Account Statement HTTP API | Planned |
+| F5B | Account Statement HTTP API | Complete |
 | F5C+ | Payment / allocation and later work | Planned |
 
-F5A is published (read-side account statement over ledger postings; no HTTP). Payment and allocation foundation work remains planned. F5 as a whole remains incomplete.
+F5A–F5B are published (read-side account statement over ledger postings, including HTTP). Payment and allocation foundation work remains planned. F5 as a whole remains incomplete.
 
 ## Phase intent
 
