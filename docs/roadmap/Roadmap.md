@@ -37,8 +37,10 @@ F1 as a whole remains incomplete until later sub-slices are delivered and publis
 
 | Slice | Name | Status |
 |-------|------|--------|
-| F2A | Chart of Accounts Domain Foundation | Implemented (unpublished) |
-| F2B+ | Remaining Money and Financial Accounts work | Planned |
+| F2A | Chart of Accounts Domain Foundation | Complete |
+| F2B | Account Application Boundary | Complete |
+| F2C | Account Persistence | Implemented (unpublished) |
+| F2D+ | Remaining Money and Financial Accounts work | Planned |
 
 F2 as a whole remains incomplete until later sub-slices are delivered and published.
 
