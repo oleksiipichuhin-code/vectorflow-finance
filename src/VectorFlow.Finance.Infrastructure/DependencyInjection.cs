@@ -4,10 +4,12 @@ using Microsoft.Extensions.DependencyInjection;
 using VectorFlow.Finance.Application.Abstractions;
 using VectorFlow.Finance.Application.AccountBalances;
 using VectorFlow.Finance.Application.Accounts;
+using VectorFlow.Finance.Application.GeneralLedger;
 using VectorFlow.Finance.Application.Health;
 using VectorFlow.Finance.Application.JournalEntries;
 using VectorFlow.Finance.Application.Ledger;
 using VectorFlow.Finance.Application.Workspaces;
+using VectorFlow.Finance.Infrastructure.GeneralLedger;
 using VectorFlow.Finance.Infrastructure.Persistence;
 using VectorFlow.Finance.Infrastructure.Persistence.Repositories;
 using VectorFlow.Finance.Infrastructure.Time;
@@ -38,6 +40,7 @@ public static class DependencyInjection
         services.AddScoped<IJournalEntryRepository, JournalEntryRepository>();
         services.AddScoped<ILedgerPostingRepository, LedgerPostingRepository>();
         services.AddScoped<IAccountBalanceReader, AccountBalanceReader>();
+        services.AddScoped<IAccountStatementReader, AccountStatementReader>();
 
         services.AddDbContext<FinanceDbContext>((serviceProvider, options) =>
         {

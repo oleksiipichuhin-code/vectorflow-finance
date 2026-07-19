@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using VectorFlow.Finance.Application.Abstractions;
 using VectorFlow.Finance.Application.AccountBalances;
 using VectorFlow.Finance.Application.Accounts;
+using VectorFlow.Finance.Application.GeneralLedger;
 using VectorFlow.Finance.Application.Health;
 using VectorFlow.Finance.Application.JournalEntries;
 using VectorFlow.Finance.Application.Ledger;
@@ -52,6 +53,7 @@ public sealed class DependencyInjectionTests
         Assert.NotNull(provider.GetRequiredService<IJournalEntryRepository>());
         Assert.NotNull(provider.GetRequiredService<ILedgerPostingRepository>());
         Assert.NotNull(provider.GetRequiredService<IAccountBalanceReader>());
+        Assert.NotNull(provider.GetRequiredService<IAccountStatementReader>());
         Assert.NotNull(provider.GetRequiredService<FinanceDbContext>());
 
         if (File.Exists(databasePath))

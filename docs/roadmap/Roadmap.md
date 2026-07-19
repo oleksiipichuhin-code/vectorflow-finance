@@ -14,7 +14,7 @@ Status key:
 | F2 | Money and Financial Accounts | In Progress |
 | F3 | Journal Entry and Ledger Foundation | In Progress |
 | F4 | Invoice and Accrual Foundation | In Progress |
-| F5 | Payment and Allocation Foundation | Planned |
+| F5 | Payment and Allocation Foundation | In Progress |
 | F6 | Cash-Flow Planning | Planned |
 | F7 | Finance UI MVP | Planned |
 | F8 | Cross-Product Integrations | Planned |
@@ -52,23 +52,33 @@ F2A–F2D are published. Remaining F2 work after F2D requires design; there are 
 | F3A | Journal Entry Domain Foundation | Complete |
 | F3B | Journal Entry Application and Persistence | Complete |
 | F3C | Journal Entry HTTP Surface | Complete |
-| F3D | Ledger Posting Domain Foundation | Implemented (unpublished) |
-| F3E | Ledger Posting Application and Persistence | Implemented (unpublished) |
-| F3F | Ledger Posting HTTP Surface | Implemented (unpublished) |
+| F3D | Ledger Posting Domain Foundation | Complete |
+| F3E | Ledger Posting Application and Persistence | Complete |
+| F3F | Ledger Posting HTTP Surface | Complete |
 
-F3A–F3C are published. F3D–F3F are implemented in the working tree but unpublished. Decimal precision policy for Debit/Credit remains an open architectural decision. F3 as a whole remains incomplete until F3D–F3F are published and later ledger slices are delivered.
+F3A–F3F are published. Decimal precision policy for Debit/Credit remains an open architectural decision. F3 as a whole remains incomplete until later ledger reporting slices are delivered.
 
 ## F4 sub-slices
 
 | Slice | Name | Status |
 |-------|------|--------|
-| F4A | Account Balance Projection Foundation | Implemented (unpublished) |
-| F4B | Account Balance HTTP Surface | Implemented (unpublished) |
-| F4C | Trial Balance Foundation | Implemented (unpublished) |
-| F4D | Trial Balance HTTP API | Implemented (unpublished) |
+| F4A | Account Balance Projection Foundation | Complete |
+| F4B | Account Balance HTTP Surface | Complete |
+| F4C | Trial Balance Foundation | Complete |
+| F4D | Trial Balance HTTP API | Complete |
 | F4E+ | Invoice / accrual and later reporting | Planned |
 
-F4A–F4D are implemented in the working tree but unpublished. Trial balance HTTP route: `GET /api/finance-workspaces/{financeWorkspaceId}/trial-balance` (`GetTrialBalance`). F4 invoice/accrual work remains planned. F4 as a whole remains incomplete.
+F4A–F4D are published. F4 invoice/accrual work remains planned. F4 as a whole remains incomplete.
+
+## F5 sub-slices
+
+| Slice | Name | Status |
+|-------|------|--------|
+| F5A | General Ledger Account Statement Foundation | Complete |
+| F5B | Account Statement HTTP API | Planned |
+| F5C+ | Payment / allocation and later work | Planned |
+
+F5A is published (read-side account statement over ledger postings; no HTTP). Payment and allocation foundation work remains planned. F5 as a whole remains incomplete.
 
 ## Phase intent
 

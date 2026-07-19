@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using VectorFlow.Finance.Application.AccountBalances.Handlers;
 using VectorFlow.Finance.Application.Accounts.Handlers;
+using VectorFlow.Finance.Application.GeneralLedger.Handlers;
 using VectorFlow.Finance.Application.JournalEntries.Handlers;
 using VectorFlow.Finance.Application.Ledger.Handlers;
 using VectorFlow.Finance.Application.TrialBalances.Handlers;
@@ -61,6 +62,13 @@ public static class DependencyInjection
     public static IServiceCollection AddFinanceTrialBalanceApplication(this IServiceCollection services)
     {
         services.AddScoped<GetTrialBalanceHandler>();
+
+        return services;
+    }
+
+    public static IServiceCollection AddFinanceGeneralLedgerApplication(this IServiceCollection services)
+    {
+        services.AddScoped<GetAccountStatementHandler>();
 
         return services;
     }
