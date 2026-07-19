@@ -40,10 +40,10 @@ F1 as a whole remains incomplete until later sub-slices are delivered and publis
 | F2A | Chart of Accounts Domain Foundation | Complete |
 | F2B | Account Application Boundary | Complete |
 | F2C | Account Persistence | Complete |
-| F2D | Account HTTP Surface | Implemented (unpublished) |
+| F2D | Account HTTP Surface | Complete |
 | F2E+ | Remaining Money and Financial Accounts work | Planned |
 
-F2 as a whole remains incomplete until later sub-slices are delivered and published.
+F2A–F2D are published. Remaining F2 work after F2D requires design; there are no approved implementation slices beyond F2D yet. F2 as a whole remains incomplete until later sub-slices are designed, delivered, and published.
 
 ## Phase intent
 
@@ -57,7 +57,7 @@ Introduce finance organization and workspace context without absorbing CRM maste
 
 ### F2 — Money and Financial Accounts
 
-Operationalize monetary representation and financial account structures. Delivery begins with F2A; remaining F2 work stays planned until separately designed.
+Operationalize monetary representation and financial account structures. F2A–F2D (domain through HTTP surface for Accounts) are complete and published. Remaining F2 work stays planned until separately designed.
 
 ### F3 — Counterparty Financial Snapshots
 
