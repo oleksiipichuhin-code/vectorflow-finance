@@ -1,10 +1,11 @@
 using Microsoft.OpenApi.Models;
+using VectorFlow.Finance.Application.Accounts.Handlers;
 using VectorFlow.Finance.Application.Workspaces.Handlers;
 
 namespace VectorFlow.Finance.Api;
 
 /// <summary>
-/// API-layer composition: workspace handlers and OpenAPI/Swagger surface.
+/// API-layer composition: workspace and account handlers and OpenAPI/Swagger surface.
 /// Infrastructure registrations remain in <c>AddFinanceInfrastructure</c>.
 /// </summary>
 public static class DependencyInjection
@@ -21,6 +22,14 @@ public static class DependencyInjection
         services.AddScoped<ReactivateFinanceWorkspaceHandler>();
         services.AddScoped<ArchiveFinanceWorkspaceHandler>();
 
+        services.AddScoped<CreateAccountHandler>();
+        services.AddScoped<GetAccountHandler>();
+        services.AddScoped<GetAccountByCodeHandler>();
+        services.AddScoped<RenameAccountHandler>();
+        services.AddScoped<ChangeAccountCodeHandler>();
+        services.AddScoped<ChangeAccountTypeHandler>();
+        services.AddScoped<ArchiveAccountHandler>();
+
         services.AddEndpointsApiExplorer();
         services.AddSwaggerGen(options =>
         {
@@ -28,7 +37,7 @@ public static class DependencyInjection
             {
                 Title = "VectorFlow Finance API",
                 Version = "v1",
-                Description = "Finance Workspace HTTP surface."
+                Description = "Finance Workspace and Account HTTP surface."
             });
         });
 

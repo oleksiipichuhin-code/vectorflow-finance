@@ -39,8 +39,9 @@ F1 as a whole remains incomplete until later sub-slices are delivered and publis
 |-------|------|--------|
 | F2A | Chart of Accounts Domain Foundation | Complete |
 | F2B | Account Application Boundary | Complete |
-| F2C | Account Persistence | Implemented (unpublished) |
-| F2D+ | Remaining Money and Financial Accounts work | Planned |
+| F2C | Account Persistence | Complete |
+| F2D | Account HTTP Surface | Implemented (unpublished) |
+| F2E+ | Remaining Money and Financial Accounts work | Planned |
 
 F2 as a whole remains incomplete until later sub-slices are delivered and published.
 
