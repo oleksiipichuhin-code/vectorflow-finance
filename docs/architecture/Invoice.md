@@ -62,7 +62,7 @@ Application use cases over the F4E aggregate (no persistence implementation, no 
 - draft mutations: document number, counterparty reference, currency, due date, add/update/remove line;
 - issue invoice (`Draft` → `Issued`).
 
-`IInvoiceRepository` is the Application persistence port (`GetByIdAsync` always workspace-scoped, `AddAsync`, `SaveChangesAsync`). Listing, get-by-document-number, and HTTP remain later slices. Issue does not create journal entries or ledger postings.
+`IInvoiceRepository` is the Application persistence port (`GetByIdAsync` always workspace-scoped, `AddAsync`, `SaveChangesAsync`). Listing and get-by-document-number remain later slices. Issue does not create journal entries or ledger postings.
 
 ## Persistence (F4E3)
 
@@ -74,4 +74,25 @@ Invoice aggregates are stored via EF Core in Infrastructure:
 - migration `AddInvoices` creates `Invoices` / `InvoiceLines`;
 - `DocumentNumber` uniqueness is not enforced at the database;
 - listing and get-by-document-number are not implemented;
-- HTTP surface, general-ledger posting, payments, and accruals remain later slices.
+- general-ledger posting, payments, and accruals remain later slices.
+
+## HTTP surface (F4E4)
+
+Workspace-scoped Invoice HTTP API under `/api/finance-workspaces/{financeWorkspaceId}/invoices`:
+
+| Method | Route | Application use case | Success |
+|--------|-------|----------------------|---------|
+| POST | `/` | Create invoice | 201 |
+| GET | `/{invoiceId}` | Get by id | 200 |
+| POST | `/{invoiceId}/change-document-number` | Change document number | 200 |
+| POST | `/{invoiceId}/change-counterparty` | Change counterparty | 200 |
+| POST | `/{invoiceId}/change-currency` | Change currency | 200 |
+| POST | `/{invoiceId}/set-due-date` | Set due date | 200 |
+| POST | `/{invoiceId}/lines` | Add line | 200 |
+| PUT | `/{invoiceId}/lines/{lineId}` | Update line | 200 |
+| DELETE | `/{invoiceId}/lines/{lineId}` | Remove line | 200 |
+| POST | `/{invoiceId}/issue` | Issue invoice | 200 |
+
+Status mapping via existing `ApplicationResultHttp`: ValidationFailed → 400, NotFound → 404, Conflict → 409. Response body is the Application `InvoiceDto`.
+
+Deferred: list/search/pagination, get-by-document-number, payments, accruals, ledger posting from Issue, authorization redesign.

@@ -69,9 +69,10 @@ F3A–F3F are published. Decimal precision policy for Debit/Credit remains an op
 | F4E | Invoice Domain Foundation | Complete |
 | F4E2 | Invoice Application Boundary | Complete |
 | F4E3 | Invoice Persistence | Complete |
+| F4E4 | Invoice HTTP Surface | Complete |
 | F4F+ | Accrual foundation and later invoice work | Planned |
 
-F4A–F4E2 are published. F4E3 Invoice Persistence is complete in the working tree until separately published. Accrual and later invoice HTTP remain planned. F4 as a whole remains incomplete.
+F4A–F4E3 are published. F4E4 Invoice HTTP Surface is complete in the working tree until separately published. Accrual and later invoice listing/query work remain planned. F4 as a whole remains incomplete.
 
 ## F5 sub-slices
 
