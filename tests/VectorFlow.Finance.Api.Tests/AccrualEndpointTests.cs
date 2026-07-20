@@ -92,6 +92,81 @@ public sealed class AccrualEndpointTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task List_returns_only_requested_workspace_newest_first()
+    {
+        var workspaceA = await CreateWorkspaceAsync(
+            Guid.Parse("a1000000-0000-0000-0000-000000000030"),
+            Guid.Parse("a2000000-0000-0000-0000-000000000030"));
+        var workspaceB = await CreateWorkspaceAsync(
+            Guid.Parse("b1000000-0000-0000-0000-000000000030"),
+            Guid.Parse("b2000000-0000-0000-0000-000000000030"));
+
+        var older = await CreateAccrualAsync(workspaceA, "Revenue", 10m, "Older");
+        await Task.Delay(20);
+        var newer = await CreateAccrualAsync(workspaceA, "Expense", 20m, "Newer", Guid.Parse("dddddddd-eeee-ffff-aaaa-bbbbbbbbbbbb"));
+        await CreateAccrualAsync(workspaceB, "Revenue", 30m, "Other");
+
+        var response = await _client.GetAsync($"/api/finance-workspaces/{workspaceA}/accruals");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(2, document.RootElement.GetArrayLength());
+        Assert.Equal(newer, document.RootElement[0].GetProperty("id").GetGuid());
+        Assert.Equal(older, document.RootElement[1].GetProperty("id").GetGuid());
+        Assert.Equal("Newer", document.RootElement[0].GetProperty("description").GetString());
+        Assert.Equal("Expense", document.RootElement[0].GetProperty("type").GetString());
+        Assert.Equal(
+            Guid.Parse("dddddddd-eeee-ffff-aaaa-bbbbbbbbbbbb"),
+            document.RootElement[0].GetProperty("sourceInvoiceId").GetGuid());
+        Assert.Equal(JsonValueKind.Null, document.RootElement[1].GetProperty("sourceInvoiceId").ValueKind);
+        Assert.True(document.RootElement[0].TryGetProperty("createdAtUtc", out _));
+    }
+
+    [Fact]
+    public async Task List_empty_workspace_returns_empty_array()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("a1000000-0000-0000-0000-000000000031"),
+            Guid.Parse("a2000000-0000-0000-0000-000000000031"));
+
+        var response = await _client.GetAsync($"/api/finance-workspaces/{workspaceId}/accruals");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(0, document.RootElement.GetArrayLength());
+    }
+
+    [Fact]
+    public async Task List_empty_finance_workspace_id_returns_400()
+    {
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{Guid.Empty}/accruals");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        await AssertErrorAsync(response, "ValidationFailed");
+    }
+
+    [Fact]
+    public async Task Get_by_id_still_resolves_after_list_route()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("a1000000-0000-0000-0000-000000000032"),
+            Guid.Parse("a2000000-0000-0000-0000-000000000032"));
+        var accrualId = await CreateAccrualAsync(workspaceId, "Revenue", 40m, "Get after list");
+
+        var list = await _client.GetAsync($"/api/finance-workspaces/{workspaceId}/accruals");
+        Assert.Equal(HttpStatusCode.OK, list.StatusCode);
+
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/accruals/{accrualId}");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(accrualId, document.RootElement.GetProperty("id").GetGuid());
+        Assert.Equal("Get after list", document.RootElement.GetProperty("description").GetString());
+    }
+
+    [Fact]
     public async Task Create_missing_workspace_returns_404()
     {
         var response = await _client.PostAsJsonAsync(
@@ -572,7 +647,7 @@ public sealed class AccrualEndpointTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Swagger_includes_accrual_routes_and_no_list_route()
+    public async Task Swagger_includes_accrual_routes_including_list()
     {
         var response = await _client.GetAsync("/swagger/v1/swagger.json");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -580,10 +655,12 @@ public sealed class AccrualEndpointTests : IAsyncLifetime
         var json = await response.Content.ReadAsStringAsync();
         Assert.Contains("/api/finance-workspaces/{financeWorkspaceId}/accruals", json);
         Assert.Contains("CreateAccrual", json);
+        Assert.Contains("ListAccruals", json);
+        Assert.Contains("GetAccrualById", json);
         Assert.Contains("RecognizeAccrual", json);
         Assert.Contains("ReverseAccrual", json);
-        Assert.DoesNotContain("ListAccrual", json);
         Assert.DoesNotContain("/accruals/by-invoice", json);
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(json, "\"ListAccruals\""));
     }
 
     private static object ValidCreateBody() => new
@@ -615,7 +692,8 @@ public sealed class AccrualEndpointTests : IAsyncLifetime
         Guid workspaceId,
         string type,
         decimal amount,
-        string description)
+        string description,
+        Guid? sourceInvoiceId = null)
     {
         var response = await _client.PostAsJsonAsync(
             $"/api/finance-workspaces/{workspaceId}/accruals",
@@ -626,7 +704,7 @@ public sealed class AccrualEndpointTests : IAsyncLifetime
                 currency = "UAH",
                 recognitionDateUtc = RecognitionDate,
                 description,
-                sourceInvoiceId = (Guid?)null
+                sourceInvoiceId
             });
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());

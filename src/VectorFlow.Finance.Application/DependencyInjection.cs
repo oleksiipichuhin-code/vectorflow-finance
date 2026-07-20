@@ -96,6 +96,7 @@ public static class DependencyInjection
     {
         services.AddScoped<CreateAccrualHandler>();
         services.AddScoped<GetAccrualHandler>();
+        services.AddScoped<GetAccrualsHandler>();
         services.AddScoped<ChangeAccrualTypeHandler>();
         services.AddScoped<ChangeAccrualAmountHandler>();
         services.AddScoped<ChangeAccrualCurrencyHandler>();

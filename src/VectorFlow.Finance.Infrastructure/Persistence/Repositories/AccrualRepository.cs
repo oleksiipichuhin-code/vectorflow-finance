@@ -26,6 +26,20 @@ public sealed class AccrualRepository : IAccrualRepository
                     accrual.Id == id,
                 cancellationToken);
 
+    public async Task<IReadOnlyList<Accrual>> ListByWorkspaceAsync(
+        FinanceWorkspaceId financeWorkspaceId,
+        CancellationToken cancellationToken = default)
+    {
+        var accruals = await _dbContext.Accruals
+            .Where(accrual => accrual.FinanceWorkspaceId == financeWorkspaceId)
+            .ToListAsync(cancellationToken);
+
+        return accruals
+            .OrderByDescending(accrual => accrual.CreatedAt)
+            .ThenByDescending(accrual => accrual.Id.Value)
+            .ToList();
+    }
+
     public async Task AddAsync(
         Accrual accrual,
         CancellationToken cancellationToken = default)

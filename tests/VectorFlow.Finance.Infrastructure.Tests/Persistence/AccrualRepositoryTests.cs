@@ -108,6 +108,155 @@ public sealed class AccrualRepositoryTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ListByWorkspace_returns_only_workspace_newest_first()
+    {
+        var older = Accrual.Create(
+            AccrualId.New(),
+            _workspaceA,
+            AccrualType.Revenue,
+            10m,
+            new Currency("UAH"),
+            RecognitionDate,
+            "Older",
+            sourceInvoiceId: null,
+            T0);
+        var newer = Accrual.Create(
+            AccrualId.New(),
+            _workspaceA,
+            AccrualType.Expense,
+            20m,
+            new Currency("UAH"),
+            RecognitionDate,
+            "Newer",
+            sourceInvoiceId: null,
+            T1);
+        var other = Accrual.Create(
+            AccrualId.New(),
+            _workspaceB,
+            AccrualType.Revenue,
+            30m,
+            new Currency("USD"),
+            RecognitionDate,
+            "Other",
+            sourceInvoiceId: null,
+            T2);
+
+        await _repository.AddAsync(older);
+        await _repository.AddAsync(newer);
+        await _repository.AddAsync(other);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var listed = await new AccrualRepository(readContext).ListByWorkspaceAsync(_workspaceA);
+
+        Assert.Equal(2, listed.Count);
+        Assert.Equal(newer.Id, listed[0].Id);
+        Assert.Equal(older.Id, listed[1].Id);
+    }
+
+    [Fact]
+    public async Task ListByWorkspace_empty_returns_empty_collection()
+    {
+        await using var readContext = CreateContext();
+        var listed = await new AccrualRepository(readContext).ListByWorkspaceAsync(_workspaceA);
+
+        Assert.Empty(listed);
+    }
+
+    [Fact]
+    public async Task ListByWorkspace_equal_created_at_orders_by_id_descending()
+    {
+        var lowerId = new AccrualId(Guid.Parse("11111111-1111-1111-1111-111111111111"));
+        var higherId = new AccrualId(Guid.Parse("99999999-9999-9999-9999-999999999999"));
+        var lower = Accrual.Create(
+            lowerId,
+            _workspaceA,
+            AccrualType.Revenue,
+            10m,
+            new Currency("UAH"),
+            RecognitionDate,
+            "Lower",
+            sourceInvoiceId: null,
+            T0);
+        var higher = Accrual.Create(
+            higherId,
+            _workspaceA,
+            AccrualType.Expense,
+            20m,
+            new Currency("UAH"),
+            RecognitionDate,
+            "Higher",
+            sourceInvoiceId: null,
+            T0);
+
+        await _repository.AddAsync(lower);
+        await _repository.AddAsync(higher);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var listed = await new AccrualRepository(readContext).ListByWorkspaceAsync(_workspaceA);
+
+        Assert.Equal(2, listed.Count);
+        Assert.Equal(higherId, listed[0].Id);
+        Assert.Equal(lowerId, listed[1].Id);
+    }
+
+    [Fact]
+    public async Task ListByWorkspace_preserves_nullable_source_invoice_id()
+    {
+        var sourceInvoiceId = new InvoiceId(Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"));
+        var withSource = Accrual.Create(
+            AccrualId.New(),
+            _workspaceA,
+            AccrualType.Revenue,
+            15m,
+            new Currency("UAH"),
+            RecognitionDate,
+            "With source",
+            sourceInvoiceId,
+            T0);
+        var withoutSource = Accrual.Create(
+            AccrualId.New(),
+            _workspaceA,
+            AccrualType.Expense,
+            25m,
+            new Currency("UAH"),
+            RecognitionDate,
+            "Without source",
+            sourceInvoiceId: null,
+            T1);
+
+        await _repository.AddAsync(withSource);
+        await _repository.AddAsync(withoutSource);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var listed = await new AccrualRepository(readContext).ListByWorkspaceAsync(_workspaceA);
+
+        Assert.Equal(2, listed.Count);
+        Assert.Null(listed[0].SourceInvoiceId);
+        Assert.Equal(sourceInvoiceId, listed[1].SourceInvoiceId);
+    }
+
+    [Fact]
+    public async Task GetById_after_list_still_round_trips()
+    {
+        var accrual = CreateDraft(_workspaceA, AccrualType.Revenue, 10m, "After list");
+
+        await _repository.AddAsync(accrual);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var repo = new AccrualRepository(readContext);
+        var listed = await repo.ListByWorkspaceAsync(_workspaceA);
+        Assert.Equal(accrual.Id, Assert.Single(listed).Id);
+
+        var loaded = await repo.GetByIdAsync(_workspaceA, accrual.Id);
+        Assert.NotNull(loaded);
+        Assert.Equal("After list", loaded.Description);
+    }
+
+    [Fact]
     public async Task Draft_mutations_persist()
     {
         var accrual = CreateDraft(_workspaceA, AccrualType.Revenue, 10m, "Old");

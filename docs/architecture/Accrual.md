@@ -138,11 +138,12 @@ Application use cases over the F4F aggregate (no persistence implementation, no 
 
 - create accrual in an existing finance workspace;
 - get accrual by id (workspace-scoped);
+- list accruals for a finance workspace (CreatedAt descending, then AccrualId descending; empty list when none);
 - draft mutations: type, amount, currency, recognition date, description, source invoice (set/clear via nullable id);
 - recognize accrual (`Draft` → `Recognized`);
 - reverse accrual (`Recognized` → `Reversed`).
 
-`IAccrualRepository` is the Application persistence port (`GetByIdAsync` always workspace-scoped, `AddAsync`, `SaveChangesAsync`). Listing and get-by-invoice remain later slices.
+`IAccrualRepository` is the Application persistence port (`GetByIdAsync` and `ListByWorkspaceAsync` always workspace-scoped, `AddAsync`, `SaveChangesAsync`). Get-by-invoice, search, filters, and pagination remain later slices.
 
 Result mapping follows Invoice Application:
 
@@ -160,21 +161,22 @@ Source invoice existence is **not** checked in Application (same posture as Doma
 
 Accrual aggregates are stored via EF Core in Infrastructure:
 
-- `AccrualRepository` implements `IAccrualRepository` with workspace-scoped `GetByIdAsync`;
+- `AccrualRepository` implements `IAccrualRepository` with workspace-scoped `GetByIdAsync` and `ListByWorkspaceAsync` (CreatedAt descending, then Id descending);
 - Domain `Accrual` maps directly (no separate persistence entity);
 - `DomainEvents` is not a persisted column;
 - nullable `SourceInvoiceId` stores optional `InvoiceId` as `Guid?` with **no** FK to `Invoices` and **no** uniqueness constraint;
 - lifecycle fields (`Status`, `RecognizedAt`, `ReversedAt`, `ReversalReason`, timestamps) round-trip faithfully through private-constructor materialization;
 - migration `AddAccruals` creates table `Accruals` with workspace FK (`Restrict`) and `IX_Accruals_FinanceWorkspaceId`;
-- listing, get-by-invoice, Invoice existence validation, concurrency tokens, ledger posting, and payments remain later slices.
+- get-by-invoice, search, filters, pagination, Invoice existence validation, concurrency tokens, ledger posting, and payments remain later slices.
 
-## HTTP surface (F4I)
+## HTTP surface (F4I / F4K)
 
 Workspace-scoped Accrual HTTP API under `/api/finance-workspaces/{financeWorkspaceId}/accruals`:
 
 | Method | Route | Application use case | Success |
 |--------|-------|----------------------|---------|
 | POST | `/` | Create accrual | 201 |
+| GET | `/` | List accruals for workspace (newest first) | 200 |
 | GET | `/{accrualId}` | Get by id | 200 |
 | POST | `/{accrualId}/change-type` | Change type | 200 |
 | POST | `/{accrualId}/change-amount` | Change amount | 200 |
@@ -185,9 +187,9 @@ Workspace-scoped Accrual HTTP API under `/api/finance-workspaces/{financeWorkspa
 | POST | `/{accrualId}/recognize` | Recognize accrual | 200 |
 | POST | `/{accrualId}/reverse` | Reverse accrual | 200 |
 
-Status mapping via existing `ApplicationResultHttp`: ValidationFailed → 400, NotFound → 404 (missing or cross-workspace), Conflict → 409. Response body is the Application `AccrualDto`.
+Status mapping via existing `ApplicationResultHttp`: ValidationFailed → 400, NotFound → 404 (missing or cross-workspace), Conflict → 409. Single-accrual responses use Application `AccrualDto`. List returns a JSON array of `AccrualDto` (empty array when the workspace has no accruals; not 404). List is read-only. List ordering: `CreatedAt` descending, then `AccrualId` descending. List does not include search, filters, pagination, get-by-invoice, or total-count metadata.
 
-Deferred: list/search/pagination, get-by-invoice, Invoice existence validation, ledger posting from Recognize/Reverse, concurrency tokens, compensating accruals, authorization redesign, background recognition jobs.
+Deferred: search/pagination/filters, get-by-invoice, Invoice existence validation, ledger posting from Recognize/Reverse, concurrency tokens, compensating accruals, authorization redesign, background recognition jobs.
 
 ## Notes on conventions adapted for F4F
 

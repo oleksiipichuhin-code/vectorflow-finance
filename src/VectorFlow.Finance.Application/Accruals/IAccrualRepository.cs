@@ -14,6 +14,13 @@ public interface IAccrualRepository
         AccrualId id,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Returns accruals for the workspace ordered by CreatedAt descending, then Id descending.
+    /// </summary>
+    Task<IReadOnlyList<Accrual>> ListByWorkspaceAsync(
+        FinanceWorkspaceId financeWorkspaceId,
+        CancellationToken cancellationToken = default);
+
     Task AddAsync(
         Accrual accrual,
         CancellationToken cancellationToken = default);

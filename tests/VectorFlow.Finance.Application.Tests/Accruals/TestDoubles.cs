@@ -10,6 +10,10 @@ internal sealed class InMemoryAccrualRepository : IAccrualRepository
 
     public int GetByIdCallCount { get; private set; }
 
+    public int ListByWorkspaceCallCount { get; private set; }
+
+    public FinanceWorkspaceId? LastListedWorkspaceId { get; private set; }
+
     public int AddCallCount { get; private set; }
 
     public int SaveChangesCallCount { get; private set; }
@@ -28,6 +32,22 @@ internal sealed class InMemoryAccrualRepository : IAccrualRepository
         }
 
         return Task.FromResult<Accrual?>(null);
+    }
+
+    public Task<IReadOnlyList<Accrual>> ListByWorkspaceAsync(
+        FinanceWorkspaceId financeWorkspaceId,
+        CancellationToken cancellationToken = default)
+    {
+        ListByWorkspaceCallCount++;
+        LastListedWorkspaceId = financeWorkspaceId;
+
+        IReadOnlyList<Accrual> accruals = _byId.Values
+            .Where(accrual => accrual.FinanceWorkspaceId == financeWorkspaceId)
+            .OrderByDescending(accrual => accrual.CreatedAt)
+            .ThenByDescending(accrual => accrual.Id.Value)
+            .ToList();
+
+        return Task.FromResult(accruals);
     }
 
     public Task AddAsync(Accrual accrual, CancellationToken cancellationToken = default)
