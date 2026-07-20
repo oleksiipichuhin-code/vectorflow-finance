@@ -132,6 +132,30 @@ No integration events, message contracts, or ledger commands.
 - Concurrency token / aggregate version
 - Public `Reconstitute` (not used by existing Domain aggregates)
 
+## Application boundary (F4G)
+
+Application use cases over the F4F aggregate (no persistence implementation, no HTTP):
+
+- create accrual in an existing finance workspace;
+- get accrual by id (workspace-scoped);
+- draft mutations: type, amount, currency, recognition date, description, source invoice (set/clear via nullable id);
+- recognize accrual (`Draft` → `Recognized`);
+- reverse accrual (`Recognized` → `Reversed`).
+
+`IAccrualRepository` is the Application persistence port (`GetByIdAsync` always workspace-scoped, `AddAsync`, `SaveChangesAsync`). Listing and get-by-invoice remain later slices.
+
+Result mapping follows Invoice Application:
+
+- `ApplicationResult<AccrualDto>`;
+- `ArgumentException` → ValidationFailed;
+- `InvalidOperationException` → Conflict;
+- missing / cross-workspace aggregate → NotFound;
+- missing finance workspace on create → NotFound.
+
+Timestamps come from `IClock.UtcNow` inside handlers (commands do not carry mutation timestamps). Create generates `AccrualId` via `AccrualId.New()`.
+
+Source invoice existence is **not** checked in Application (same posture as Domain). Persistence and HTTP remain later slices. Recognize/Reverse do not post to the ledger.
+
 ## Notes on conventions adapted for F4F
 
 - Timestamps use project names `CreatedAt`, `UpdatedAt`, `RecognizedAt`, `ReversedAt` (not `*Utc` suffixes).

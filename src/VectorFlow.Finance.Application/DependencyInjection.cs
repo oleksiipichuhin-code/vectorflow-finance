@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using VectorFlow.Finance.Application.AccountBalances.Handlers;
 using VectorFlow.Finance.Application.Accounts.Handlers;
+using VectorFlow.Finance.Application.Accruals.Handlers;
 using VectorFlow.Finance.Application.GeneralLedger.Handlers;
 using VectorFlow.Finance.Application.Invoices.Handlers;
 using VectorFlow.Finance.Application.JournalEntries.Handlers;
@@ -86,6 +87,22 @@ public static class DependencyInjection
         services.AddScoped<UpdateInvoiceLineHandler>();
         services.AddScoped<RemoveInvoiceLineHandler>();
         services.AddScoped<IssueInvoiceHandler>();
+
+        return services;
+    }
+
+    public static IServiceCollection AddFinanceAccrualApplication(this IServiceCollection services)
+    {
+        services.AddScoped<CreateAccrualHandler>();
+        services.AddScoped<GetAccrualHandler>();
+        services.AddScoped<ChangeAccrualTypeHandler>();
+        services.AddScoped<ChangeAccrualAmountHandler>();
+        services.AddScoped<ChangeAccrualCurrencyHandler>();
+        services.AddScoped<ChangeAccrualRecognitionDateHandler>();
+        services.AddScoped<ChangeAccrualDescriptionHandler>();
+        services.AddScoped<ChangeAccrualSourceInvoiceHandler>();
+        services.AddScoped<RecognizeAccrualHandler>();
+        services.AddScoped<ReverseAccrualHandler>();
 
         return services;
     }
