@@ -187,6 +187,104 @@ public sealed class InvoiceApplicationTests
     }
 
     [Fact]
+    public async Task List_empty_workspace_returns_empty_list()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        var result = await new GetInvoicesHandler(invoices).HandleAsync(
+            new GetInvoicesQuery(workspaceId));
+
+        Assert.True(result.IsSuccess);
+        Assert.Empty(result.Value!);
+        Assert.Equal(1, invoices.ListByWorkspaceCallCount);
+        Assert.Equal(workspaceId, invoices.LastListedWorkspaceId!.Value.Value);
+    }
+
+    [Fact]
+    public async Task List_returns_only_requested_workspace_newest_first()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceA = await SeedWorkspaceAsync(workspaces, clock);
+        var workspaceB = await SeedWorkspaceAsync(
+            workspaces,
+            clock,
+            Guid.Parse("cccccccc-3333-3333-3333-333333333333"),
+            Guid.Parse("dddddddd-4444-4444-4444-444444444444"),
+            "Other");
+
+        clock.UtcNow = T0;
+        var older = await CreateInvoiceAsync(invoices, workspaces, clock, workspaceA, "INV-OLD");
+        clock.UtcNow = T1;
+        var newer = await CreateInvoiceAsync(invoices, workspaces, clock, workspaceA, "INV-NEW");
+        clock.UtcNow = T2;
+        await CreateInvoiceAsync(invoices, workspaces, clock, workspaceB, "INV-OTHER");
+
+        var result = await new GetInvoicesHandler(invoices).HandleAsync(
+            new GetInvoicesQuery(workspaceA));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(2, result.Value!.Count);
+        Assert.Equal(newer.Id, result.Value[0].Id);
+        Assert.Equal(older.Id, result.Value[1].Id);
+        Assert.Equal(workspaceA, invoices.LastListedWorkspaceId!.Value.Value);
+    }
+
+    [Fact]
+    public async Task List_maps_invoice_dto_fields()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        clock.UtcNow = T0;
+        var created = await CreateInvoiceAsync(
+            invoices,
+            workspaces,
+            clock,
+            workspaceId,
+            "INV-DTO",
+            "cp-dto",
+            "USD");
+        clock.UtcNow = T1;
+        var withLine = await new AddInvoiceLineHandler(invoices, clock).HandleAsync(
+            new AddInvoiceLineCommand(workspaceId, created.Id, 2m, 25m, "Item"));
+        Assert.True(withLine.IsSuccess);
+
+        var result = await new GetInvoicesHandler(invoices).HandleAsync(
+            new GetInvoicesQuery(workspaceId));
+
+        Assert.True(result.IsSuccess);
+        var dto = Assert.Single(result.Value!);
+        Assert.Equal(created.Id, dto.Id);
+        Assert.Equal(workspaceId, dto.FinanceWorkspaceId);
+        Assert.Equal("INV-DTO", dto.DocumentNumber);
+        Assert.Equal("cp-dto", dto.CounterpartyReference);
+        Assert.Equal("USD", dto.Currency);
+        Assert.Equal(nameof(InvoiceStatus.Draft), dto.Status);
+        Assert.Equal(50m, dto.TotalAmount);
+        Assert.Equal(T0, dto.CreatedAtUtc);
+        Assert.Equal(T1, dto.UpdatedAtUtc);
+        Assert.Null(dto.DueDateUtc);
+        Assert.Null(dto.IssuedAtUtc);
+        var line = Assert.Single(dto.Lines);
+        Assert.Equal(2m, line.Quantity);
+        Assert.Equal(25m, line.UnitPrice);
+        Assert.Equal(50m, line.LineAmount);
+        Assert.Equal("Item", line.Description);
+    }
+
+    [Fact]
+    public async Task List_rejects_empty_workspace_id()
+    {
+        var (invoices, _, _) = CreateHarness();
+
+        var result = await new GetInvoicesHandler(invoices).HandleAsync(
+            new GetInvoicesQuery(Guid.Empty));
+
+        Assert.Equal(ApplicationErrorKind.ValidationFailed, result.ErrorKind);
+        Assert.Equal(0, invoices.ListByWorkspaceCallCount);
+    }
+
+    [Fact]
     public async Task ChangeDocumentNumber_updates_and_saves_once()
     {
         var (invoices, workspaces, clock) = CreateHarness();
@@ -454,6 +552,7 @@ public sealed class InvoiceApplicationTests
 
         Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(CreateInvoiceHandler));
         Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(GetInvoiceHandler));
+        Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(GetInvoicesHandler));
         Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(IssueInvoiceHandler));
         Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(AddInvoiceLineHandler));
         Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(UpdateInvoiceLineHandler));

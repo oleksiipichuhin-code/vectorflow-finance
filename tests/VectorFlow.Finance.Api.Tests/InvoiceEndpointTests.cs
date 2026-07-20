@@ -82,6 +82,78 @@ public sealed class InvoiceEndpointTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task List_returns_only_requested_workspace_newest_first()
+    {
+        var workspaceA = await CreateWorkspaceAsync(
+            Guid.Parse("c1000000-0000-0000-0000-000000000020"),
+            Guid.Parse("c2000000-0000-0000-0000-000000000020"));
+        var workspaceB = await CreateWorkspaceAsync(
+            Guid.Parse("d1000000-0000-0000-0000-000000000020"),
+            Guid.Parse("d2000000-0000-0000-0000-000000000020"));
+
+        var older = await CreateInvoiceAsync(workspaceA, "INV-OLD", "cp-old", "UAH");
+        await Task.Delay(20);
+        var newer = await CreateInvoiceAsync(workspaceA, "INV-NEW", "cp-new", "UAH");
+        await CreateInvoiceAsync(workspaceB, "INV-OTHER", "cp-other", "USD");
+
+        var response = await _client.GetAsync($"/api/finance-workspaces/{workspaceA}/invoices");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(2, document.RootElement.GetArrayLength());
+        Assert.Equal(newer, document.RootElement[0].GetProperty("id").GetGuid());
+        Assert.Equal(older, document.RootElement[1].GetProperty("id").GetGuid());
+        Assert.Equal("INV-NEW", document.RootElement[0].GetProperty("documentNumber").GetString());
+        Assert.Equal("Draft", document.RootElement[0].GetProperty("status").GetString());
+        Assert.True(document.RootElement[0].TryGetProperty("createdAtUtc", out _));
+        Assert.True(document.RootElement[0].TryGetProperty("lines", out _));
+    }
+
+    [Fact]
+    public async Task List_empty_workspace_returns_empty_array()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("c1000000-0000-0000-0000-000000000021"),
+            Guid.Parse("c2000000-0000-0000-0000-000000000021"));
+
+        var response = await _client.GetAsync($"/api/finance-workspaces/{workspaceId}/invoices");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(0, document.RootElement.GetArrayLength());
+    }
+
+    [Fact]
+    public async Task List_empty_finance_workspace_id_returns_400()
+    {
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{Guid.Empty}/invoices");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        await AssertErrorAsync(response, "ValidationFailed");
+    }
+
+    [Fact]
+    public async Task Get_by_id_still_resolves_after_list_route()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("c1000000-0000-0000-0000-000000000022"),
+            Guid.Parse("c2000000-0000-0000-0000-000000000022"));
+        var invoiceId = await CreateInvoiceAsync(workspaceId, "INV-GET-LIST", "cp-get", "EUR");
+
+        var list = await _client.GetAsync($"/api/finance-workspaces/{workspaceId}/invoices");
+        Assert.Equal(HttpStatusCode.OK, list.StatusCode);
+
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices/{invoiceId}");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(invoiceId, document.RootElement.GetProperty("id").GetGuid());
+        Assert.Equal("INV-GET-LIST", document.RootElement.GetProperty("documentNumber").GetString());
+    }
+
+    [Fact]
     public async Task Create_missing_workspace_returns_404()
     {
         var response = await _client.PostAsJsonAsync(
@@ -354,7 +426,9 @@ public sealed class InvoiceEndpointTests : IAsyncLifetime
         var json = await response.Content.ReadAsStringAsync();
         Assert.Contains("/api/finance-workspaces/{financeWorkspaceId}/invoices", json);
         Assert.Contains("CreateInvoice", json);
+        Assert.Contains("ListInvoices", json);
         Assert.Contains("IssueInvoice", json);
+        Assert.Contains("GetInvoiceById", json);
     }
 
     private async Task<Guid> CreateWorkspaceAsync(Guid organizationId, Guid platformWorkspaceId)

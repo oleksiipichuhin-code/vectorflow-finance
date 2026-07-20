@@ -19,6 +19,12 @@ internal static class InvoiceEndpoints
             .Produces(StatusCodes.Status400BadRequest)
             .Produces(StatusCodes.Status404NotFound);
 
+        group.MapGet("/", ListAsync)
+            .WithName("ListInvoices")
+            .WithSummary("List invoices for a finance workspace (newest first).")
+            .Produces(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status400BadRequest);
+
         group.MapGet("/{invoiceId:guid}", GetByIdAsync)
             .WithName("GetInvoiceById")
             .WithSummary("Get an invoice by id within a finance workspace.")
@@ -108,6 +114,18 @@ internal static class InvoiceEndpoints
             cancellationToken);
 
         return ApplicationResultHttp.ToHttpResult(result, StatusCodes.Status201Created);
+    }
+
+    private static async Task<IResult> ListAsync(
+        Guid financeWorkspaceId,
+        GetInvoicesHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new GetInvoicesQuery(financeWorkspaceId),
+            cancellationToken);
+
+        return ApplicationResultHttp.ToHttpResult(result);
     }
 
     private static async Task<IResult> GetByIdAsync(

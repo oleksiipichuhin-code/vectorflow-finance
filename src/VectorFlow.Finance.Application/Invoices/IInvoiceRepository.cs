@@ -14,6 +14,13 @@ public interface IInvoiceRepository
         InvoiceId id,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Returns invoices for the workspace ordered by CreatedAt descending, then Id descending.
+    /// </summary>
+    Task<IReadOnlyList<Invoice>> ListByWorkspaceAsync(
+        FinanceWorkspaceId financeWorkspaceId,
+        CancellationToken cancellationToken = default);
+
     Task AddAsync(
         Invoice invoice,
         CancellationToken cancellationToken = default);

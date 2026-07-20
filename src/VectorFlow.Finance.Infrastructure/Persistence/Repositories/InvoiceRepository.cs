@@ -26,6 +26,20 @@ public sealed class InvoiceRepository : IInvoiceRepository
                     invoice.Id == id,
                 cancellationToken);
 
+    public async Task<IReadOnlyList<Invoice>> ListByWorkspaceAsync(
+        FinanceWorkspaceId financeWorkspaceId,
+        CancellationToken cancellationToken = default)
+    {
+        var invoices = await InvoicesWithLines()
+            .Where(invoice => invoice.FinanceWorkspaceId == financeWorkspaceId)
+            .ToListAsync(cancellationToken);
+
+        return invoices
+            .OrderByDescending(invoice => invoice.CreatedAt)
+            .ThenByDescending(invoice => invoice.Id.Value)
+            .ToList();
+    }
+
     public async Task AddAsync(
         Invoice invoice,
         CancellationToken cancellationToken = default)

@@ -10,6 +10,10 @@ internal sealed class InMemoryInvoiceRepository : IInvoiceRepository
 
     public int GetByIdCallCount { get; private set; }
 
+    public int ListByWorkspaceCallCount { get; private set; }
+
+    public FinanceWorkspaceId? LastListedWorkspaceId { get; private set; }
+
     public int AddCallCount { get; private set; }
 
     public int SaveChangesCallCount { get; private set; }
@@ -28,6 +32,22 @@ internal sealed class InMemoryInvoiceRepository : IInvoiceRepository
         }
 
         return Task.FromResult<Invoice?>(null);
+    }
+
+    public Task<IReadOnlyList<Invoice>> ListByWorkspaceAsync(
+        FinanceWorkspaceId financeWorkspaceId,
+        CancellationToken cancellationToken = default)
+    {
+        ListByWorkspaceCallCount++;
+        LastListedWorkspaceId = financeWorkspaceId;
+
+        IReadOnlyList<Invoice> invoices = _byId.Values
+            .Where(invoice => invoice.FinanceWorkspaceId == financeWorkspaceId)
+            .OrderByDescending(invoice => invoice.CreatedAt)
+            .ThenByDescending(invoice => invoice.Id.Value)
+            .ToList();
+
+        return Task.FromResult(invoices);
     }
 
     public Task AddAsync(Invoice invoice, CancellationToken cancellationToken = default)

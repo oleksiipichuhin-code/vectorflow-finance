@@ -104,6 +104,77 @@ public sealed class InvoiceRepositoryTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ListByWorkspace_returns_only_workspace_newest_first()
+    {
+        var older = Invoice.Create(
+            InvoiceId.New(),
+            _workspaceA,
+            "INV-OLD",
+            new CounterpartyReference("cp-old"),
+            new Currency("UAH"),
+            T0);
+        var newer = Invoice.Create(
+            InvoiceId.New(),
+            _workspaceA,
+            "INV-NEW",
+            new CounterpartyReference("cp-new"),
+            new Currency("UAH"),
+            T1);
+        var other = Invoice.Create(
+            InvoiceId.New(),
+            _workspaceB,
+            "INV-OTHER",
+            new CounterpartyReference("cp-other"),
+            new Currency("USD"),
+            T2);
+
+        await _repository.AddAsync(older);
+        await _repository.AddAsync(newer);
+        await _repository.AddAsync(other);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var listed = await new InvoiceRepository(readContext).ListByWorkspaceAsync(_workspaceA);
+
+        Assert.Equal(2, listed.Count);
+        Assert.Equal(newer.Id, listed[0].Id);
+        Assert.Equal(older.Id, listed[1].Id);
+    }
+
+    [Fact]
+    public async Task ListByWorkspace_empty_returns_empty_collection()
+    {
+        await using var readContext = CreateContext();
+        var listed = await new InvoiceRepository(readContext).ListByWorkspaceAsync(_workspaceA);
+
+        Assert.Empty(listed);
+    }
+
+    [Fact]
+    public async Task GetById_after_list_still_round_trips()
+    {
+        var invoice = Invoice.Create(
+            InvoiceId.New(),
+            _workspaceA,
+            "INV-GET",
+            new CounterpartyReference("cp-get"),
+            new Currency("EUR"),
+            T0);
+
+        await _repository.AddAsync(invoice);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var repo = new InvoiceRepository(readContext);
+        var listed = await repo.ListByWorkspaceAsync(_workspaceA);
+        Assert.Equal(invoice.Id, Assert.Single(listed).Id);
+
+        var loaded = await repo.GetByIdAsync(_workspaceA, invoice.Id);
+        Assert.NotNull(loaded);
+        Assert.Equal("INV-GET", loaded.DocumentNumber);
+    }
+
+    [Fact]
     public async Task GetById_same_workspace_returns_invoice()
     {
         var invoice = Invoice.Create(

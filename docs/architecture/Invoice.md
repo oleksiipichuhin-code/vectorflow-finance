@@ -59,30 +59,32 @@ Application use cases over the F4E aggregate (no persistence implementation, no 
 
 - create invoice in an existing finance workspace;
 - get invoice by id (workspace-scoped);
+- list invoices for a finance workspace (CreatedAt descending, then InvoiceId descending; empty list when none);
 - draft mutations: document number, counterparty reference, currency, due date, add/update/remove line;
 - issue invoice (`Draft` → `Issued`).
 
-`IInvoiceRepository` is the Application persistence port (`GetByIdAsync` always workspace-scoped, `AddAsync`, `SaveChangesAsync`). Listing and get-by-document-number remain later slices. Issue does not create journal entries or ledger postings.
+`IInvoiceRepository` is the Application persistence port (`GetByIdAsync` and `ListByWorkspaceAsync` always workspace-scoped, `AddAsync`, `SaveChangesAsync`). Get-by-document-number, search, filters, and pagination remain later slices. Issue does not create journal entries or ledger postings.
 
 ## Persistence (F4E3)
 
 Invoice aggregates are stored via EF Core in Infrastructure:
 
-- `InvoiceRepository` implements `IInvoiceRepository` with workspace-scoped `GetByIdAsync`;
+- `InvoiceRepository` implements `IInvoiceRepository` with workspace-scoped `GetByIdAsync` and `ListByWorkspaceAsync` (CreatedAt descending, then Id descending);
 - `Invoice` and `InvoiceLine` map as aggregate root + child rows (`_lines` field access, cascade delete);
 - `TotalAmount` and `DomainEvents` are not persisted columns;
 - migration `AddInvoices` creates `Invoices` / `InvoiceLines`;
 - `DocumentNumber` uniqueness is not enforced at the database;
-- listing and get-by-document-number are not implemented;
+- get-by-document-number, search, filters, and pagination are not implemented;
 - general-ledger posting, payments, and accruals remain later slices.
 
-## HTTP surface (F4E4)
+## HTTP surface (F4E4 / F4J)
 
 Workspace-scoped Invoice HTTP API under `/api/finance-workspaces/{financeWorkspaceId}/invoices`:
 
 | Method | Route | Application use case | Success |
 |--------|-------|----------------------|---------|
 | POST | `/` | Create invoice | 201 |
+| GET | `/` | List invoices for workspace (newest first) | 200 |
 | GET | `/{invoiceId}` | Get by id | 200 |
 | POST | `/{invoiceId}/change-document-number` | Change document number | 200 |
 | POST | `/{invoiceId}/change-counterparty` | Change counterparty | 200 |
@@ -93,6 +95,6 @@ Workspace-scoped Invoice HTTP API under `/api/finance-workspaces/{financeWorkspa
 | DELETE | `/{invoiceId}/lines/{lineId}` | Remove line | 200 |
 | POST | `/{invoiceId}/issue` | Issue invoice | 200 |
 
-Status mapping via existing `ApplicationResultHttp`: ValidationFailed → 400, NotFound → 404, Conflict → 409. Response body is the Application `InvoiceDto`.
+Status mapping via existing `ApplicationResultHttp`: ValidationFailed → 400, NotFound → 404, Conflict → 409. Single-invoice responses use Application `InvoiceDto`. List returns a JSON array of `InvoiceDto` (empty array when the workspace has no invoices; not 404). List ordering: `CreatedAt` descending, then `InvoiceId` descending. List does not include search, filters, pagination, or total-count metadata.
 
-Deferred: list/search/pagination, get-by-document-number, payments, accruals, ledger posting from Issue, authorization redesign.
+Deferred: search/pagination/filters, get-by-document-number, payments, accruals, ledger posting from Issue, authorization redesign.
