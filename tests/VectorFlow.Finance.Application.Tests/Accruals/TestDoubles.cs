@@ -1,5 +1,6 @@
 using VectorFlow.Finance.Application.Accruals;
 using VectorFlow.Finance.Domain.Accruals;
+using VectorFlow.Finance.Domain.Invoices;
 using VectorFlow.Finance.Domain.Workspaces;
 
 namespace VectorFlow.Finance.Application.Tests.Accruals;
@@ -12,7 +13,11 @@ internal sealed class InMemoryAccrualRepository : IAccrualRepository
 
     public int ListByWorkspaceCallCount { get; private set; }
 
+    public int ListBySourceInvoiceCallCount { get; private set; }
+
     public FinanceWorkspaceId? LastListedWorkspaceId { get; private set; }
+
+    public InvoiceId? LastListedSourceInvoiceId { get; private set; }
 
     public int AddCallCount { get; private set; }
 
@@ -43,6 +48,26 @@ internal sealed class InMemoryAccrualRepository : IAccrualRepository
 
         IReadOnlyList<Accrual> accruals = _byId.Values
             .Where(accrual => accrual.FinanceWorkspaceId == financeWorkspaceId)
+            .OrderByDescending(accrual => accrual.CreatedAt)
+            .ThenByDescending(accrual => accrual.Id.Value)
+            .ToList();
+
+        return Task.FromResult(accruals);
+    }
+
+    public Task<IReadOnlyList<Accrual>> ListBySourceInvoiceAsync(
+        FinanceWorkspaceId financeWorkspaceId,
+        InvoiceId sourceInvoiceId,
+        CancellationToken cancellationToken = default)
+    {
+        ListBySourceInvoiceCallCount++;
+        LastListedWorkspaceId = financeWorkspaceId;
+        LastListedSourceInvoiceId = sourceInvoiceId;
+
+        IReadOnlyList<Accrual> accruals = _byId.Values
+            .Where(accrual =>
+                accrual.FinanceWorkspaceId == financeWorkspaceId &&
+                accrual.SourceInvoiceId == sourceInvoiceId)
             .OrderByDescending(accrual => accrual.CreatedAt)
             .ThenByDescending(accrual => accrual.Id.Value)
             .ToList();

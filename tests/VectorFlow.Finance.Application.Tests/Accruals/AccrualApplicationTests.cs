@@ -10,6 +10,7 @@ using VectorFlow.Finance.Application.Workspaces.Commands;
 using VectorFlow.Finance.Application.Workspaces.Handlers;
 using VectorFlow.Finance.Domain;
 using VectorFlow.Finance.Domain.Accruals;
+using VectorFlow.Finance.Domain.Invoices;
 using VectorFlow.Finance.Domain.Workspaces;
 using Xunit;
 
@@ -409,6 +410,182 @@ public sealed class AccrualApplicationTests
     }
 
     [Fact]
+    public async Task ListByInvoice_returns_all_matching_source_invoice_accruals()
+    {
+        var (accruals, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        var otherInvoiceId = Guid.Parse("33333333-3333-3333-3333-333333333333");
+
+        clock.UtcNow = T0;
+        var older = await CreateAccrualAsync(
+            accruals, workspaces, clock, workspaceId, description: "Older", sourceInvoiceId: SourceInvoiceId);
+        clock.UtcNow = T1;
+        var newer = await CreateAccrualAsync(
+            accruals, workspaces, clock, workspaceId, description: "Newer", sourceInvoiceId: SourceInvoiceId);
+        clock.UtcNow = T2;
+        await CreateAccrualAsync(
+            accruals, workspaces, clock, workspaceId, description: "Other invoice", sourceInvoiceId: otherInvoiceId);
+        await CreateAccrualAsync(
+            accruals, workspaces, clock, workspaceId, description: "Null source");
+
+        var result = await new GetAccrualsByInvoiceHandler(accruals).HandleAsync(
+            new GetAccrualsByInvoiceQuery(workspaceId, SourceInvoiceId));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(2, result.Value!.Count);
+        Assert.Equal(newer.Id, result.Value[0].Id);
+        Assert.Equal(older.Id, result.Value[1].Id);
+        Assert.Equal(1, accruals.ListBySourceInvoiceCallCount);
+        Assert.Equal(workspaceId, accruals.LastListedWorkspaceId!.Value.Value);
+        Assert.Equal(SourceInvoiceId, accruals.LastListedSourceInvoiceId!.Value.Value);
+    }
+
+    [Fact]
+    public async Task ListByInvoice_empty_returns_empty_list()
+    {
+        var (accruals, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "Null source");
+
+        var result = await new GetAccrualsByInvoiceHandler(accruals).HandleAsync(
+            new GetAccrualsByInvoiceQuery(workspaceId, SourceInvoiceId));
+
+        Assert.True(result.IsSuccess);
+        Assert.Empty(result.Value!);
+        Assert.Equal(1, accruals.ListBySourceInvoiceCallCount);
+    }
+
+    [Fact]
+    public async Task ListByInvoice_excludes_other_workspace()
+    {
+        var (accruals, workspaces, clock) = CreateHarness();
+        var workspaceA = await SeedWorkspaceAsync(workspaces, clock);
+        var workspaceB = await SeedWorkspaceAsync(
+            workspaces,
+            clock,
+            Guid.Parse("cccccccc-3333-3333-3333-333333333333"),
+            Guid.Parse("dddddddd-4444-4444-4444-444444444444"),
+            "Other");
+
+        await CreateAccrualAsync(
+            accruals, workspaces, clock, workspaceA, description: "A", sourceInvoiceId: SourceInvoiceId);
+        await CreateAccrualAsync(
+            accruals, workspaces, clock, workspaceB, description: "B", sourceInvoiceId: SourceInvoiceId);
+
+        var result = await new GetAccrualsByInvoiceHandler(accruals).HandleAsync(
+            new GetAccrualsByInvoiceQuery(workspaceA, SourceInvoiceId));
+
+        Assert.True(result.IsSuccess);
+        var dto = Assert.Single(result.Value!);
+        Assert.Equal("A", dto.Description);
+        Assert.Equal(workspaceA, dto.FinanceWorkspaceId);
+    }
+
+    [Fact]
+    public async Task ListByInvoice_equal_created_at_orders_by_id_descending()
+    {
+        var (accruals, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        var workspace = new FinanceWorkspaceId(workspaceId);
+        var sourceInvoiceId = new InvoiceId(SourceInvoiceId);
+        var lowerId = new AccrualId(Guid.Parse("11111111-1111-1111-1111-111111111111"));
+        var higherId = new AccrualId(Guid.Parse("99999999-9999-9999-9999-999999999999"));
+
+        await accruals.AddAsync(Accrual.Create(
+            lowerId,
+            workspace,
+            AccrualType.Revenue,
+            10m,
+            new Currency("UAH"),
+            RecognitionDate,
+            "Lower id",
+            sourceInvoiceId,
+            T0));
+        await accruals.AddAsync(Accrual.Create(
+            higherId,
+            workspace,
+            AccrualType.Expense,
+            20m,
+            new Currency("UAH"),
+            RecognitionDate,
+            "Higher id",
+            sourceInvoiceId,
+            T0));
+
+        var result = await new GetAccrualsByInvoiceHandler(accruals).HandleAsync(
+            new GetAccrualsByInvoiceQuery(workspaceId, SourceInvoiceId));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(2, result.Value!.Count);
+        Assert.Equal(higherId.Value, result.Value[0].Id);
+        Assert.Equal(lowerId.Value, result.Value[1].Id);
+    }
+
+    [Fact]
+    public async Task ListByInvoice_maps_accrual_dto_fields()
+    {
+        var (accruals, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        clock.UtcNow = T0;
+        var created = await CreateAccrualAsync(
+            accruals,
+            workspaces,
+            clock,
+            workspaceId,
+            type: "Expense",
+            amount: 42.5m,
+            currency: "usd",
+            recognitionDate: RecognitionDateAlt,
+            description: "  Mapped by invoice  ",
+            sourceInvoiceId: SourceInvoiceId);
+
+        var result = await new GetAccrualsByInvoiceHandler(accruals).HandleAsync(
+            new GetAccrualsByInvoiceQuery(workspaceId, SourceInvoiceId));
+
+        Assert.True(result.IsSuccess);
+        var dto = Assert.Single(result.Value!);
+        Assert.Equal(created.Id, dto.Id);
+        Assert.Equal(workspaceId, dto.FinanceWorkspaceId);
+        Assert.Equal(nameof(AccrualType.Expense), dto.Type);
+        Assert.Equal(42.5m, dto.Amount);
+        Assert.Equal("USD", dto.Currency);
+        Assert.Equal(RecognitionDateAlt, dto.RecognitionDateUtc);
+        Assert.Equal("Mapped by invoice", dto.Description);
+        Assert.Equal(SourceInvoiceId, dto.SourceInvoiceId);
+        Assert.Equal(nameof(AccrualStatus.Draft), dto.Status);
+        Assert.Equal(T0, dto.CreatedAtUtc);
+        Assert.Equal(T0, dto.UpdatedAtUtc);
+        Assert.Null(dto.RecognizedAtUtc);
+        Assert.Null(dto.ReversedAtUtc);
+        Assert.Null(dto.ReversalReason);
+    }
+
+    [Fact]
+    public async Task ListByInvoice_rejects_empty_workspace_id()
+    {
+        var (accruals, _, _) = CreateHarness();
+
+        var result = await new GetAccrualsByInvoiceHandler(accruals).HandleAsync(
+            new GetAccrualsByInvoiceQuery(Guid.Empty, SourceInvoiceId));
+
+        Assert.Equal(ApplicationErrorKind.ValidationFailed, result.ErrorKind);
+        Assert.Equal(0, accruals.ListBySourceInvoiceCallCount);
+    }
+
+    [Fact]
+    public async Task ListByInvoice_rejects_empty_invoice_id()
+    {
+        var (accruals, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        var result = await new GetAccrualsByInvoiceHandler(accruals).HandleAsync(
+            new GetAccrualsByInvoiceQuery(workspaceId, Guid.Empty));
+
+        Assert.Equal(ApplicationErrorKind.ValidationFailed, result.ErrorKind);
+        Assert.Equal(0, accruals.ListBySourceInvoiceCallCount);
+    }
+
+    [Fact]
     public async Task ChangeType_updates_and_saves_once()
     {
         var (accruals, workspaces, clock) = CreateHarness();
@@ -651,6 +828,7 @@ public sealed class AccrualApplicationTests
         Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(CreateAccrualHandler));
         Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(GetAccrualHandler));
         Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(GetAccrualsHandler));
+        Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(GetAccrualsByInvoiceHandler));
         Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(ChangeAccrualTypeHandler));
         Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(ChangeAccrualAmountHandler));
         Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(ChangeAccrualCurrencyHandler));

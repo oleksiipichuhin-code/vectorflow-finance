@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using VectorFlow.Finance.Application.Accruals;
 using VectorFlow.Finance.Domain.Accruals;
+using VectorFlow.Finance.Domain.Invoices;
 using VectorFlow.Finance.Domain.Workspaces;
 using VectorFlow.Finance.Infrastructure.Persistence;
 
@@ -32,6 +33,23 @@ public sealed class AccrualRepository : IAccrualRepository
     {
         var accruals = await _dbContext.Accruals
             .Where(accrual => accrual.FinanceWorkspaceId == financeWorkspaceId)
+            .ToListAsync(cancellationToken);
+
+        return accruals
+            .OrderByDescending(accrual => accrual.CreatedAt)
+            .ThenByDescending(accrual => accrual.Id.Value)
+            .ToList();
+    }
+
+    public async Task<IReadOnlyList<Accrual>> ListBySourceInvoiceAsync(
+        FinanceWorkspaceId financeWorkspaceId,
+        InvoiceId sourceInvoiceId,
+        CancellationToken cancellationToken = default)
+    {
+        var accruals = await _dbContext.Accruals
+            .Where(accrual =>
+                accrual.FinanceWorkspaceId == financeWorkspaceId &&
+                accrual.SourceInvoiceId == sourceInvoiceId)
             .ToListAsync(cancellationToken);
 
         return accruals

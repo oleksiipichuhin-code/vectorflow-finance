@@ -25,6 +25,12 @@ internal static class AccrualEndpoints
             .Produces(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status400BadRequest);
 
+        group.MapGet("/by-invoice/{invoiceId:guid}", ListByInvoiceAsync)
+            .WithName("ListAccrualsByInvoice")
+            .WithSummary("List accruals for a finance workspace that reference a source invoice (newest first).")
+            .Produces(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status400BadRequest);
+
         group.MapGet("/{accrualId:guid}", GetByIdAsync)
             .WithName("GetAccrualById")
             .WithSummary("Get an accrual by id within a finance workspace.")
@@ -126,6 +132,19 @@ internal static class AccrualEndpoints
     {
         var result = await handler.HandleAsync(
             new GetAccrualsQuery(financeWorkspaceId),
+            cancellationToken);
+
+        return ApplicationResultHttp.ToHttpResult(result);
+    }
+
+    private static async Task<IResult> ListByInvoiceAsync(
+        Guid financeWorkspaceId,
+        Guid invoiceId,
+        GetAccrualsByInvoiceHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new GetAccrualsByInvoiceQuery(financeWorkspaceId, invoiceId),
             cancellationToken);
 
         return ApplicationResultHttp.ToHttpResult(result);

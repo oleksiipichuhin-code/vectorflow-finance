@@ -139,11 +139,12 @@ Application use cases over the F4F aggregate (no persistence implementation, no 
 - create accrual in an existing finance workspace;
 - get accrual by id (workspace-scoped);
 - list accruals for a finance workspace (CreatedAt descending, then AccrualId descending; empty list when none);
+- list accruals by source invoice id within a finance workspace (CreatedAt descending, then AccrualId descending; empty list when none; multiple accruals may share one SourceInvoiceId; Invoice existence is not validated);
 - draft mutations: type, amount, currency, recognition date, description, source invoice (set/clear via nullable id);
 - recognize accrual (`Draft` → `Recognized`);
 - reverse accrual (`Recognized` → `Reversed`).
 
-`IAccrualRepository` is the Application persistence port (`GetByIdAsync` and `ListByWorkspaceAsync` always workspace-scoped, `AddAsync`, `SaveChangesAsync`). Get-by-invoice, search, filters, and pagination remain later slices.
+`IAccrualRepository` is the Application persistence port (`GetByIdAsync`, `ListByWorkspaceAsync`, and `ListBySourceInvoiceAsync` always workspace-scoped, `AddAsync`, `SaveChangesAsync`). Search, filters, and pagination remain later slices.
 
 Result mapping follows Invoice Application:
 
@@ -161,15 +162,15 @@ Source invoice existence is **not** checked in Application (same posture as Doma
 
 Accrual aggregates are stored via EF Core in Infrastructure:
 
-- `AccrualRepository` implements `IAccrualRepository` with workspace-scoped `GetByIdAsync` and `ListByWorkspaceAsync` (CreatedAt descending, then Id descending);
+- `AccrualRepository` implements `IAccrualRepository` with workspace-scoped `GetByIdAsync`, `ListByWorkspaceAsync`, and `ListBySourceInvoiceAsync` (CreatedAt descending, then Id descending; filter by FinanceWorkspaceId and SourceInvoiceId; no Invoice join);
 - Domain `Accrual` maps directly (no separate persistence entity);
 - `DomainEvents` is not a persisted column;
 - nullable `SourceInvoiceId` stores optional `InvoiceId` as `Guid?` with **no** FK to `Invoices` and **no** uniqueness constraint;
 - lifecycle fields (`Status`, `RecognizedAt`, `ReversedAt`, `ReversalReason`, timestamps) round-trip faithfully through private-constructor materialization;
 - migration `AddAccruals` creates table `Accruals` with workspace FK (`Restrict`) and `IX_Accruals_FinanceWorkspaceId`;
-- get-by-invoice, search, filters, pagination, Invoice existence validation, concurrency tokens, ledger posting, and payments remain later slices.
+- search, filters, pagination, Invoice existence validation, concurrency tokens, ledger posting, and payments remain later slices.
 
-## HTTP surface (F4I / F4K)
+## HTTP surface (F4I / F4K / F4L)
 
 Workspace-scoped Accrual HTTP API under `/api/finance-workspaces/{financeWorkspaceId}/accruals`:
 
@@ -177,6 +178,7 @@ Workspace-scoped Accrual HTTP API under `/api/finance-workspaces/{financeWorkspa
 |--------|-------|----------------------|---------|
 | POST | `/` | Create accrual | 201 |
 | GET | `/` | List accruals for workspace (newest first) | 200 |
+| GET | `/by-invoice/{invoiceId}` | List accruals by source invoice id (newest first) | 200 |
 | GET | `/{accrualId}` | Get by id | 200 |
 | POST | `/{accrualId}/change-type` | Change type | 200 |
 | POST | `/{accrualId}/change-amount` | Change amount | 200 |
@@ -187,9 +189,9 @@ Workspace-scoped Accrual HTTP API under `/api/finance-workspaces/{financeWorkspa
 | POST | `/{accrualId}/recognize` | Recognize accrual | 200 |
 | POST | `/{accrualId}/reverse` | Reverse accrual | 200 |
 
-Status mapping via existing `ApplicationResultHttp`: ValidationFailed → 400, NotFound → 404 (missing or cross-workspace), Conflict → 409. Single-accrual responses use Application `AccrualDto`. List returns a JSON array of `AccrualDto` (empty array when the workspace has no accruals; not 404). List is read-only. List ordering: `CreatedAt` descending, then `AccrualId` descending. List does not include search, filters, pagination, get-by-invoice, or total-count metadata.
+Status mapping via existing `ApplicationResultHttp`: ValidationFailed → 400, NotFound → 404 (missing or cross-workspace), Conflict → 409. Single-accrual responses use Application `AccrualDto`. List and list-by-invoice return a JSON array of `AccrualDto` (empty array when none; not 404). List and list-by-invoice are read-only. Ordering: `CreatedAt` descending, then `AccrualId` descending. List-by-invoice filters by workspace and `SourceInvoiceId`; multiple accruals may share one source invoice; Invoice existence is not validated; there is no FK or uniqueness guarantee. List and list-by-invoice do not include search, filters, pagination, or total-count metadata.
 
-Deferred: search/pagination/filters, get-by-invoice, Invoice existence validation, ledger posting from Recognize/Reverse, concurrency tokens, compensating accruals, authorization redesign, background recognition jobs.
+Deferred: search/pagination/filters, Invoice existence validation, ledger posting from Recognize/Reverse, concurrency tokens, compensating accruals, authorization redesign, background recognition jobs.
 
 ## Notes on conventions adapted for F4F
 

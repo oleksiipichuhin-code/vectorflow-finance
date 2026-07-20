@@ -167,6 +167,126 @@ public sealed class AccrualEndpointTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task List_by_invoice_returns_matching_accruals_newest_first()
+    {
+        var workspaceA = await CreateWorkspaceAsync(
+            Guid.Parse("a1000000-0000-0000-0000-000000000040"),
+            Guid.Parse("a2000000-0000-0000-0000-000000000040"));
+        var workspaceB = await CreateWorkspaceAsync(
+            Guid.Parse("b1000000-0000-0000-0000-000000000040"),
+            Guid.Parse("b2000000-0000-0000-0000-000000000040"));
+        var invoiceId = Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+        var otherInvoiceId = Guid.Parse("bbbbbbbb-cccc-dddd-eeee-ffffffffffff");
+
+        var older = await CreateAccrualAsync(workspaceA, "Revenue", 10m, "Older", invoiceId);
+        await Task.Delay(20);
+        var newer = await CreateAccrualAsync(workspaceA, "Expense", 20m, "Newer", invoiceId);
+        await CreateAccrualAsync(workspaceA, "Revenue", 30m, "Other invoice", otherInvoiceId);
+        await CreateAccrualAsync(workspaceA, "Expense", 40m, "Null source");
+        await CreateAccrualAsync(workspaceB, "Revenue", 50m, "Other workspace", invoiceId);
+
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceA}/accruals/by-invoice/{invoiceId}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(JsonValueKind.Array, document.RootElement.ValueKind);
+        Assert.Equal(2, document.RootElement.GetArrayLength());
+        Assert.Equal(newer, document.RootElement[0].GetProperty("id").GetGuid());
+        Assert.Equal(older, document.RootElement[1].GetProperty("id").GetGuid());
+        Assert.Equal("Newer", document.RootElement[0].GetProperty("description").GetString());
+        Assert.Equal(invoiceId, document.RootElement[0].GetProperty("sourceInvoiceId").GetGuid());
+        Assert.Equal(invoiceId, document.RootElement[1].GetProperty("sourceInvoiceId").GetGuid());
+        Assert.True(document.RootElement[0].TryGetProperty("createdAtUtc", out _));
+        Assert.True(document.RootElement[0].TryGetProperty("type", out _));
+        Assert.True(document.RootElement[0].TryGetProperty("amount", out _));
+    }
+
+    [Fact]
+    public async Task List_by_invoice_empty_returns_200_with_empty_array()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("a1000000-0000-0000-0000-000000000041"),
+            Guid.Parse("a2000000-0000-0000-0000-000000000041"));
+        await CreateAccrualAsync(workspaceId, "Revenue", 10m, "Null source");
+        var unknownInvoiceId = Guid.Parse("cccccccc-dddd-eeee-ffff-aaaaaaaaaaaa");
+
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/accruals/by-invoice/{unknownInvoiceId}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(JsonValueKind.Array, document.RootElement.ValueKind);
+        Assert.Equal(0, document.RootElement.GetArrayLength());
+    }
+
+    [Fact]
+    public async Task List_by_invoice_unknown_invoice_id_returns_200_empty_without_invoice_row()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("a1000000-0000-0000-0000-000000000042"),
+            Guid.Parse("a2000000-0000-0000-0000-000000000042"));
+        var unknownInvoiceId = Guid.NewGuid();
+
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/accruals/by-invoice/{unknownInvoiceId}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(0, document.RootElement.GetArrayLength());
+    }
+
+    [Fact]
+    public async Task List_by_invoice_empty_finance_workspace_id_returns_400()
+    {
+        var invoiceId = Guid.Parse("dddddddd-eeee-ffff-aaaa-bbbbbbbbbbbb");
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{Guid.Empty}/accruals/by-invoice/{invoiceId}");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        await AssertErrorAsync(response, "ValidationFailed");
+    }
+
+    [Fact]
+    public async Task List_by_invoice_empty_invoice_id_returns_400()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("a1000000-0000-0000-0000-000000000043"),
+            Guid.Parse("a2000000-0000-0000-0000-000000000043"));
+
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/accruals/by-invoice/{Guid.Empty}");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        await AssertErrorAsync(response, "ValidationFailed");
+    }
+
+    [Fact]
+    public async Task List_and_get_by_id_still_resolve_after_by_invoice_route()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("a1000000-0000-0000-0000-000000000044"),
+            Guid.Parse("a2000000-0000-0000-0000-000000000044"));
+        var invoiceId = Guid.Parse("eeeeeeee-ffff-aaaa-bbbb-cccccccccccc");
+        var accrualId = await CreateAccrualAsync(workspaceId, "Revenue", 40m, "After by-invoice", invoiceId);
+
+        var byInvoice = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/accruals/by-invoice/{invoiceId}");
+        Assert.Equal(HttpStatusCode.OK, byInvoice.StatusCode);
+
+        var list = await _client.GetAsync($"/api/finance-workspaces/{workspaceId}/accruals");
+        Assert.Equal(HttpStatusCode.OK, list.StatusCode);
+        using var listDocument = JsonDocument.Parse(await list.Content.ReadAsStringAsync());
+        Assert.Equal(1, listDocument.RootElement.GetArrayLength());
+
+        var get = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/accruals/{accrualId}");
+        Assert.Equal(HttpStatusCode.OK, get.StatusCode);
+        using var getDocument = JsonDocument.Parse(await get.Content.ReadAsStringAsync());
+        Assert.Equal(accrualId, getDocument.RootElement.GetProperty("id").GetGuid());
+    }
+
+    [Fact]
     public async Task Create_missing_workspace_returns_404()
     {
         var response = await _client.PostAsJsonAsync(
@@ -647,20 +767,24 @@ public sealed class AccrualEndpointTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Swagger_includes_accrual_routes_including_list()
+    public async Task Swagger_includes_accrual_routes_including_list_and_by_invoice()
     {
         var response = await _client.GetAsync("/swagger/v1/swagger.json");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         var json = await response.Content.ReadAsStringAsync();
         Assert.Contains("/api/finance-workspaces/{financeWorkspaceId}/accruals", json);
+        Assert.Contains(
+            "/api/finance-workspaces/{financeWorkspaceId}/accruals/by-invoice/{invoiceId}",
+            json);
         Assert.Contains("CreateAccrual", json);
         Assert.Contains("ListAccruals", json);
+        Assert.Contains("ListAccrualsByInvoice", json);
         Assert.Contains("GetAccrualById", json);
         Assert.Contains("RecognizeAccrual", json);
         Assert.Contains("ReverseAccrual", json);
-        Assert.DoesNotContain("/accruals/by-invoice", json);
         Assert.Single(System.Text.RegularExpressions.Regex.Matches(json, "\"ListAccruals\""));
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(json, "\"ListAccrualsByInvoice\""));
     }
 
     private static object ValidCreateBody() => new

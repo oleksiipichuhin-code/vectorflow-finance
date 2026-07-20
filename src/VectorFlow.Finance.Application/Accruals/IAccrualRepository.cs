@@ -1,4 +1,5 @@
 using VectorFlow.Finance.Domain.Accruals;
+using VectorFlow.Finance.Domain.Invoices;
 using VectorFlow.Finance.Domain.Workspaces;
 
 namespace VectorFlow.Finance.Application.Accruals;
@@ -19,6 +20,15 @@ public interface IAccrualRepository
     /// </summary>
     Task<IReadOnlyList<Accrual>> ListByWorkspaceAsync(
         FinanceWorkspaceId financeWorkspaceId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns accruals for the workspace with the given source invoice id,
+    /// ordered by CreatedAt descending, then Id descending.
+    /// </summary>
+    Task<IReadOnlyList<Accrual>> ListBySourceInvoiceAsync(
+        FinanceWorkspaceId financeWorkspaceId,
+        InvoiceId sourceInvoiceId,
         CancellationToken cancellationToken = default);
 
     Task AddAsync(
