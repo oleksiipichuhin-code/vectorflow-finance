@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.OpenApi.Models;
 using VectorFlow.Finance.Application.AccountBalances.Handlers;
 using VectorFlow.Finance.Application.Accounts.Handlers;
+using VectorFlow.Finance.Application.Accruals.Handlers;
 using VectorFlow.Finance.Application.GeneralLedger.Handlers;
 using VectorFlow.Finance.Application.Invoices.Handlers;
 using VectorFlow.Finance.Application.JournalEntries.Handlers;
@@ -13,7 +14,7 @@ namespace VectorFlow.Finance.Api;
 
 /// <summary>
 /// API-layer composition: workspace, account, journal entry, ledger posting, account balance,
-/// trial balance, account statement, and invoice handlers and OpenAPI/Swagger surface.
+/// trial balance, account statement, invoice, and accrual handlers and OpenAPI/Swagger surface.
 /// Infrastructure registrations remain in <c>AddFinanceInfrastructure</c>.
 /// </summary>
 public static class DependencyInjection
@@ -70,6 +71,17 @@ public static class DependencyInjection
         services.AddScoped<RemoveInvoiceLineHandler>();
         services.AddScoped<IssueInvoiceHandler>();
 
+        services.AddScoped<CreateAccrualHandler>();
+        services.AddScoped<GetAccrualHandler>();
+        services.AddScoped<ChangeAccrualTypeHandler>();
+        services.AddScoped<ChangeAccrualAmountHandler>();
+        services.AddScoped<ChangeAccrualCurrencyHandler>();
+        services.AddScoped<ChangeAccrualRecognitionDateHandler>();
+        services.AddScoped<ChangeAccrualDescriptionHandler>();
+        services.AddScoped<ChangeAccrualSourceInvoiceHandler>();
+        services.AddScoped<RecognizeAccrualHandler>();
+        services.AddScoped<ReverseAccrualHandler>();
+
         services.AddEndpointsApiExplorer();
         services.AddSwaggerGen(options =>
         {
@@ -77,7 +89,7 @@ public static class DependencyInjection
             {
                 Title = "VectorFlow Finance API",
                 Version = "v1",
-                Description = "Finance Workspace, Account, Journal Entry, Ledger Posting, Account Balance, Trial Balance, Account Statement, and Invoice HTTP surface."
+                Description = "Finance Workspace, Account, Journal Entry, Ledger Posting, Account Balance, Trial Balance, Account Statement, Invoice, and Accrual HTTP surface."
             });
         });
 

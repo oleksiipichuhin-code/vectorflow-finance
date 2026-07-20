@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using VectorFlow.Finance.Api;
 using VectorFlow.Finance.Api.AccountBalances;
 using VectorFlow.Finance.Api.Accounts;
+using VectorFlow.Finance.Api.Accruals;
 using VectorFlow.Finance.Api.GeneralLedger;
 using VectorFlow.Finance.Api.Invoices;
 using VectorFlow.Finance.Api.JournalEntries;
@@ -80,6 +81,7 @@ app.MapAccountBalanceEndpoints();
 app.MapTrialBalanceEndpoints();
 app.MapAccountStatementEndpoints();
 app.MapInvoiceEndpoints();
+app.MapAccrualEndpoints();
 
 app.Run();
 

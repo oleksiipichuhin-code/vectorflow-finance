@@ -154,7 +154,7 @@ Result mapping follows Invoice Application:
 
 Timestamps come from `IClock.UtcNow` inside handlers (commands do not carry mutation timestamps). Create generates `AccrualId` via `AccrualId.New()`.
 
-Source invoice existence is **not** checked in Application (same posture as Domain). Recognize/Reverse do not post to the ledger. HTTP remains a later slice.
+Source invoice existence is **not** checked in Application (same posture as Domain). Recognize/Reverse do not post to the ledger.
 
 ## Persistence (F4H)
 
@@ -166,7 +166,28 @@ Accrual aggregates are stored via EF Core in Infrastructure:
 - nullable `SourceInvoiceId` stores optional `InvoiceId` as `Guid?` with **no** FK to `Invoices` and **no** uniqueness constraint;
 - lifecycle fields (`Status`, `RecognizedAt`, `ReversedAt`, `ReversalReason`, timestamps) round-trip faithfully through private-constructor materialization;
 - migration `AddAccruals` creates table `Accruals` with workspace FK (`Restrict`) and `IX_Accruals_FinanceWorkspaceId`;
-- listing, get-by-invoice, Invoice existence validation, concurrency tokens, ledger posting, payments, and HTTP remain later slices.
+- listing, get-by-invoice, Invoice existence validation, concurrency tokens, ledger posting, and payments remain later slices.
+
+## HTTP surface (F4I)
+
+Workspace-scoped Accrual HTTP API under `/api/finance-workspaces/{financeWorkspaceId}/accruals`:
+
+| Method | Route | Application use case | Success |
+|--------|-------|----------------------|---------|
+| POST | `/` | Create accrual | 201 |
+| GET | `/{accrualId}` | Get by id | 200 |
+| POST | `/{accrualId}/change-type` | Change type | 200 |
+| POST | `/{accrualId}/change-amount` | Change amount | 200 |
+| POST | `/{accrualId}/change-currency` | Change currency | 200 |
+| POST | `/{accrualId}/change-recognition-date` | Change recognition date | 200 |
+| POST | `/{accrualId}/change-description` | Change description | 200 |
+| POST | `/{accrualId}/change-source-invoice` | Set or clear optional source invoice (`sourceInvoiceId` nullable) | 200 |
+| POST | `/{accrualId}/recognize` | Recognize accrual | 200 |
+| POST | `/{accrualId}/reverse` | Reverse accrual | 200 |
+
+Status mapping via existing `ApplicationResultHttp`: ValidationFailed → 400, NotFound → 404 (missing or cross-workspace), Conflict → 409. Response body is the Application `AccrualDto`.
+
+Deferred: list/search/pagination, get-by-invoice, Invoice existence validation, ledger posting from Recognize/Reverse, concurrency tokens, compensating accruals, authorization redesign, background recognition jobs.
 
 ## Notes on conventions adapted for F4F
 
