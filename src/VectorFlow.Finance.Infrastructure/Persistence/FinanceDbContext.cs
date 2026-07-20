@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using VectorFlow.Finance.Domain.Accounts;
+using VectorFlow.Finance.Domain.Accruals;
 using VectorFlow.Finance.Domain.Invoices;
 using VectorFlow.Finance.Domain.JournalEntries;
 using VectorFlow.Finance.Domain.Ledger;
@@ -30,6 +31,8 @@ public sealed class FinanceDbContext : DbContext
     public DbSet<Invoice> Invoices => Set<Invoice>();
 
     public DbSet<InvoiceLine> InvoiceLines => Set<InvoiceLine>();
+
+    public DbSet<Accrual> Accruals => Set<Accrual>();
 
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {

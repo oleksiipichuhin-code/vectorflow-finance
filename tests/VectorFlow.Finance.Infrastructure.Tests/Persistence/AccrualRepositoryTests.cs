@@ -1,0 +1,349 @@
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
+using VectorFlow.Finance.Domain;
+using VectorFlow.Finance.Domain.Accruals;
+using VectorFlow.Finance.Domain.Invoices;
+using VectorFlow.Finance.Domain.Workspaces;
+using VectorFlow.Finance.Infrastructure.Persistence;
+using VectorFlow.Finance.Infrastructure.Persistence.Repositories;
+using Xunit;
+
+namespace VectorFlow.Finance.Infrastructure.Tests.Persistence;
+
+public sealed class AccrualRepositoryTests : IAsyncLifetime
+{
+    private static readonly DateTimeOffset T0 =
+        new(2026, 7, 20, 10, 0, 0, TimeSpan.Zero);
+
+    private static readonly DateTimeOffset T1 =
+        new(2026, 7, 20, 11, 0, 0, TimeSpan.Zero);
+
+    private static readonly DateTimeOffset T2 =
+        new(2026, 7, 20, 12, 0, 0, TimeSpan.Zero);
+
+    private static readonly DateTimeOffset RecognitionDate =
+        new(2026, 7, 31, 0, 0, 0, TimeSpan.Zero);
+
+    private SqliteConnection _connection = null!;
+    private FinanceDbContext _dbContext = null!;
+    private AccrualRepository _repository = null!;
+    private FinanceWorkspaceId _workspaceA;
+    private FinanceWorkspaceId _workspaceB;
+
+    public async Task InitializeAsync()
+    {
+        _connection = new SqliteConnection("Data Source=:memory:");
+        await _connection.OpenAsync();
+
+        _dbContext = CreateContext();
+        await _dbContext.Database.MigrateAsync();
+        _repository = new AccrualRepository(_dbContext);
+
+        _workspaceA = await SeedWorkspaceAsync(
+            Guid.Parse("11111111-1111-1111-1111-111111111111"),
+            Guid.Parse("22222222-2222-2222-2222-222222222222"),
+            "Workspace A");
+        _workspaceB = await SeedWorkspaceAsync(
+            Guid.Parse("33333333-3333-3333-3333-333333333333"),
+            Guid.Parse("44444444-4444-4444-4444-444444444444"),
+            "Workspace B");
+    }
+
+    public async Task DisposeAsync()
+    {
+        await _dbContext.DisposeAsync();
+        await _connection.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task Add_and_GetById_round_trips_draft_accrual()
+    {
+        var sourceInvoiceId = new InvoiceId(Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"));
+        var accrual = Accrual.Create(
+            AccrualId.New(),
+            _workspaceA,
+            AccrualType.Revenue,
+            125.50m,
+            new Currency("uah"),
+            RecognitionDate,
+            "  July revenue  ",
+            sourceInvoiceId,
+            T0);
+
+        await _repository.AddAsync(accrual);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var loaded = await new AccrualRepository(readContext).GetByIdAsync(_workspaceA, accrual.Id);
+
+        Assert.NotNull(loaded);
+        Assert.Equal(accrual.Id, loaded.Id);
+        Assert.Equal(_workspaceA, loaded.FinanceWorkspaceId);
+        Assert.Equal(AccrualType.Revenue, loaded.Type);
+        Assert.Equal(125.50m, loaded.Amount);
+        Assert.Equal("UAH", loaded.Currency.Code);
+        Assert.Equal(RecognitionDate, loaded.RecognitionDate);
+        Assert.Equal("July revenue", loaded.Description);
+        Assert.Equal(sourceInvoiceId, loaded.SourceInvoiceId);
+        Assert.Equal(AccrualStatus.Draft, loaded.Status);
+        Assert.Equal(T0, loaded.CreatedAt);
+        Assert.Equal(T0, loaded.UpdatedAt);
+        Assert.Null(loaded.RecognizedAt);
+        Assert.Null(loaded.ReversedAt);
+        Assert.Null(loaded.ReversalReason);
+        Assert.Empty(loaded.DomainEvents);
+    }
+
+    [Fact]
+    public async Task GetById_wrong_workspace_returns_null()
+    {
+        var accrual = CreateDraft(_workspaceA, AccrualType.Expense, 10m, "Scoped");
+
+        await _repository.AddAsync(accrual);
+        await _repository.SaveChangesAsync();
+
+        var loaded = await _repository.GetByIdAsync(_workspaceB, accrual.Id);
+
+        Assert.Null(loaded);
+    }
+
+    [Fact]
+    public async Task Draft_mutations_persist()
+    {
+        var accrual = CreateDraft(_workspaceA, AccrualType.Revenue, 10m, "Old");
+
+        await _repository.AddAsync(accrual);
+        await _repository.SaveChangesAsync();
+
+        var newRecognition = new DateTimeOffset(2026, 8, 15, 0, 0, 0, TimeSpan.Zero);
+        accrual.ChangeType(AccrualType.Expense, T1);
+        accrual.ChangeAmount(99.99m, T1);
+        accrual.ChangeCurrency(new Currency("USD"), T1);
+        accrual.ChangeRecognitionDate(newRecognition, T1);
+        accrual.ChangeDescription("Updated description", T1);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var loaded = await new AccrualRepository(readContext).GetByIdAsync(_workspaceA, accrual.Id);
+
+        Assert.NotNull(loaded);
+        Assert.Equal(AccrualType.Expense, loaded.Type);
+        Assert.Equal(99.99m, loaded.Amount);
+        Assert.Equal("USD", loaded.Currency.Code);
+        Assert.Equal(newRecognition, loaded.RecognitionDate);
+        Assert.Equal("Updated description", loaded.Description);
+        Assert.Equal(T1, loaded.UpdatedAt);
+        Assert.Equal(AccrualStatus.Draft, loaded.Status);
+    }
+
+    [Fact]
+    public async Task SourceInvoiceId_set_persists()
+    {
+        var sourceInvoiceId = new InvoiceId(Guid.Parse("bbbbbbbb-cccc-dddd-eeee-ffffffffffff"));
+        var accrual = CreateDraft(_workspaceA, AccrualType.Revenue, 20m, "With source");
+
+        await _repository.AddAsync(accrual);
+        await _repository.SaveChangesAsync();
+
+        accrual.ChangeSourceInvoice(sourceInvoiceId, T1);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var loaded = await new AccrualRepository(readContext).GetByIdAsync(_workspaceA, accrual.Id);
+
+        Assert.NotNull(loaded);
+        Assert.Equal(sourceInvoiceId, loaded.SourceInvoiceId);
+        Assert.Equal(T1, loaded.UpdatedAt);
+    }
+
+    [Fact]
+    public async Task SourceInvoiceId_clear_persists()
+    {
+        var sourceInvoiceId = new InvoiceId(Guid.Parse("cccccccc-dddd-eeee-ffff-000000000000"));
+        var accrual = Accrual.Create(
+            AccrualId.New(),
+            _workspaceA,
+            AccrualType.Expense,
+            30m,
+            new Currency("EUR"),
+            RecognitionDate,
+            "Clear source",
+            sourceInvoiceId,
+            T0);
+
+        await _repository.AddAsync(accrual);
+        await _repository.SaveChangesAsync();
+
+        accrual.ChangeSourceInvoice(null, T1);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var loaded = await new AccrualRepository(readContext).GetByIdAsync(_workspaceA, accrual.Id);
+
+        Assert.NotNull(loaded);
+        Assert.Null(loaded.SourceInvoiceId);
+        Assert.Equal(T1, loaded.UpdatedAt);
+    }
+
+    [Fact]
+    public async Task Recognize_persists_status_and_timestamps()
+    {
+        var accrual = CreateDraft(_workspaceA, AccrualType.Revenue, 40m, "Recognize me");
+
+        await _repository.AddAsync(accrual);
+        await _repository.SaveChangesAsync();
+
+        accrual.Recognize(T1);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var loaded = await new AccrualRepository(readContext).GetByIdAsync(_workspaceA, accrual.Id);
+
+        Assert.NotNull(loaded);
+        Assert.Equal(AccrualStatus.Recognized, loaded.Status);
+        Assert.Equal(T1, loaded.RecognizedAt);
+        Assert.Equal(T1, loaded.UpdatedAt);
+        Assert.Null(loaded.ReversedAt);
+        Assert.Null(loaded.ReversalReason);
+        Assert.Empty(loaded.DomainEvents);
+    }
+
+    [Fact]
+    public async Task Reverse_persists_status_reason_and_preserves_RecognizedAt()
+    {
+        var accrual = CreateDraft(_workspaceA, AccrualType.Expense, 50m, "Reverse me");
+        accrual.Recognize(T1);
+
+        await _repository.AddAsync(accrual);
+        await _repository.SaveChangesAsync();
+
+        accrual.Reverse("  Correction required  ", T2);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var loaded = await new AccrualRepository(readContext).GetByIdAsync(_workspaceA, accrual.Id);
+
+        Assert.NotNull(loaded);
+        Assert.Equal(AccrualStatus.Reversed, loaded.Status);
+        Assert.Equal(T1, loaded.RecognizedAt);
+        Assert.Equal(T2, loaded.ReversedAt);
+        Assert.Equal("Correction required", loaded.ReversalReason);
+        Assert.Equal(T2, loaded.UpdatedAt);
+        Assert.Empty(loaded.DomainEvents);
+    }
+
+    [Fact]
+    public async Task Decimal_amount_round_trip_without_loss()
+    {
+        var amount = 123.456789012345678m;
+        var accrual = Accrual.Create(
+            AccrualId.New(),
+            _workspaceA,
+            AccrualType.Revenue,
+            amount,
+            new Currency("UAH"),
+            RecognitionDate,
+            "Precision",
+            sourceInvoiceId: null,
+            T0);
+
+        await _repository.AddAsync(accrual);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var loaded = await new AccrualRepository(readContext).GetByIdAsync(_workspaceA, accrual.Id);
+
+        Assert.NotNull(loaded);
+        Assert.Equal(amount, loaded.Amount);
+    }
+
+    [Fact]
+    public async Task Model_contains_accruals_table_index_and_constraints()
+    {
+        var entity = _dbContext.Model.FindEntityType(typeof(Accrual));
+
+        Assert.NotNull(entity);
+        Assert.Equal("Accruals", entity.GetTableName());
+
+        Assert.Contains(
+            entity.GetIndexes(),
+            index => index.GetDatabaseName() == "IX_Accruals_FinanceWorkspaceId" && !index.IsUnique);
+
+        Assert.DoesNotContain(
+            entity.GetIndexes(),
+            index => index.Properties.Any(property => property.Name == nameof(Accrual.SourceInvoiceId)));
+
+        var workspaceFk = Assert.Single(
+            entity.GetForeignKeys(),
+            fk => fk.Properties.Any(property => property.Name == nameof(Accrual.FinanceWorkspaceId)));
+        Assert.Equal(DeleteBehavior.Restrict, workspaceFk.DeleteBehavior);
+        Assert.Equal(typeof(FinanceWorkspace), workspaceFk.PrincipalEntityType.ClrType);
+
+        Assert.DoesNotContain(
+            entity.GetForeignKeys(),
+            fk => fk.Properties.Any(property => property.Name == nameof(Accrual.SourceInvoiceId)));
+
+        Assert.Null(entity.FindProperty(nameof(Accrual.DomainEvents)));
+    }
+
+    [Fact]
+    public async Task MigrateAsync_applies_accrual_schema_on_sqlite()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+
+        await using var context = new FinanceDbContext(
+            new DbContextOptionsBuilder<FinanceDbContext>()
+                .UseSqlite(connection)
+                .Options);
+
+        await context.Database.MigrateAsync();
+
+        Assert.NotNull(context.Model.FindEntityType(typeof(Accrual)));
+        Assert.Contains(
+            await context.Database.GetAppliedMigrationsAsync(),
+            name => name.Contains("AddAccruals", StringComparison.Ordinal));
+    }
+
+    private Accrual CreateDraft(
+        FinanceWorkspaceId workspaceId,
+        AccrualType type,
+        decimal amount,
+        string description) =>
+        Accrual.Create(
+            AccrualId.New(),
+            workspaceId,
+            type,
+            amount,
+            new Currency("UAH"),
+            RecognitionDate,
+            description,
+            sourceInvoiceId: null,
+            T0);
+
+    private FinanceDbContext CreateContext()
+    {
+        var options = new DbContextOptionsBuilder<FinanceDbContext>()
+            .UseSqlite(_connection)
+            .Options;
+        return new FinanceDbContext(options);
+    }
+
+    private async Task<FinanceWorkspaceId> SeedWorkspaceAsync(
+        Guid organizationId,
+        Guid platformWorkspaceId,
+        string name)
+    {
+        var workspace = FinanceWorkspace.Create(
+            FinanceWorkspaceId.New(),
+            new PlatformOrganizationId(organizationId),
+            new PlatformWorkspaceId(platformWorkspaceId),
+            name,
+            "UAH",
+            T0);
+
+        _dbContext.FinanceWorkspaces.Add(workspace);
+        await _dbContext.SaveChangesAsync();
+        return workspace.Id;
+    }
+}

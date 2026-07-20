@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using VectorFlow.Finance.Application.Abstractions;
 using VectorFlow.Finance.Application.AccountBalances;
 using VectorFlow.Finance.Application.Accounts;
+using VectorFlow.Finance.Application.Accruals;
 using VectorFlow.Finance.Application.GeneralLedger;
 using VectorFlow.Finance.Application.Health;
 using VectorFlow.Finance.Application.Invoices;
@@ -54,6 +55,7 @@ public sealed class DependencyInjectionTests
         Assert.NotNull(provider.GetRequiredService<IAccountRepository>());
         Assert.NotNull(provider.GetRequiredService<IJournalEntryRepository>());
         Assert.IsType<InvoiceRepository>(provider.GetRequiredService<IInvoiceRepository>());
+        Assert.IsType<AccrualRepository>(provider.GetRequiredService<IAccrualRepository>());
         Assert.NotNull(provider.GetRequiredService<ILedgerPostingRepository>());
         Assert.NotNull(provider.GetRequiredService<IAccountBalanceReader>());
         Assert.NotNull(provider.GetRequiredService<IAccountStatementReader>());

@@ -154,7 +154,19 @@ Result mapping follows Invoice Application:
 
 Timestamps come from `IClock.UtcNow` inside handlers (commands do not carry mutation timestamps). Create generates `AccrualId` via `AccrualId.New()`.
 
-Source invoice existence is **not** checked in Application (same posture as Domain). Persistence and HTTP remain later slices. Recognize/Reverse do not post to the ledger.
+Source invoice existence is **not** checked in Application (same posture as Domain). Recognize/Reverse do not post to the ledger. HTTP remains a later slice.
+
+## Persistence (F4H)
+
+Accrual aggregates are stored via EF Core in Infrastructure:
+
+- `AccrualRepository` implements `IAccrualRepository` with workspace-scoped `GetByIdAsync`;
+- Domain `Accrual` maps directly (no separate persistence entity);
+- `DomainEvents` is not a persisted column;
+- nullable `SourceInvoiceId` stores optional `InvoiceId` as `Guid?` with **no** FK to `Invoices` and **no** uniqueness constraint;
+- lifecycle fields (`Status`, `RecognizedAt`, `ReversedAt`, `ReversalReason`, timestamps) round-trip faithfully through private-constructor materialization;
+- migration `AddAccruals` creates table `Accruals` with workspace FK (`Restrict`) and `IX_Accruals_FinanceWorkspaceId`;
+- listing, get-by-invoice, Invoice existence validation, concurrency tokens, ledger posting, payments, and HTTP remain later slices.
 
 ## Notes on conventions adapted for F4F
 

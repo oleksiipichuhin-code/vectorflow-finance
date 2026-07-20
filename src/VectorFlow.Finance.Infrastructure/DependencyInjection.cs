@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using VectorFlow.Finance.Application.Abstractions;
 using VectorFlow.Finance.Application.AccountBalances;
 using VectorFlow.Finance.Application.Accounts;
+using VectorFlow.Finance.Application.Accruals;
 using VectorFlow.Finance.Application.GeneralLedger;
 using VectorFlow.Finance.Application.Health;
 using VectorFlow.Finance.Application.Invoices;
@@ -40,6 +41,7 @@ public static class DependencyInjection
         services.AddScoped<IAccountRepository, AccountRepository>();
         services.AddScoped<IJournalEntryRepository, JournalEntryRepository>();
         services.AddScoped<IInvoiceRepository, InvoiceRepository>();
+        services.AddScoped<IAccrualRepository, AccrualRepository>();
         services.AddScoped<ILedgerPostingRepository, LedgerPostingRepository>();
         services.AddScoped<IAccountBalanceReader, AccountBalanceReader>();
         services.AddScoped<IAccountStatementReader, AccountStatementReader>();
