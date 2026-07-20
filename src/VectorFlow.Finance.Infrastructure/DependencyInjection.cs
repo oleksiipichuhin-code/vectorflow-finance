@@ -6,6 +6,7 @@ using VectorFlow.Finance.Application.AccountBalances;
 using VectorFlow.Finance.Application.Accounts;
 using VectorFlow.Finance.Application.GeneralLedger;
 using VectorFlow.Finance.Application.Health;
+using VectorFlow.Finance.Application.Invoices;
 using VectorFlow.Finance.Application.JournalEntries;
 using VectorFlow.Finance.Application.Ledger;
 using VectorFlow.Finance.Application.Workspaces;
@@ -38,6 +39,7 @@ public static class DependencyInjection
         services.AddScoped<IFinanceWorkspaceRepository, FinanceWorkspaceRepository>();
         services.AddScoped<IAccountRepository, AccountRepository>();
         services.AddScoped<IJournalEntryRepository, JournalEntryRepository>();
+        services.AddScoped<IInvoiceRepository, InvoiceRepository>();
         services.AddScoped<ILedgerPostingRepository, LedgerPostingRepository>();
         services.AddScoped<IAccountBalanceReader, AccountBalanceReader>();
         services.AddScoped<IAccountStatementReader, AccountStatementReader>();

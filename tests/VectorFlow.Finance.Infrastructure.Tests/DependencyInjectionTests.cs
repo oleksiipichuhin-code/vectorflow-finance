@@ -5,11 +5,13 @@ using VectorFlow.Finance.Application.AccountBalances;
 using VectorFlow.Finance.Application.Accounts;
 using VectorFlow.Finance.Application.GeneralLedger;
 using VectorFlow.Finance.Application.Health;
+using VectorFlow.Finance.Application.Invoices;
 using VectorFlow.Finance.Application.JournalEntries;
 using VectorFlow.Finance.Application.Ledger;
 using VectorFlow.Finance.Application.Workspaces;
 using VectorFlow.Finance.Infrastructure;
 using VectorFlow.Finance.Infrastructure.Persistence;
+using VectorFlow.Finance.Infrastructure.Persistence.Repositories;
 using VectorFlow.Finance.Infrastructure.Time;
 using Xunit;
 
@@ -51,6 +53,7 @@ public sealed class DependencyInjectionTests
         Assert.NotNull(provider.GetRequiredService<IFinanceWorkspaceRepository>());
         Assert.NotNull(provider.GetRequiredService<IAccountRepository>());
         Assert.NotNull(provider.GetRequiredService<IJournalEntryRepository>());
+        Assert.IsType<InvoiceRepository>(provider.GetRequiredService<IInvoiceRepository>());
         Assert.NotNull(provider.GetRequiredService<ILedgerPostingRepository>());
         Assert.NotNull(provider.GetRequiredService<IAccountBalanceReader>());
         Assert.NotNull(provider.GetRequiredService<IAccountStatementReader>());
