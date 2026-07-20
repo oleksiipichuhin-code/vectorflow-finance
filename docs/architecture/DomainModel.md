@@ -77,7 +77,38 @@ Workspace-scoped commercial document aggregate. Holds `DocumentNumber`, `Counter
 
 Details: `docs/architecture/Invoice.md`.
 
-F4E excludes application/persistence/HTTP, ledger posting, payments, accruals, and counterparty snapshots.
+F4E excludes application/persistence/HTTP, ledger posting, payments, accruals, and counterparty snapshots. Invoice application, persistence, and HTTP are published as F4E2–F4E4.
+
+## Accrual (F4F)
+
+Namespace: `VectorFlow.Finance.Domain.Accruals`
+
+### AccrualId
+
+Strongly typed Guid identifier. Empty Guid is invalid. Created via constructor or `New()`.
+
+### AccrualType
+
+| Value | Name | Meaning |
+|------:|------|---------|
+| 1 | Revenue | Revenue recognition |
+| 2 | Expense | Expense recognition |
+
+### AccrualStatus
+
+| Value | Name | Meaning |
+|------:|------|---------|
+| 1 | Draft | Type, amount, currency, recognition date, description, and optional source invoice may change |
+| 2 | Recognized | Financial and source fields immutable; may reverse |
+| 3 | Reversed | Terminal; immutable |
+
+### Accrual
+
+Workspace-scoped recognition document with a single positive `Amount` and `Currency` (no lines). Optional `InvoiceId` source reference is not existence-checked in Domain. Lifecycle: Draft → Recognized → Reversed. Domain events: `AccrualCreated`, `AccrualRecognized`, `AccrualReversed`.
+
+Details: `docs/architecture/Accrual.md`.
+
+F4F excludes application/persistence/HTTP, ledger posting, payments, and compensating accruals.
 
 ## Planned ownership (later phases)
 
@@ -85,21 +116,20 @@ Finance will eventually own:
 
 - finance workspaces (domain foundation exists in F1A; persistence/HTTP later);
 - financial accounts (domain through HTTP published for chart of accounts);
-- invoices (domain foundation exists in F4E; application/persistence/HTTP later);
-- accruals;
+- invoices (domain through HTTP published for F4E–F4E4);
+- accruals (domain foundation exists in F4F; application/persistence/HTTP later);
 - payments;
 - payment allocations;
 - cash-flow plans;
 - immutable financial ledger records;
 - historical counterparty snapshots.
 
-The following remain later / out of F4E:
+The following remain later / out of F4F:
 
-- `Accrual`
 - `Payment`
 - `CounterpartySnapshot`
-- invoice application boundary, persistence, and HTTP
-- invoice ledger posting
+- accrual application boundary, persistence, and HTTP
+- invoice/accrual ledger posting
 
 ## Money and ledger principles
 
