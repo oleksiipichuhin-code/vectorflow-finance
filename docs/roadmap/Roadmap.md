@@ -79,10 +79,11 @@ F3A–F3F are published. Decimal precision policy for Debit/Credit remains an op
 | F4L | Accrual Get-By-Invoice | Complete |
 | F4M | Invoice Get-By-Document-Number | Complete |
 | F4N | Invoice Search (paged listing) | Complete |
-| F4O | Invoice Paged Listing Status Filter | Complete locally / awaiting publication |
-| F4P+ | Later invoice and Accrual query enhancements | Planned |
+| F4O | Invoice Paged Listing Status Filter | Complete |
+| F4P | Invoice Paged Listing CreatedAt Range Filter | Complete locally / awaiting publication |
+| F4Q+ | Later invoice and Accrual query enhancements | Planned |
 
-F4A–F4N are published. F4O Invoice Paged Listing Status Filter (optional exact `status=Draft|Issued` on the paged list) is complete in the working tree until separately published. Remaining invoice query enhancements (CreatedAt range / other multi-field filters / full-text search), Accrual search/filters/pagination, and other deferred Accrual query capabilities remain planned. F4 as a whole remains incomplete.
+F4A–F4O are published. F4P Invoice Paged Listing CreatedAt Range Filter (optional inclusive `createdFromUtc` / `createdToUtc` on the paged list, composable with status; SQL workspace/status then in-memory CreatedAt range because SQLite cannot translate DateTimeOffset comparisons) is complete in the working tree until separately published. Remaining invoice query enhancements (other multi-field filters / full-text search), Accrual search/filters/pagination, and other deferred Accrual query capabilities remain planned. F4 as a whole remains incomplete.
 
 ## F5 sub-slices
 

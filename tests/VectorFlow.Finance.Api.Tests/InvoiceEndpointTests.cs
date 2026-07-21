@@ -429,6 +429,314 @@ public sealed class InvoiceEndpointTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task List_omitted_created_bounds_returns_all_matching_status_semantics()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("c1000000-0000-0000-0000-000000000061"),
+            Guid.Parse("c2000000-0000-0000-0000-000000000061"));
+
+        var first = await CreateInvoiceAsync(workspaceId, "INV-1", "cp-1", "UAH");
+        await Task.Delay(20);
+        var second = await CreateInvoiceAsync(workspaceId, "INV-2", "cp-2", "UAH");
+
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices?page=1&pageSize=10");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(2, document.RootElement.GetProperty("totalCount").GetInt32());
+        var items = document.RootElement.GetProperty("items");
+        Assert.Equal(2, items.GetArrayLength());
+        Assert.Equal(second, items[0].GetProperty("id").GetGuid());
+        Assert.Equal(first, items[1].GetProperty("id").GetGuid());
+    }
+
+    [Fact]
+    public async Task List_created_from_only_filters_inclusive()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("c1000000-0000-0000-0000-000000000062"),
+            Guid.Parse("c2000000-0000-0000-0000-000000000062"));
+
+        var older = await CreateInvoiceAsync(workspaceId, "INV-OLD", "cp", "UAH");
+        await Task.Delay(30);
+        var newer = await CreateInvoiceAsync(workspaceId, "INV-NEW", "cp", "UAH");
+
+        var baseline = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices?page=1&pageSize=10");
+        using var baselineDoc = JsonDocument.Parse(await baseline.Content.ReadAsStringAsync());
+        var newerCreated = baselineDoc.RootElement.GetProperty("items")[0].GetProperty("createdAtUtc").GetDateTimeOffset();
+
+        var from = Uri.EscapeDataString(newerCreated.ToString("o"));
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices?page=1&pageSize=10&createdFromUtc={from}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(1, document.RootElement.GetProperty("totalCount").GetInt32());
+        Assert.Equal(
+            newer,
+            Assert.Single(document.RootElement.GetProperty("items").EnumerateArray()).GetProperty("id").GetGuid());
+        Assert.DoesNotContain(
+            document.RootElement.GetProperty("items").EnumerateArray(),
+            item => item.GetProperty("id").GetGuid() == older);
+    }
+
+    [Fact]
+    public async Task List_created_to_only_filters_inclusive()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("c1000000-0000-0000-0000-000000000063"),
+            Guid.Parse("c2000000-0000-0000-0000-000000000063"));
+
+        var older = await CreateInvoiceAsync(workspaceId, "INV-OLD", "cp", "UAH");
+        await Task.Delay(30);
+        var newer = await CreateInvoiceAsync(workspaceId, "INV-NEW", "cp", "UAH");
+
+        var baseline = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices?page=1&pageSize=10");
+        using var baselineDoc = JsonDocument.Parse(await baseline.Content.ReadAsStringAsync());
+        var olderCreated = baselineDoc.RootElement.GetProperty("items")[1].GetProperty("createdAtUtc").GetDateTimeOffset();
+
+        var to = Uri.EscapeDataString(olderCreated.ToString("o"));
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices?page=1&pageSize=10&createdToUtc={to}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(1, document.RootElement.GetProperty("totalCount").GetInt32());
+        Assert.Equal(
+            older,
+            Assert.Single(document.RootElement.GetProperty("items").EnumerateArray()).GetProperty("id").GetGuid());
+        Assert.DoesNotContain(
+            document.RootElement.GetProperty("items").EnumerateArray(),
+            item => item.GetProperty("id").GetGuid() == newer);
+    }
+
+    [Fact]
+    public async Task List_created_both_bounds_filter_closed_range()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("c1000000-0000-0000-0000-000000000064"),
+            Guid.Parse("c2000000-0000-0000-0000-000000000064"));
+
+        var first = await CreateInvoiceAsync(workspaceId, "INV-1", "cp", "UAH");
+        await Task.Delay(30);
+        var second = await CreateInvoiceAsync(workspaceId, "INV-2", "cp", "UAH");
+        await Task.Delay(30);
+        var third = await CreateInvoiceAsync(workspaceId, "INV-3", "cp", "UAH");
+
+        var baseline = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices?page=1&pageSize=10");
+        using var baselineDoc = JsonDocument.Parse(await baseline.Content.ReadAsStringAsync());
+        var items = baselineDoc.RootElement.GetProperty("items");
+        var secondCreated = items[1].GetProperty("createdAtUtc").GetDateTimeOffset();
+        var thirdCreated = items[0].GetProperty("createdAtUtc").GetDateTimeOffset();
+
+        var from = Uri.EscapeDataString(secondCreated.ToString("o"));
+        var to = Uri.EscapeDataString(thirdCreated.ToString("o"));
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices?page=1&pageSize=10&createdFromUtc={from}&createdToUtc={to}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(2, document.RootElement.GetProperty("totalCount").GetInt32());
+        var filtered = document.RootElement.GetProperty("items");
+        Assert.Equal(2, filtered.GetArrayLength());
+        Assert.Equal(third, filtered[0].GetProperty("id").GetGuid());
+        Assert.Equal(second, filtered[1].GetProperty("id").GetGuid());
+        Assert.DoesNotContain(
+            filtered.EnumerateArray(),
+            item => item.GetProperty("id").GetGuid() == first);
+    }
+
+    [Fact]
+    public async Task List_created_equal_bounds_match_exact_instant()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("c1000000-0000-0000-0000-000000000065"),
+            Guid.Parse("c2000000-0000-0000-0000-000000000065"));
+
+        var invoiceId = await CreateInvoiceAsync(workspaceId, "INV-EQ", "cp", "UAH");
+        await Task.Delay(20);
+        await CreateInvoiceAsync(workspaceId, "INV-OTHER", "cp", "UAH");
+
+        var baseline = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices?page=1&pageSize=10");
+        using var baselineDoc = JsonDocument.Parse(await baseline.Content.ReadAsStringAsync());
+        var created = baselineDoc.RootElement.GetProperty("items")
+            .EnumerateArray()
+            .Single(item => item.GetProperty("id").GetGuid() == invoiceId)
+            .GetProperty("createdAtUtc")
+            .GetDateTimeOffset();
+
+        var bound = Uri.EscapeDataString(created.ToString("o"));
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices?page=1&pageSize=10&createdFromUtc={bound}&createdToUtc={bound}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(1, document.RootElement.GetProperty("totalCount").GetInt32());
+        Assert.Equal(
+            invoiceId,
+            Assert.Single(document.RootElement.GetProperty("items").EnumerateArray()).GetProperty("id").GetGuid());
+    }
+
+    [Fact]
+    public async Task List_created_from_after_to_returns_400()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("c1000000-0000-0000-0000-000000000066"),
+            Guid.Parse("c2000000-0000-0000-0000-000000000066"));
+
+        var from = Uri.EscapeDataString(new DateTimeOffset(2026, 7, 21, 12, 0, 0, TimeSpan.Zero).ToString("o"));
+        var to = Uri.EscapeDataString(new DateTimeOffset(2026, 7, 21, 8, 0, 0, TimeSpan.Zero).ToString("o"));
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices?page=1&pageSize=10&createdFromUtc={from}&createdToUtc={to}");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        await AssertErrorAsync(response, "ValidationFailed");
+    }
+
+    [Fact]
+    public async Task List_malformed_created_from_returns_400()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("c1000000-0000-0000-0000-000000000067"),
+            Guid.Parse("c2000000-0000-0000-0000-000000000067"));
+
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices?page=1&pageSize=10&createdFromUtc=not-a-date");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task List_malformed_created_to_returns_400()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("c1000000-0000-0000-0000-000000000068"),
+            Guid.Parse("c2000000-0000-0000-0000-000000000068"));
+
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices?page=1&pageSize=10&createdToUtc=not-a-date");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task List_created_range_no_match_returns_empty_page()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("c1000000-0000-0000-0000-000000000069"),
+            Guid.Parse("c2000000-0000-0000-0000-000000000069"));
+
+        await CreateInvoiceAsync(workspaceId, "INV-NOW", "cp", "UAH");
+
+        var from = Uri.EscapeDataString(new DateTimeOffset(2030, 1, 1, 0, 0, 0, TimeSpan.Zero).ToString("o"));
+        var to = Uri.EscapeDataString(new DateTimeOffset(2030, 1, 2, 0, 0, 0, TimeSpan.Zero).ToString("o"));
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices?page=1&pageSize=10&createdFromUtc={from}&createdToUtc={to}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(0, document.RootElement.GetProperty("totalCount").GetInt32());
+        Assert.Equal(0, document.RootElement.GetProperty("items").GetArrayLength());
+        Assert.Equal(1, document.RootElement.GetProperty("page").GetInt32());
+        Assert.Equal(10, document.RootElement.GetProperty("pageSize").GetInt32());
+    }
+
+    [Fact]
+    public async Task List_created_range_with_Draft_status()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("c1000000-0000-0000-0000-000000000070"),
+            Guid.Parse("c2000000-0000-0000-0000-000000000070"));
+
+        var draftId = await CreateInvoiceAsync(workspaceId, "INV-DRAFT", "cp", "UAH");
+        var issuedId = await CreateIssuableInvoiceAsync(workspaceId, "INV-ISS");
+        var issue = await _client.PostAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices/{issuedId}/issue",
+            null);
+        Assert.Equal(HttpStatusCode.OK, issue.StatusCode);
+
+        var from = Uri.EscapeDataString(new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero).ToString("o"));
+        var to = Uri.EscapeDataString(new DateTimeOffset(2100, 1, 1, 0, 0, 0, TimeSpan.Zero).ToString("o"));
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices?page=1&pageSize=10&status=Draft&createdFromUtc={from}&createdToUtc={to}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(1, document.RootElement.GetProperty("totalCount").GetInt32());
+        var item = Assert.Single(document.RootElement.GetProperty("items").EnumerateArray());
+        Assert.Equal(draftId, item.GetProperty("id").GetGuid());
+        Assert.Equal("Draft", item.GetProperty("status").GetString());
+    }
+
+    [Fact]
+    public async Task List_created_range_with_Issued_status()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("c1000000-0000-0000-0000-000000000071"),
+            Guid.Parse("c2000000-0000-0000-0000-000000000071"));
+
+        await CreateInvoiceAsync(workspaceId, "INV-DRAFT", "cp", "UAH");
+        var issuedId = await CreateIssuableInvoiceAsync(workspaceId, "INV-ISS");
+        var issue = await _client.PostAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices/{issuedId}/issue",
+            null);
+        Assert.Equal(HttpStatusCode.OK, issue.StatusCode);
+
+        var from = Uri.EscapeDataString(new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero).ToString("o"));
+        var to = Uri.EscapeDataString(new DateTimeOffset(2100, 1, 1, 0, 0, 0, TimeSpan.Zero).ToString("o"));
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices?page=1&pageSize=10&status=Issued&createdFromUtc={from}&createdToUtc={to}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(1, document.RootElement.GetProperty("totalCount").GetInt32());
+        var item = Assert.Single(document.RootElement.GetProperty("items").EnumerateArray());
+        Assert.Equal(issuedId, item.GetProperty("id").GetGuid());
+        Assert.Equal("Issued", item.GetProperty("status").GetString());
+    }
+
+    [Fact]
+    public async Task List_created_range_matches_offset_equivalent_query_instant()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("c1000000-0000-0000-0000-000000000072"),
+            Guid.Parse("c2000000-0000-0000-0000-000000000072"));
+
+        var invoiceId = await CreateInvoiceAsync(workspaceId, "INV-OFF", "cp", "UAH");
+        await Task.Delay(20);
+        await CreateInvoiceAsync(workspaceId, "INV-OTHER", "cp", "UAH");
+
+        var baseline = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices?page=1&pageSize=10");
+        using var baselineDoc = JsonDocument.Parse(await baseline.Content.ReadAsStringAsync());
+        var createdUtc = baselineDoc.RootElement.GetProperty("items")
+            .EnumerateArray()
+            .Single(item => item.GetProperty("id").GetGuid() == invoiceId)
+            .GetProperty("createdAtUtc")
+            .GetDateTimeOffset();
+
+        var equivalent = createdUtc.ToOffset(TimeSpan.FromHours(3));
+        Assert.Equal(createdUtc.UtcTicks, equivalent.UtcTicks);
+        Assert.Equal(TimeSpan.FromHours(3), equivalent.Offset);
+
+        var bound = Uri.EscapeDataString(equivalent.ToString("o"));
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices?page=1&pageSize=10&createdFromUtc={bound}&createdToUtc={bound}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(1, document.RootElement.GetProperty("totalCount").GetInt32());
+        Assert.Equal(
+            invoiceId,
+            Assert.Single(document.RootElement.GetProperty("items").EnumerateArray()).GetProperty("id").GetGuid());
+    }
+
+    [Fact]
     public async Task Get_by_id_still_resolves_after_list_route()
     {
         var workspaceId = await CreateWorkspaceAsync(
@@ -876,6 +1184,8 @@ public sealed class InvoiceEndpointTests : IAsyncLifetime
         Assert.Contains("documentNumber", json);
         Assert.Contains("pageSize", json);
         Assert.Contains("status", json);
+        Assert.Contains("createdFromUtc", json);
+        Assert.Contains("createdToUtc", json);
         Assert.Single(System.Text.RegularExpressions.Regex.Matches(json, "\"ListInvoices\""));
         Assert.Single(System.Text.RegularExpressions.Regex.Matches(json, "\"ListInvoicesByDocumentNumber\""));
     }

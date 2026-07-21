@@ -62,36 +62,56 @@ public sealed class InvoiceRepository : IInvoiceRepository
         int page,
         int pageSize,
         InvoiceStatus? status = null,
+        DateTimeOffset? createdFromUtc = null,
+        DateTimeOffset? createdToUtc = null,
         CancellationToken cancellationToken = default)
     {
-        var filtered = _dbContext.Invoices
-            .Where(invoice => invoice.FinanceWorkspaceId == financeWorkspaceId);
+        // SQLite cannot translate DateTimeOffset comparisons; CreatedAt bounds are applied in memory.
+        var invoices = await ApplySqlPagedFilters(
+                InvoicesWithLines(),
+                financeWorkspaceId,
+                status)
+            .ToListAsync(cancellationToken);
+
+        IEnumerable<Invoice> filtered = invoices;
+
+        if (createdFromUtc is not null)
+        {
+            filtered = filtered.Where(invoice => invoice.CreatedAt >= createdFromUtc.Value);
+        }
+
+        if (createdToUtc is not null)
+        {
+            filtered = filtered.Where(invoice => invoice.CreatedAt <= createdToUtc.Value);
+        }
+
+        var matched = filtered
+            .OrderByDescending(invoice => invoice.CreatedAt)
+            .ThenByDescending(invoice => invoice.Id.Value)
+            .ToList();
+
+        var totalCount = matched.Count;
+        var items = matched
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToList();
+
+        return (items, totalCount);
+    }
+
+    private static IQueryable<Invoice> ApplySqlPagedFilters(
+        IQueryable<Invoice> source,
+        FinanceWorkspaceId financeWorkspaceId,
+        InvoiceStatus? status)
+    {
+        var filtered = source.Where(invoice => invoice.FinanceWorkspaceId == financeWorkspaceId);
 
         if (status is not null)
         {
             filtered = filtered.Where(invoice => invoice.Status == status.Value);
         }
 
-        var totalCount = await filtered.CountAsync(cancellationToken);
-
-        var invoicesQuery = InvoicesWithLines()
-            .Where(invoice => invoice.FinanceWorkspaceId == financeWorkspaceId);
-
-        if (status is not null)
-        {
-            invoicesQuery = invoicesQuery.Where(invoice => invoice.Status == status.Value);
-        }
-
-        var invoices = await invoicesQuery.ToListAsync(cancellationToken);
-
-        var items = invoices
-            .OrderByDescending(invoice => invoice.CreatedAt)
-            .ThenByDescending(invoice => invoice.Id.Value)
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .ToList();
-
-        return (items, totalCount);
+        return filtered;
     }
 
     public async Task AddAsync(

@@ -26,6 +26,10 @@ internal sealed class InMemoryInvoiceRepository : IInvoiceRepository
 
     public InvoiceStatus? LastListedStatus { get; private set; }
 
+    public DateTimeOffset? LastListedCreatedFromUtc { get; private set; }
+
+    public DateTimeOffset? LastListedCreatedToUtc { get; private set; }
+
     public CancellationToken? LastListByDocumentNumberCancellationToken { get; private set; }
 
     public CancellationToken? LastListPagedCancellationToken { get; private set; }
@@ -92,6 +96,8 @@ internal sealed class InMemoryInvoiceRepository : IInvoiceRepository
         int page,
         int pageSize,
         InvoiceStatus? status = null,
+        DateTimeOffset? createdFromUtc = null,
+        DateTimeOffset? createdToUtc = null,
         CancellationToken cancellationToken = default)
     {
         ListPagedCallCount++;
@@ -99,11 +105,15 @@ internal sealed class InMemoryInvoiceRepository : IInvoiceRepository
         LastListedPage = page;
         LastListedPageSize = pageSize;
         LastListedStatus = status;
+        LastListedCreatedFromUtc = createdFromUtc;
+        LastListedCreatedToUtc = createdToUtc;
         LastListPagedCancellationToken = cancellationToken;
 
         var matched = _byId.Values
             .Where(invoice => invoice.FinanceWorkspaceId == financeWorkspaceId)
             .Where(invoice => status is null || invoice.Status == status.Value)
+            .Where(invoice => createdFromUtc is null || invoice.CreatedAt >= createdFromUtc.Value)
+            .Where(invoice => createdToUtc is null || invoice.CreatedAt <= createdToUtc.Value)
             .OrderByDescending(invoice => invoice.CreatedAt)
             .ThenByDescending(invoice => invoice.Id.Value)
             .ToList();

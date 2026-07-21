@@ -446,6 +446,248 @@ public sealed class InvoiceRepositoryTests : IAsyncLifetime
         Assert.Equal(0, totalCount);
     }
 
+    // F4P hybrid: workspace/status stay SQL-side; CreatedAt bounds, totalCount, order, and paging
+    // are applied in memory after a single materialization (SQLite cannot translate DateTimeOffset compares).
+
+    [Fact]
+    public async Task ListPaged_created_from_includes_lower_bound_and_excludes_earlier()
+    {
+        var earlier = Invoice.Create(
+            InvoiceId.New(), _workspaceA, "INV-EARLY", new CounterpartyReference("cp"), new Currency("UAH"), T0);
+        var onBound = Invoice.Create(
+            InvoiceId.New(), _workspaceA, "INV-ON", new CounterpartyReference("cp"), new Currency("UAH"), T1);
+        var later = Invoice.Create(
+            InvoiceId.New(), _workspaceA, "INV-LATE", new CounterpartyReference("cp"), new Currency("UAH"), T2);
+
+        await _repository.AddAsync(earlier);
+        await _repository.AddAsync(onBound);
+        await _repository.AddAsync(later);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var (items, totalCount) = await new InvoiceRepository(readContext)
+            .ListPagedAsync(_workspaceA, page: 1, pageSize: 10, createdFromUtc: T1);
+
+        Assert.Equal(2, totalCount);
+        Assert.Equal(2, items.Count);
+        Assert.Equal(later.Id, items[0].Id);
+        Assert.Equal(onBound.Id, items[1].Id);
+    }
+
+    [Fact]
+    public async Task ListPaged_created_to_includes_upper_bound_and_excludes_later()
+    {
+        var earlier = Invoice.Create(
+            InvoiceId.New(), _workspaceA, "INV-EARLY", new CounterpartyReference("cp"), new Currency("UAH"), T0);
+        var onBound = Invoice.Create(
+            InvoiceId.New(), _workspaceA, "INV-ON", new CounterpartyReference("cp"), new Currency("UAH"), T1);
+        var later = Invoice.Create(
+            InvoiceId.New(), _workspaceA, "INV-LATE", new CounterpartyReference("cp"), new Currency("UAH"), T2);
+
+        await _repository.AddAsync(earlier);
+        await _repository.AddAsync(onBound);
+        await _repository.AddAsync(later);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var (items, totalCount) = await new InvoiceRepository(readContext)
+            .ListPagedAsync(_workspaceA, page: 1, pageSize: 10, createdToUtc: T1);
+
+        Assert.Equal(2, totalCount);
+        Assert.Equal(2, items.Count);
+        Assert.Equal(onBound.Id, items[0].Id);
+        Assert.Equal(earlier.Id, items[1].Id);
+    }
+
+    [Fact]
+    public async Task ListPaged_created_closed_range_is_inclusive()
+    {
+        var earlier = Invoice.Create(
+            InvoiceId.New(), _workspaceA, "INV-EARLY", new CounterpartyReference("cp"), new Currency("UAH"), T0);
+        var mid = Invoice.Create(
+            InvoiceId.New(), _workspaceA, "INV-MID", new CounterpartyReference("cp"), new Currency("UAH"), T1);
+        var later = Invoice.Create(
+            InvoiceId.New(), _workspaceA, "INV-LATE", new CounterpartyReference("cp"), new Currency("UAH"), T2);
+
+        await _repository.AddAsync(earlier);
+        await _repository.AddAsync(mid);
+        await _repository.AddAsync(later);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var (items, totalCount) = await new InvoiceRepository(readContext)
+            .ListPagedAsync(_workspaceA, page: 1, pageSize: 10, createdFromUtc: T0, createdToUtc: T1);
+
+        Assert.Equal(2, totalCount);
+        Assert.Equal(mid.Id, items[0].Id);
+        Assert.Equal(earlier.Id, items[1].Id);
+    }
+
+    [Fact]
+    public async Task ListPaged_created_equal_bounds_match_exact_instant()
+    {
+        var match = Invoice.Create(
+            InvoiceId.New(), _workspaceA, "INV-MATCH", new CounterpartyReference("cp"), new Currency("UAH"), T1);
+        var other = Invoice.Create(
+            InvoiceId.New(), _workspaceA, "INV-OTHER", new CounterpartyReference("cp"), new Currency("UAH"), T0);
+
+        await _repository.AddAsync(match);
+        await _repository.AddAsync(other);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var (items, totalCount) = await new InvoiceRepository(readContext)
+            .ListPagedAsync(_workspaceA, page: 1, pageSize: 10, createdFromUtc: T1, createdToUtc: T1);
+
+        Assert.Equal(1, totalCount);
+        Assert.Equal(match.Id, Assert.Single(items).Id);
+    }
+
+    [Fact]
+    public async Task ListPaged_created_range_no_match_returns_empty()
+    {
+        var invoice = Invoice.Create(
+            InvoiceId.New(), _workspaceA, "INV-ONLY", new CounterpartyReference("cp"), new Currency("UAH"), T0);
+
+        await _repository.AddAsync(invoice);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var (items, totalCount) = await new InvoiceRepository(readContext)
+            .ListPagedAsync(_workspaceA, page: 1, pageSize: 10, createdFromUtc: T1, createdToUtc: T2);
+
+        Assert.Empty(items);
+        Assert.Equal(0, totalCount);
+    }
+
+    [Fact]
+    public async Task ListPaged_created_range_is_workspace_scoped()
+    {
+        var inA = Invoice.Create(
+            InvoiceId.New(), _workspaceA, "INV-A", new CounterpartyReference("cp"), new Currency("UAH"), T1);
+        var inB = Invoice.Create(
+            InvoiceId.New(), _workspaceB, "INV-B", new CounterpartyReference("cp"), new Currency("UAH"), T1);
+
+        await _repository.AddAsync(inA);
+        await _repository.AddAsync(inB);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var (items, totalCount) = await new InvoiceRepository(readContext)
+            .ListPagedAsync(_workspaceA, page: 1, pageSize: 10, createdFromUtc: T0, createdToUtc: T2);
+
+        Assert.Equal(1, totalCount);
+        Assert.Equal(inA.Id, Assert.Single(items).Id);
+    }
+
+    [Fact]
+    public async Task ListPaged_created_range_with_status_applies_both()
+    {
+        var draftInRange = Invoice.Create(
+            InvoiceId.New(), _workspaceA, "INV-D", new CounterpartyReference("cp"), new Currency("UAH"), T1);
+        var draftOut = Invoice.Create(
+            InvoiceId.New(), _workspaceA, "INV-D-OUT", new CounterpartyReference("cp"), new Currency("UAH"), T0);
+        var issuedInRange = CreateIssuedInvoice(_workspaceA, "INV-I", T1);
+
+        await _repository.AddAsync(draftInRange);
+        await _repository.AddAsync(draftOut);
+        await _repository.AddAsync(issuedInRange);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var (items, totalCount) = await new InvoiceRepository(readContext)
+            .ListPagedAsync(
+                _workspaceA,
+                page: 1,
+                pageSize: 10,
+                status: InvoiceStatus.Draft,
+                createdFromUtc: T1,
+                createdToUtc: T2);
+
+        Assert.Equal(1, totalCount);
+        Assert.Equal(draftInRange.Id, Assert.Single(items).Id);
+        Assert.Equal(InvoiceStatus.Draft, items[0].Status);
+    }
+
+    [Fact]
+    public async Task ListPaged_created_range_pages_after_filter()
+    {
+        var first = Invoice.Create(
+            InvoiceId.New(), _workspaceA, "INV-1", new CounterpartyReference("cp"), new Currency("UAH"), T0);
+        var second = Invoice.Create(
+            InvoiceId.New(), _workspaceA, "INV-2", new CounterpartyReference("cp"), new Currency("UAH"), T1);
+        var third = Invoice.Create(
+            InvoiceId.New(), _workspaceA, "INV-3", new CounterpartyReference("cp"), new Currency("UAH"), T2);
+        var outOfRange = Invoice.Create(
+            InvoiceId.New(),
+            _workspaceA,
+            "INV-OUT",
+            new CounterpartyReference("cp"),
+            new Currency("UAH"),
+            new DateTimeOffset(2026, 7, 19, 15, 0, 0, TimeSpan.Zero));
+
+        await _repository.AddAsync(first);
+        await _repository.AddAsync(second);
+        await _repository.AddAsync(third);
+        await _repository.AddAsync(outOfRange);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var repo = new InvoiceRepository(readContext);
+
+        var (page1, total1) = await repo.ListPagedAsync(
+            _workspaceA, page: 1, pageSize: 1, createdFromUtc: T0, createdToUtc: T2);
+        var (page2, total2) = await repo.ListPagedAsync(
+            _workspaceA, page: 2, pageSize: 1, createdFromUtc: T0, createdToUtc: T2);
+
+        Assert.Equal(3, total1);
+        Assert.Equal(3, total2);
+        Assert.Equal(third.Id, Assert.Single(page1).Id);
+        Assert.Equal(second.Id, Assert.Single(page2).Id);
+    }
+
+    [Fact]
+    public async Task ListPaged_created_range_matches_offset_equivalent_instant()
+    {
+        // Hybrid in-memory DateTimeOffset compare: stored 2026-07-21T08:00:00Z equals
+        // query 2026-07-21T11:00:00+03:00 (same absolute instant).
+        var storedInstant = new DateTimeOffset(2026, 7, 21, 8, 0, 0, TimeSpan.Zero);
+        var queryInstant = new DateTimeOffset(2026, 7, 21, 11, 0, 0, TimeSpan.FromHours(3));
+        Assert.Equal(storedInstant.UtcTicks, queryInstant.UtcTicks);
+
+        var match = Invoice.Create(
+            InvoiceId.New(),
+            _workspaceA,
+            "INV-OFFSET",
+            new CounterpartyReference("cp"),
+            new Currency("UAH"),
+            storedInstant);
+        var earlier = Invoice.Create(
+            InvoiceId.New(),
+            _workspaceA,
+            "INV-BEFORE",
+            new CounterpartyReference("cp"),
+            new Currency("UAH"),
+            storedInstant.AddMinutes(-1));
+
+        await _repository.AddAsync(match);
+        await _repository.AddAsync(earlier);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var (items, totalCount) = await new InvoiceRepository(readContext)
+            .ListPagedAsync(
+                _workspaceA,
+                page: 1,
+                pageSize: 10,
+                createdFromUtc: queryInstant,
+                createdToUtc: queryInstant);
+
+        Assert.Equal(1, totalCount);
+        Assert.Equal(match.Id, Assert.Single(items).Id);
+        Assert.Equal(storedInstant, items[0].CreatedAt);
+    }
+
     [Fact]
     public async Task GetById_after_list_still_round_trips()
     {

@@ -127,11 +127,19 @@ internal static class InvoiceEndpoints
         int page,
         int pageSize,
         string? status,
+        DateTimeOffset? createdFromUtc,
+        DateTimeOffset? createdToUtc,
         GetInvoicesPagedHandler handler,
         CancellationToken cancellationToken)
     {
         var result = await handler.HandleAsync(
-            new GetInvoicesPagedQuery(financeWorkspaceId, page, pageSize, status),
+            new GetInvoicesPagedQuery(
+                financeWorkspaceId,
+                page,
+                pageSize,
+                status,
+                createdFromUtc,
+                createdToUtc),
             cancellationToken);
 
         return ApplicationResultHttp.ToHttpResult(result);

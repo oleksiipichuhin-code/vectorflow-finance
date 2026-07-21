@@ -435,6 +435,8 @@ public sealed class InvoiceApplicationTests
         Assert.True(result.IsSuccess);
         Assert.Equal(1, invoices.ListPagedCallCount);
         Assert.Null(invoices.LastListedStatus);
+        Assert.Null(invoices.LastListedCreatedFromUtc);
+        Assert.Null(invoices.LastListedCreatedToUtc);
         Assert.Equal(1, result.Value!.TotalCount);
     }
 
@@ -575,6 +577,130 @@ public sealed class InvoiceApplicationTests
         Assert.Equal(1, result.Value.Page);
         Assert.Equal(10, result.Value.PageSize);
         Assert.Equal(InvoiceStatus.Issued, invoices.LastListedStatus);
+    }
+
+    [Fact]
+    public async Task ListPaged_omitted_created_bounds_pass_null_to_repository()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        await CreateInvoiceAsync(invoices, workspaces, clock, workspaceId, "INV-1");
+
+        var result = await new GetInvoicesPagedHandler(invoices).HandleAsync(
+            new GetInvoicesPagedQuery(workspaceId, Page: 1, PageSize: 10));
+
+        Assert.True(result.IsSuccess);
+        Assert.Null(invoices.LastListedCreatedFromUtc);
+        Assert.Null(invoices.LastListedCreatedToUtc);
+        Assert.Null(invoices.LastListedStatus);
+    }
+
+    [Fact]
+    public async Task ListPaged_created_from_only_passes_bound_to_repository()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        var from = T1;
+
+        var result = await new GetInvoicesPagedHandler(invoices).HandleAsync(
+            new GetInvoicesPagedQuery(workspaceId, Page: 1, PageSize: 10, CreatedFromUtc: from));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(from, invoices.LastListedCreatedFromUtc);
+        Assert.Null(invoices.LastListedCreatedToUtc);
+    }
+
+    [Fact]
+    public async Task ListPaged_created_to_only_passes_bound_to_repository()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        var to = T1;
+
+        var result = await new GetInvoicesPagedHandler(invoices).HandleAsync(
+            new GetInvoicesPagedQuery(workspaceId, Page: 1, PageSize: 10, CreatedToUtc: to));
+
+        Assert.True(result.IsSuccess);
+        Assert.Null(invoices.LastListedCreatedFromUtc);
+        Assert.Equal(to, invoices.LastListedCreatedToUtc);
+    }
+
+    [Fact]
+    public async Task ListPaged_created_both_bounds_pass_to_repository()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        var result = await new GetInvoicesPagedHandler(invoices).HandleAsync(
+            new GetInvoicesPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 10,
+                CreatedFromUtc: T0,
+                CreatedToUtc: T2));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(T0, invoices.LastListedCreatedFromUtc);
+        Assert.Equal(T2, invoices.LastListedCreatedToUtc);
+    }
+
+    [Fact]
+    public async Task ListPaged_equal_created_bounds_are_accepted()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        var result = await new GetInvoicesPagedHandler(invoices).HandleAsync(
+            new GetInvoicesPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 10,
+                CreatedFromUtc: T1,
+                CreatedToUtc: T1));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(T1, invoices.LastListedCreatedFromUtc);
+        Assert.Equal(T1, invoices.LastListedCreatedToUtc);
+        Assert.Equal(1, invoices.ListPagedCallCount);
+    }
+
+    [Fact]
+    public async Task ListPaged_created_from_after_to_returns_ValidationFailed()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        var result = await new GetInvoicesPagedHandler(invoices).HandleAsync(
+            new GetInvoicesPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 10,
+                CreatedFromUtc: T2,
+                CreatedToUtc: T0));
+
+        Assert.Equal(ApplicationErrorKind.ValidationFailed, result.ErrorKind);
+        Assert.Equal(0, invoices.ListPagedCallCount);
+    }
+
+    [Fact]
+    public async Task ListPaged_created_range_with_status_forwards_both()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        var result = await new GetInvoicesPagedHandler(invoices).HandleAsync(
+            new GetInvoicesPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 10,
+                Status: "Draft",
+                CreatedFromUtc: T0,
+                CreatedToUtc: T2));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(InvoiceStatus.Draft, invoices.LastListedStatus);
+        Assert.Equal(T0, invoices.LastListedCreatedFromUtc);
+        Assert.Equal(T2, invoices.LastListedCreatedToUtc);
     }
 
     [Fact]
