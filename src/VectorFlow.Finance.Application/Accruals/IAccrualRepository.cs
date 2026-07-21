@@ -24,13 +24,14 @@ public interface IAccrualRepository
 
     /// <summary>
     /// Returns a workspace-scoped page of accruals ordered by CreatedAt descending, then Id descending,
-    /// together with the total matching count. CreatedAt ordering and Skip/Take run in memory
-    /// (SQLite cannot ORDER BY DateTimeOffset).
+    /// together with the total matching count. Optional <paramref name="status"/> is applied in the
+    /// query; CreatedAt ordering and Skip/Take run in memory (SQLite cannot ORDER BY DateTimeOffset).
     /// </summary>
     Task<(IReadOnlyList<Accrual> Items, int TotalCount)> ListPagedAsync(
         FinanceWorkspaceId financeWorkspaceId,
         int page,
         int pageSize,
+        AccrualStatus? status = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

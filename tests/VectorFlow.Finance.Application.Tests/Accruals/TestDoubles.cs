@@ -23,6 +23,8 @@ internal sealed class InMemoryAccrualRepository : IAccrualRepository
 
     public int? LastListedPageSize { get; private set; }
 
+    public AccrualStatus? LastListedStatus { get; private set; }
+
     public CancellationToken? LastListPagedCancellationToken { get; private set; }
 
     public InvoiceId? LastListedSourceInvoiceId { get; private set; }
@@ -67,16 +69,19 @@ internal sealed class InMemoryAccrualRepository : IAccrualRepository
         FinanceWorkspaceId financeWorkspaceId,
         int page,
         int pageSize,
+        AccrualStatus? status = null,
         CancellationToken cancellationToken = default)
     {
         ListPagedCallCount++;
         LastListedWorkspaceId = financeWorkspaceId;
         LastListedPage = page;
         LastListedPageSize = pageSize;
+        LastListedStatus = status;
         LastListPagedCancellationToken = cancellationToken;
 
         var matched = _byId.Values
             .Where(accrual => accrual.FinanceWorkspaceId == financeWorkspaceId)
+            .Where(accrual => status is null || accrual.Status == status.Value)
             .OrderByDescending(accrual => accrual.CreatedAt)
             .ThenByDescending(accrual => accrual.Id.Value)
             .ToList();

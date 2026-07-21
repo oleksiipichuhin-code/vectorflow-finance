@@ -27,7 +27,7 @@ internal static class AccrualEndpoints
 
         group.MapGet("/paged", ListPagedAsync)
             .WithName("ListAccrualsPaged")
-            .WithSummary("List accruals for a finance workspace with paging (newest first).")
+            .WithSummary("List accruals for a finance workspace with paging (newest first; optional exact status).")
             .Produces(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status400BadRequest);
 
@@ -147,11 +147,12 @@ internal static class AccrualEndpoints
         Guid financeWorkspaceId,
         int page,
         int pageSize,
+        string? status,
         GetAccrualsPagedHandler handler,
         CancellationToken cancellationToken)
     {
         var result = await handler.HandleAsync(
-            new GetAccrualsPagedQuery(financeWorkspaceId, page, pageSize),
+            new GetAccrualsPagedQuery(financeWorkspaceId, page, pageSize, status),
             cancellationToken);
 
         return ApplicationResultHttp.ToHttpResult(result);

@@ -334,6 +334,182 @@ public sealed class AccrualRepositoryTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ListPaged_status_Draft_returns_only_drafts()
+    {
+        var draft = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 10m, new Currency("UAH"),
+            RecognitionDate, "Draft", null, T0);
+        var recognized = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Expense, 20m, new Currency("UAH"),
+            RecognitionDate, "Recognized", null, T1);
+        recognized.Recognize(T2);
+
+        await _repository.AddAsync(draft);
+        await _repository.AddAsync(recognized);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var (items, totalCount) = await new AccrualRepository(readContext)
+            .ListPagedAsync(_workspaceA, page: 1, pageSize: 10, status: AccrualStatus.Draft);
+
+        Assert.Equal(1, totalCount);
+        Assert.Equal(draft.Id, Assert.Single(items).Id);
+        Assert.Equal(AccrualStatus.Draft, items[0].Status);
+    }
+
+    [Fact]
+    public async Task ListPaged_status_Recognized_returns_only_recognized()
+    {
+        var draft = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 10m, new Currency("UAH"),
+            RecognitionDate, "Draft", null, T0);
+        var recognized = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Expense, 20m, new Currency("UAH"),
+            RecognitionDate, "Recognized", null, T1);
+        recognized.Recognize(T2);
+
+        await _repository.AddAsync(draft);
+        await _repository.AddAsync(recognized);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var (items, totalCount) = await new AccrualRepository(readContext)
+            .ListPagedAsync(_workspaceA, page: 1, pageSize: 10, status: AccrualStatus.Recognized);
+
+        Assert.Equal(1, totalCount);
+        Assert.Equal(recognized.Id, Assert.Single(items).Id);
+        Assert.Equal(AccrualStatus.Recognized, items[0].Status);
+    }
+
+    [Fact]
+    public async Task ListPaged_status_Reversed_returns_only_reversed()
+    {
+        var draft = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 10m, new Currency("UAH"),
+            RecognitionDate, "Draft", null, T0);
+        var reversed = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Expense, 20m, new Currency("UAH"),
+            RecognitionDate, "Reversed", null, T1);
+        reversed.Recognize(T1);
+        reversed.Reverse("Correction", T2);
+
+        await _repository.AddAsync(draft);
+        await _repository.AddAsync(reversed);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var (items, totalCount) = await new AccrualRepository(readContext)
+            .ListPagedAsync(_workspaceA, page: 1, pageSize: 10, status: AccrualStatus.Reversed);
+
+        Assert.Equal(1, totalCount);
+        Assert.Equal(reversed.Id, Assert.Single(items).Id);
+        Assert.Equal(AccrualStatus.Reversed, items[0].Status);
+    }
+
+    [Fact]
+    public async Task ListPaged_null_status_returns_all_statuses()
+    {
+        var draft = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 10m, new Currency("UAH"),
+            RecognitionDate, "Draft", null, T0);
+        var recognized = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Expense, 20m, new Currency("UAH"),
+            RecognitionDate, "Recognized", null, T1);
+        recognized.Recognize(T2);
+
+        await _repository.AddAsync(draft);
+        await _repository.AddAsync(recognized);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var (items, totalCount) = await new AccrualRepository(readContext)
+            .ListPagedAsync(_workspaceA, page: 1, pageSize: 10, status: null);
+
+        Assert.Equal(2, totalCount);
+        Assert.Equal(2, items.Count);
+        Assert.Equal(recognized.Id, items[0].Id);
+        Assert.Equal(draft.Id, items[1].Id);
+    }
+
+    [Fact]
+    public async Task ListPaged_status_filter_is_workspace_scoped()
+    {
+        var draftA = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 10m, new Currency("UAH"),
+            RecognitionDate, "A", null, T0);
+        var draftB = Accrual.Create(
+            AccrualId.New(), _workspaceB, AccrualType.Revenue, 20m, new Currency("UAH"),
+            RecognitionDate, "B", null, T1);
+        var recognizedA = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Expense, 30m, new Currency("UAH"),
+            RecognitionDate, "A-rec", null, T2);
+        recognizedA.Recognize(T2);
+
+        await _repository.AddAsync(draftA);
+        await _repository.AddAsync(draftB);
+        await _repository.AddAsync(recognizedA);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var (items, totalCount) = await new AccrualRepository(readContext)
+            .ListPagedAsync(_workspaceA, page: 1, pageSize: 10, status: AccrualStatus.Draft);
+
+        Assert.Equal(1, totalCount);
+        Assert.Equal(draftA.Id, Assert.Single(items).Id);
+    }
+
+    [Fact]
+    public async Task ListPaged_status_filter_pages_after_filter()
+    {
+        var draftOlder = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 10m, new Currency("UAH"),
+            RecognitionDate, "D1", null, T0);
+        var draftNewer = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 20m, new Currency("UAH"),
+            RecognitionDate, "D2", null, T1);
+        var recognized = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Expense, 30m, new Currency("UAH"),
+            RecognitionDate, "R", null, T2);
+        recognized.Recognize(T2);
+
+        await _repository.AddAsync(draftOlder);
+        await _repository.AddAsync(draftNewer);
+        await _repository.AddAsync(recognized);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var repo = new AccrualRepository(readContext);
+
+        var (page1, total1) = await repo.ListPagedAsync(
+            _workspaceA, page: 1, pageSize: 1, status: AccrualStatus.Draft);
+        var (page2, total2) = await repo.ListPagedAsync(
+            _workspaceA, page: 2, pageSize: 1, status: AccrualStatus.Draft);
+
+        Assert.Equal(2, total1);
+        Assert.Equal(2, total2);
+        Assert.Equal(draftNewer.Id, Assert.Single(page1).Id);
+        Assert.Equal(draftOlder.Id, Assert.Single(page2).Id);
+    }
+
+    [Fact]
+    public async Task ListPaged_status_no_match_returns_empty()
+    {
+        var draft = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 10m, new Currency("UAH"),
+            RecognitionDate, "Draft", null, T0);
+
+        await _repository.AddAsync(draft);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var (items, totalCount) = await new AccrualRepository(readContext)
+            .ListPagedAsync(_workspaceA, page: 1, pageSize: 10, status: AccrualStatus.Recognized);
+
+        Assert.Empty(items);
+        Assert.Equal(0, totalCount);
+    }
+
+    [Fact]
     public async Task ListByWorkspace_equal_created_at_orders_by_id_descending()
     {
         var lowerId = new AccrualId(Guid.Parse("11111111-1111-1111-1111-111111111111"));

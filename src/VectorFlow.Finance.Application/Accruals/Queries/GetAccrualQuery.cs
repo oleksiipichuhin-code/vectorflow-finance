@@ -10,7 +10,8 @@ public sealed record GetAccrualsQuery(
 public sealed record GetAccrualsPagedQuery(
     Guid FinanceWorkspaceId,
     int Page,
-    int PageSize);
+    int PageSize,
+    string? Status = null);
 
 public sealed record GetAccrualsByInvoiceQuery(
     Guid FinanceWorkspaceId,

@@ -45,11 +45,14 @@ public sealed class AccrualRepository : IAccrualRepository
         FinanceWorkspaceId financeWorkspaceId,
         int page,
         int pageSize,
+        AccrualStatus? status = null,
         CancellationToken cancellationToken = default)
     {
-        // SQLite cannot ORDER BY DateTimeOffset; order and page in memory after workspace materialization.
-        var accruals = await _dbContext.Accruals
-            .Where(accrual => accrual.FinanceWorkspaceId == financeWorkspaceId)
+        // SQLite cannot ORDER BY DateTimeOffset; order and page in memory after workspace/status materialization.
+        var accruals = await ApplySqlPagedFilters(
+                _dbContext.Accruals,
+                financeWorkspaceId,
+                status)
             .ToListAsync(cancellationToken);
 
         var ordered = accruals
@@ -64,6 +67,21 @@ public sealed class AccrualRepository : IAccrualRepository
             .ToList();
 
         return (items, totalCount);
+    }
+
+    private static IQueryable<Accrual> ApplySqlPagedFilters(
+        IQueryable<Accrual> source,
+        FinanceWorkspaceId financeWorkspaceId,
+        AccrualStatus? status)
+    {
+        var filtered = source.Where(accrual => accrual.FinanceWorkspaceId == financeWorkspaceId);
+
+        if (status is not null)
+        {
+            filtered = filtered.Where(accrual => accrual.Status == status.Value);
+        }
+
+        return filtered;
     }
 
     public async Task<IReadOnlyList<Accrual>> ListBySourceInvoiceAsync(

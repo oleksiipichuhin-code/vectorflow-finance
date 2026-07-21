@@ -1,5 +1,6 @@
 using VectorFlow.Finance.Application.Abstractions;
 using VectorFlow.Finance.Application.Accruals.Queries;
+using VectorFlow.Finance.Domain.Accruals;
 using VectorFlow.Finance.Domain.Workspaces;
 
 namespace VectorFlow.Finance.Application.Accruals.Handlers;
@@ -20,10 +21,12 @@ public sealed class GetAccrualsPagedHandler
         CancellationToken cancellationToken = default)
     {
         FinanceWorkspaceId financeWorkspaceId;
+        AccrualStatus? status;
         try
         {
             financeWorkspaceId = new FinanceWorkspaceId(query.FinanceWorkspaceId);
             EnsurePaging(query.Page, query.PageSize);
+            status = ParseStatusFilter(query.Status);
         }
         catch (ArgumentException ex)
         {
@@ -34,6 +37,7 @@ public sealed class GetAccrualsPagedHandler
             financeWorkspaceId,
             query.Page,
             query.PageSize,
+            status,
             cancellationToken);
 
         var page = new PageResult<AccrualDto>(
@@ -63,5 +67,36 @@ public sealed class GetAccrualsPagedHandler
                 $"Page size must not exceed {MaxPageSize}.",
                 nameof(pageSize));
         }
+    }
+
+    /// <summary>
+    /// Missing (<c>null</c>) means no status filter. Explicit blank/whitespace or any non-exact
+    /// <c>Draft</c>/<c>Recognized</c>/<c>Reversed</c> value is validation failure (Ordinal, no trim/case-fold).
+    /// </summary>
+    private static AccrualStatus? ParseStatusFilter(string? status)
+    {
+        if (status is null)
+        {
+            return null;
+        }
+
+        if (string.Equals(status, nameof(AccrualStatus.Draft), StringComparison.Ordinal))
+        {
+            return AccrualStatus.Draft;
+        }
+
+        if (string.Equals(status, nameof(AccrualStatus.Recognized), StringComparison.Ordinal))
+        {
+            return AccrualStatus.Recognized;
+        }
+
+        if (string.Equals(status, nameof(AccrualStatus.Reversed), StringComparison.Ordinal))
+        {
+            return AccrualStatus.Reversed;
+        }
+
+        throw new ArgumentException(
+            "Status must be exactly Draft, Recognized, or Reversed when provided.",
+            nameof(status));
     }
 }
