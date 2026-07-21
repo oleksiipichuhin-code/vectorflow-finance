@@ -27,6 +27,7 @@ public sealed class GetAccrualsPagedHandler
             financeWorkspaceId = new FinanceWorkspaceId(query.FinanceWorkspaceId);
             EnsurePaging(query.Page, query.PageSize);
             status = ParseStatusFilter(query.Status);
+            EnsureCreatedAtRange(query.CreatedFromUtc, query.CreatedToUtc);
         }
         catch (ArgumentException ex)
         {
@@ -38,6 +39,8 @@ public sealed class GetAccrualsPagedHandler
             query.Page,
             query.PageSize,
             status,
+            query.CreatedFromUtc,
+            query.CreatedToUtc,
             cancellationToken);
 
         var page = new PageResult<AccrualDto>(
@@ -98,5 +101,14 @@ public sealed class GetAccrualsPagedHandler
         throw new ArgumentException(
             "Status must be exactly Draft, Recognized, or Reversed when provided.",
             nameof(status));
+    }
+
+    private static void EnsureCreatedAtRange(DateTimeOffset? createdFromUtc, DateTimeOffset? createdToUtc)
+    {
+        if (createdFromUtc is { } from && createdToUtc is { } to && from > to)
+        {
+            throw new ArgumentException(
+                "CreatedFromUtc must not be later than CreatedToUtc.");
+        }
     }
 }

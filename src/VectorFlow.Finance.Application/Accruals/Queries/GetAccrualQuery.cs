@@ -11,7 +11,9 @@ public sealed record GetAccrualsPagedQuery(
     Guid FinanceWorkspaceId,
     int Page,
     int PageSize,
-    string? Status = null);
+    string? Status = null,
+    DateTimeOffset? CreatedFromUtc = null,
+    DateTimeOffset? CreatedToUtc = null);
 
 public sealed record GetAccrualsByInvoiceQuery(
     Guid FinanceWorkspaceId,

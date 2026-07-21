@@ -46,22 +46,36 @@ public sealed class AccrualRepository : IAccrualRepository
         int page,
         int pageSize,
         AccrualStatus? status = null,
+        DateTimeOffset? createdFromUtc = null,
+        DateTimeOffset? createdToUtc = null,
         CancellationToken cancellationToken = default)
     {
-        // SQLite cannot ORDER BY DateTimeOffset; order and page in memory after workspace/status materialization.
+        // SQLite cannot translate DateTimeOffset comparisons; CreatedAt bounds are applied in memory.
         var accruals = await ApplySqlPagedFilters(
                 _dbContext.Accruals,
                 financeWorkspaceId,
                 status)
             .ToListAsync(cancellationToken);
 
-        var ordered = accruals
+        IEnumerable<Accrual> filtered = accruals;
+
+        if (createdFromUtc is not null)
+        {
+            filtered = filtered.Where(accrual => accrual.CreatedAt >= createdFromUtc.Value);
+        }
+
+        if (createdToUtc is not null)
+        {
+            filtered = filtered.Where(accrual => accrual.CreatedAt <= createdToUtc.Value);
+        }
+
+        var matched = filtered
             .OrderByDescending(accrual => accrual.CreatedAt)
             .ThenByDescending(accrual => accrual.Id.Value)
             .ToList();
 
-        var totalCount = ordered.Count;
-        var items = ordered
+        var totalCount = matched.Count;
+        var items = matched
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToList();

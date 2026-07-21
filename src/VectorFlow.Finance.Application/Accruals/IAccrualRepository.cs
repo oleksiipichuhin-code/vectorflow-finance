@@ -25,13 +25,17 @@ public interface IAccrualRepository
     /// <summary>
     /// Returns a workspace-scoped page of accruals ordered by CreatedAt descending, then Id descending,
     /// together with the total matching count. Optional <paramref name="status"/> is applied in the
-    /// query; CreatedAt ordering and Skip/Take run in memory (SQLite cannot ORDER BY DateTimeOffset).
+    /// query; inclusive CreatedAt bounds (<paramref name="createdFromUtc"/> / <paramref name="createdToUtc"/>)
+    /// are applied in memory after materialization (SQLite cannot translate DateTimeOffset comparisons).
+    /// Both filters apply to the page and the total count.
     /// </summary>
     Task<(IReadOnlyList<Accrual> Items, int TotalCount)> ListPagedAsync(
         FinanceWorkspaceId financeWorkspaceId,
         int page,
         int pageSize,
         AccrualStatus? status = null,
+        DateTimeOffset? createdFromUtc = null,
+        DateTimeOffset? createdToUtc = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

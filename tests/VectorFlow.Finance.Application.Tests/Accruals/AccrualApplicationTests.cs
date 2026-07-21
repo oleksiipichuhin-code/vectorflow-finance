@@ -688,6 +688,188 @@ public sealed class AccrualApplicationTests
     }
 
     [Fact]
+    public async Task ListPaged_omitted_created_bounds_pass_null_to_repository()
+    {
+        var (accruals, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "1");
+
+        var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
+            new GetAccrualsPagedQuery(workspaceId, Page: 1, PageSize: 10));
+
+        Assert.True(result.IsSuccess);
+        Assert.Null(accruals.LastListedCreatedFromUtc);
+        Assert.Null(accruals.LastListedCreatedToUtc);
+        Assert.Null(accruals.LastListedStatus);
+    }
+
+    [Fact]
+    public async Task ListPaged_created_from_only_passes_bound_to_repository()
+    {
+        var (accruals, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        var from = T1;
+
+        var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
+            new GetAccrualsPagedQuery(workspaceId, Page: 1, PageSize: 10, CreatedFromUtc: from));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(from, accruals.LastListedCreatedFromUtc);
+        Assert.Null(accruals.LastListedCreatedToUtc);
+    }
+
+    [Fact]
+    public async Task ListPaged_created_to_only_passes_bound_to_repository()
+    {
+        var (accruals, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        var to = T1;
+
+        var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
+            new GetAccrualsPagedQuery(workspaceId, Page: 1, PageSize: 10, CreatedToUtc: to));
+
+        Assert.True(result.IsSuccess);
+        Assert.Null(accruals.LastListedCreatedFromUtc);
+        Assert.Equal(to, accruals.LastListedCreatedToUtc);
+    }
+
+    [Fact]
+    public async Task ListPaged_created_both_bounds_pass_to_repository()
+    {
+        var (accruals, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
+            new GetAccrualsPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 10,
+                CreatedFromUtc: T0,
+                CreatedToUtc: T2));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(T0, accruals.LastListedCreatedFromUtc);
+        Assert.Equal(T2, accruals.LastListedCreatedToUtc);
+    }
+
+    [Fact]
+    public async Task ListPaged_equal_created_bounds_are_accepted()
+    {
+        var (accruals, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
+            new GetAccrualsPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 10,
+                CreatedFromUtc: T1,
+                CreatedToUtc: T1));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(T1, accruals.LastListedCreatedFromUtc);
+        Assert.Equal(T1, accruals.LastListedCreatedToUtc);
+        Assert.Equal(1, accruals.ListPagedCallCount);
+    }
+
+    [Fact]
+    public async Task ListPaged_created_from_after_to_returns_ValidationFailed()
+    {
+        var (accruals, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
+            new GetAccrualsPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 10,
+                CreatedFromUtc: T2,
+                CreatedToUtc: T0));
+
+        Assert.Equal(ApplicationErrorKind.ValidationFailed, result.ErrorKind);
+        Assert.Equal(0, accruals.ListPagedCallCount);
+    }
+
+    [Fact]
+    public async Task ListPaged_created_range_with_status_forwards_both()
+    {
+        var (accruals, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
+            new GetAccrualsPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 10,
+                Status: "Draft",
+                CreatedFromUtc: T0,
+                CreatedToUtc: T2));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(AccrualStatus.Draft, accruals.LastListedStatus);
+        Assert.Equal(T0, accruals.LastListedCreatedFromUtc);
+        Assert.Equal(T2, accruals.LastListedCreatedToUtc);
+    }
+
+    [Fact]
+    public async Task ListPaged_created_from_filters_inclusive_via_repository()
+    {
+        var (accruals, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        clock.UtcNow = T0;
+        await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "Earlier");
+        clock.UtcNow = T1;
+        var onBound = await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "On bound");
+        clock.UtcNow = T2;
+        var later = await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "Later");
+
+        var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
+            new GetAccrualsPagedQuery(workspaceId, Page: 1, PageSize: 10, CreatedFromUtc: T1));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(2, result.Value!.TotalCount);
+        Assert.Equal(later.Id, result.Value.Items[0].Id);
+        Assert.Equal(onBound.Id, result.Value.Items[1].Id);
+    }
+
+    [Fact]
+    public async Task ListPaged_created_range_pages_after_filter()
+    {
+        var (accruals, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        clock.UtcNow = T0;
+        await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "1");
+        clock.UtcNow = T1;
+        var mid = await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "2");
+        clock.UtcNow = T2;
+        var newest = await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "3");
+
+        var page1 = await new GetAccrualsPagedHandler(accruals).HandleAsync(
+            new GetAccrualsPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 1,
+                CreatedFromUtc: T0,
+                CreatedToUtc: T2));
+        var page2 = await new GetAccrualsPagedHandler(accruals).HandleAsync(
+            new GetAccrualsPagedQuery(
+                workspaceId,
+                Page: 2,
+                PageSize: 1,
+                CreatedFromUtc: T0,
+                CreatedToUtc: T2));
+
+        Assert.True(page1.IsSuccess);
+        Assert.True(page2.IsSuccess);
+        Assert.Equal(3, page1.Value!.TotalCount);
+        Assert.Equal(3, page2.Value!.TotalCount);
+        Assert.Equal(newest.Id, Assert.Single(page1.Value.Items).Id);
+        Assert.Equal(mid.Id, Assert.Single(page2.Value.Items).Id);
+    }
+
+    [Fact]
     public async Task List_equal_created_at_orders_by_id_descending()
     {
         var (accruals, workspaces, clock) = CreateHarness();
