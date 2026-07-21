@@ -151,6 +151,134 @@ public sealed class InvoiceRepositoryTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ListPaged_returns_workspace_page_newest_first_with_total()
+    {
+        var older = Invoice.Create(
+            InvoiceId.New(),
+            _workspaceA,
+            "INV-OLD",
+            new CounterpartyReference("cp-old"),
+            new Currency("UAH"),
+            T0);
+        var newer = Invoice.Create(
+            InvoiceId.New(),
+            _workspaceA,
+            "INV-NEW",
+            new CounterpartyReference("cp-new"),
+            new Currency("UAH"),
+            T1);
+        var other = Invoice.Create(
+            InvoiceId.New(),
+            _workspaceB,
+            "INV-OTHER",
+            new CounterpartyReference("cp-other"),
+            new Currency("USD"),
+            T2);
+
+        await _repository.AddAsync(older);
+        await _repository.AddAsync(newer);
+        await _repository.AddAsync(other);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var (items, totalCount) = await new InvoiceRepository(readContext)
+            .ListPagedAsync(_workspaceA, page: 1, pageSize: 10);
+
+        Assert.Equal(2, totalCount);
+        Assert.Equal(2, items.Count);
+        Assert.Equal(newer.Id, items[0].Id);
+        Assert.Equal(older.Id, items[1].Id);
+    }
+
+    [Fact]
+    public async Task ListPaged_empty_returns_zero_total()
+    {
+        await using var readContext = CreateContext();
+        var (items, totalCount) = await new InvoiceRepository(readContext)
+            .ListPagedAsync(_workspaceA, page: 1, pageSize: 10);
+
+        Assert.Empty(items);
+        Assert.Equal(0, totalCount);
+    }
+
+    [Fact]
+    public async Task ListPaged_orders_and_pages_deterministically()
+    {
+        var first = Invoice.Create(
+            InvoiceId.New(),
+            _workspaceA,
+            "INV-1",
+            new CounterpartyReference("cp-1"),
+            new Currency("UAH"),
+            T0);
+        var second = Invoice.Create(
+            InvoiceId.New(),
+            _workspaceA,
+            "INV-2",
+            new CounterpartyReference("cp-2"),
+            new Currency("UAH"),
+            T1);
+        var third = Invoice.Create(
+            InvoiceId.New(),
+            _workspaceA,
+            "INV-3",
+            new CounterpartyReference("cp-3"),
+            new Currency("UAH"),
+            T2);
+
+        await _repository.AddAsync(first);
+        await _repository.AddAsync(second);
+        await _repository.AddAsync(third);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var repo = new InvoiceRepository(readContext);
+
+        var (page1, total1) = await repo.ListPagedAsync(_workspaceA, page: 1, pageSize: 2);
+        var (page2, total2) = await repo.ListPagedAsync(_workspaceA, page: 2, pageSize: 2);
+
+        Assert.Equal(3, total1);
+        Assert.Equal(3, total2);
+        Assert.Equal(2, page1.Count);
+        Assert.Equal(third.Id, page1[0].Id);
+        Assert.Equal(second.Id, page1[1].Id);
+        Assert.Equal(first.Id, Assert.Single(page2).Id);
+    }
+
+    [Fact]
+    public async Task ListPaged_equal_created_at_orders_by_id_descending()
+    {
+        var lowerId = new InvoiceId(Guid.Parse("11111111-1111-1111-1111-111111111111"));
+        var higherId = new InvoiceId(Guid.Parse("99999999-9999-9999-9999-999999999999"));
+        var lower = Invoice.Create(
+            lowerId,
+            _workspaceA,
+            "INV-TIE-A",
+            new CounterpartyReference("cp-a"),
+            new Currency("UAH"),
+            T0);
+        var higher = Invoice.Create(
+            higherId,
+            _workspaceA,
+            "INV-TIE-B",
+            new CounterpartyReference("cp-b"),
+            new Currency("UAH"),
+            T0);
+
+        await _repository.AddAsync(lower);
+        await _repository.AddAsync(higher);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var (items, totalCount) = await new InvoiceRepository(readContext)
+            .ListPagedAsync(_workspaceA, page: 1, pageSize: 10);
+
+        Assert.Equal(2, totalCount);
+        Assert.Equal(higherId, items[0].Id);
+        Assert.Equal(lowerId, items[1].Id);
+    }
+
+    [Fact]
     public async Task GetById_after_list_still_round_trips()
     {
         var invoice = Invoice.Create(

@@ -77,10 +77,11 @@ F3A–F3F are published. Decimal precision policy for Debit/Credit remains an op
 | F4J | Invoice Workspace Listing | Complete |
 | F4K | Accrual Workspace Listing | Complete |
 | F4L | Accrual Get-By-Invoice | Complete |
-| F4M | Invoice Get-By-Document-Number | Complete locally / awaiting publication |
-| F4N+ | Later invoice and Accrual query enhancements | Planned |
+| F4M | Invoice Get-By-Document-Number | Complete |
+| F4N | Invoice Search (paged listing) | Complete locally / awaiting publication |
+| F4O+ | Later invoice and Accrual query enhancements | Planned |
 
-F4A–F4L are published. F4M Invoice Get-By-Document-Number is complete in the working tree until separately published. Later invoice query enhancements (search/filters/pagination design), Accrual search/filters/pagination, and other deferred Accrual query capabilities remain planned. F4 as a whole remains incomplete.
+F4A–F4M are published. F4N Invoice Search (paged listing) is complete in the working tree until separately published. Later invoice query enhancements (multi-field filters / full-text search), Accrual search/filters/pagination, and other deferred Accrual query capabilities remain planned. F4 as a whole remains incomplete.
 
 ## F5 sub-slices
 

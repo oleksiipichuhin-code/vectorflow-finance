@@ -57,6 +57,31 @@ public sealed class InvoiceRepository : IInvoiceRepository
             .ToList();
     }
 
+    public async Task<(IReadOnlyList<Invoice> Items, int TotalCount)> ListPagedAsync(
+        FinanceWorkspaceId financeWorkspaceId,
+        int page,
+        int pageSize,
+        CancellationToken cancellationToken = default)
+    {
+        var filtered = _dbContext.Invoices
+            .Where(invoice => invoice.FinanceWorkspaceId == financeWorkspaceId);
+
+        var totalCount = await filtered.CountAsync(cancellationToken);
+
+        var invoices = await InvoicesWithLines()
+            .Where(invoice => invoice.FinanceWorkspaceId == financeWorkspaceId)
+            .ToListAsync(cancellationToken);
+
+        var items = invoices
+            .OrderByDescending(invoice => invoice.CreatedAt)
+            .ThenByDescending(invoice => invoice.Id.Value)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToList();
+
+        return (items, totalCount);
+    }
+
     public async Task AddAsync(
         Invoice invoice,
         CancellationToken cancellationToken = default)

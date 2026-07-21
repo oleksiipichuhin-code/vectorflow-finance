@@ -30,6 +30,16 @@ public interface IInvoiceRepository
         string documentNumber,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Returns a workspace-scoped page of invoices ordered by CreatedAt descending, then Id descending,
+    /// together with the total matching count.
+    /// </summary>
+    Task<(IReadOnlyList<Invoice> Items, int TotalCount)> ListPagedAsync(
+        FinanceWorkspaceId financeWorkspaceId,
+        int page,
+        int pageSize,
+        CancellationToken cancellationToken = default);
+
     Task AddAsync(
         Invoice invoice,
         CancellationToken cancellationToken = default);

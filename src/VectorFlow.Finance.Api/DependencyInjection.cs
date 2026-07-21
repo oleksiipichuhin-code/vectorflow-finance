@@ -63,6 +63,7 @@ public static class DependencyInjection
         services.AddScoped<CreateInvoiceHandler>();
         services.AddScoped<GetInvoiceHandler>();
         services.AddScoped<GetInvoicesHandler>();
+        services.AddScoped<GetInvoicesPagedHandler>();
         services.AddScoped<GetInvoicesByDocumentNumberHandler>();
         services.AddScoped<ChangeInvoiceDocumentNumberHandler>();
         services.AddScoped<ChangeInvoiceCounterpartyHandler>();
