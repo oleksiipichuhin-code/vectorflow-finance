@@ -32,12 +32,14 @@ public interface IInvoiceRepository
 
     /// <summary>
     /// Returns a workspace-scoped page of invoices ordered by CreatedAt descending, then Id descending,
-    /// together with the total matching count.
+    /// together with the total matching count. When <paramref name="status"/> is set, only invoices
+    /// with that status are included in both the page and the total count.
     /// </summary>
     Task<(IReadOnlyList<Invoice> Items, int TotalCount)> ListPagedAsync(
         FinanceWorkspaceId financeWorkspaceId,
         int page,
         int pageSize,
+        InvoiceStatus? status = null,
         CancellationToken cancellationToken = default);
 
     Task AddAsync(

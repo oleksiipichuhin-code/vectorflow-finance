@@ -1,5 +1,6 @@
 using VectorFlow.Finance.Application.Abstractions;
 using VectorFlow.Finance.Application.Invoices.Queries;
+using VectorFlow.Finance.Domain.Invoices;
 using VectorFlow.Finance.Domain.Workspaces;
 
 namespace VectorFlow.Finance.Application.Invoices.Handlers;
@@ -20,10 +21,12 @@ public sealed class GetInvoicesPagedHandler
         CancellationToken cancellationToken = default)
     {
         FinanceWorkspaceId financeWorkspaceId;
+        InvoiceStatus? status;
         try
         {
             financeWorkspaceId = new FinanceWorkspaceId(query.FinanceWorkspaceId);
             EnsurePaging(query.Page, query.PageSize);
+            status = ParseStatusFilter(query.Status);
         }
         catch (ArgumentException ex)
         {
@@ -34,6 +37,7 @@ public sealed class GetInvoicesPagedHandler
             financeWorkspaceId,
             query.Page,
             query.PageSize,
+            status,
             cancellationToken);
 
         var page = new PageResult<InvoiceDto>(
@@ -63,5 +67,31 @@ public sealed class GetInvoicesPagedHandler
                 $"Page size must not exceed {MaxPageSize}.",
                 nameof(pageSize));
         }
+    }
+
+    /// <summary>
+    /// Missing (<c>null</c>) means no status filter. Explicit blank/whitespace or any non-exact
+    /// <c>Draft</c>/<c>Issued</c> value is validation failure (Ordinal, no trim/case-fold).
+    /// </summary>
+    private static InvoiceStatus? ParseStatusFilter(string? status)
+    {
+        if (status is null)
+        {
+            return null;
+        }
+
+        if (string.Equals(status, nameof(InvoiceStatus.Draft), StringComparison.Ordinal))
+        {
+            return InvoiceStatus.Draft;
+        }
+
+        if (string.Equals(status, nameof(InvoiceStatus.Issued), StringComparison.Ordinal))
+        {
+            return InvoiceStatus.Issued;
+        }
+
+        throw new ArgumentException(
+            "Status must be exactly Draft or Issued when provided.",
+            nameof(status));
     }
 }

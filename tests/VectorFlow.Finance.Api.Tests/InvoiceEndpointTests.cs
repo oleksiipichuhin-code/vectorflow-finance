@@ -204,6 +204,231 @@ public sealed class InvoiceEndpointTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task List_status_Draft_returns_only_drafts()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("c1000000-0000-0000-0000-000000000050"),
+            Guid.Parse("c2000000-0000-0000-0000-000000000050"));
+
+        var draftId = await CreateInvoiceAsync(workspaceId, "INV-DRAFT", "cp-draft", "UAH");
+        var issuedId = await CreateIssuableInvoiceAsync(workspaceId, "INV-ISSUED");
+        var issue = await _client.PostAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices/{issuedId}/issue",
+            null);
+        Assert.Equal(HttpStatusCode.OK, issue.StatusCode);
+
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices?page=1&pageSize=10&status=Draft");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(1, document.RootElement.GetProperty("totalCount").GetInt32());
+        var item = Assert.Single(document.RootElement.GetProperty("items").EnumerateArray());
+        Assert.Equal(draftId, item.GetProperty("id").GetGuid());
+        Assert.Equal("Draft", item.GetProperty("status").GetString());
+    }
+
+    [Fact]
+    public async Task List_status_Issued_returns_only_issued()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("c1000000-0000-0000-0000-000000000051"),
+            Guid.Parse("c2000000-0000-0000-0000-000000000051"));
+
+        await CreateInvoiceAsync(workspaceId, "INV-DRAFT", "cp-draft", "UAH");
+        var issuedId = await CreateIssuableInvoiceAsync(workspaceId, "INV-ISSUED");
+        var issue = await _client.PostAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices/{issuedId}/issue",
+            null);
+        Assert.Equal(HttpStatusCode.OK, issue.StatusCode);
+
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices?page=1&pageSize=10&status=Issued");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(1, document.RootElement.GetProperty("totalCount").GetInt32());
+        var item = Assert.Single(document.RootElement.GetProperty("items").EnumerateArray());
+        Assert.Equal(issuedId, item.GetProperty("id").GetGuid());
+        Assert.Equal("Issued", item.GetProperty("status").GetString());
+    }
+
+    [Fact]
+    public async Task List_omitted_status_returns_all_statuses()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("c1000000-0000-0000-0000-000000000052"),
+            Guid.Parse("c2000000-0000-0000-0000-000000000052"));
+
+        var draftId = await CreateInvoiceAsync(workspaceId, "INV-DRAFT", "cp-draft", "UAH");
+        var issuedId = await CreateIssuableInvoiceAsync(workspaceId, "INV-ISSUED");
+        var issue = await _client.PostAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices/{issuedId}/issue",
+            null);
+        Assert.Equal(HttpStatusCode.OK, issue.StatusCode);
+
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices?page=1&pageSize=10");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(2, document.RootElement.GetProperty("totalCount").GetInt32());
+        var items = document.RootElement.GetProperty("items");
+        Assert.Equal(2, items.GetArrayLength());
+        var ids = items.EnumerateArray().Select(item => item.GetProperty("id").GetGuid()).ToHashSet();
+        Assert.Contains(draftId, ids);
+        Assert.Contains(issuedId, ids);
+    }
+
+    [Fact]
+    public async Task List_explicit_blank_status_returns_400()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("c1000000-0000-0000-0000-000000000053"),
+            Guid.Parse("c2000000-0000-0000-0000-000000000053"));
+
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices?page=1&pageSize=10&status=");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        await AssertErrorAsync(response, "ValidationFailed");
+    }
+
+    [Fact]
+    public async Task List_whitespace_status_returns_400()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("c1000000-0000-0000-0000-000000000054"),
+            Guid.Parse("c2000000-0000-0000-0000-000000000054"));
+
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices?page=1&pageSize=10&status=%20%20%20");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        await AssertErrorAsync(response, "ValidationFailed");
+    }
+
+    [Fact]
+    public async Task List_lowercase_status_returns_400()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("c1000000-0000-0000-0000-000000000055"),
+            Guid.Parse("c2000000-0000-0000-0000-000000000055"));
+
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices?page=1&pageSize=10&status=draft");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        await AssertErrorAsync(response, "ValidationFailed");
+    }
+
+    [Fact]
+    public async Task List_unknown_status_Paid_returns_400()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("c1000000-0000-0000-0000-000000000056"),
+            Guid.Parse("c2000000-0000-0000-0000-000000000056"));
+
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices?page=1&pageSize=10&status=Paid");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        await AssertErrorAsync(response, "ValidationFailed");
+    }
+
+    [Fact]
+    public async Task List_numeric_status_returns_400()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("c1000000-0000-0000-0000-000000000057"),
+            Guid.Parse("c2000000-0000-0000-0000-000000000057"));
+
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices?page=1&pageSize=10&status=0");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        await AssertErrorAsync(response, "ValidationFailed");
+    }
+
+    [Fact]
+    public async Task List_status_no_match_returns_empty_page()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("c1000000-0000-0000-0000-000000000058"),
+            Guid.Parse("c2000000-0000-0000-0000-000000000058"));
+
+        await CreateInvoiceAsync(workspaceId, "INV-DRAFT", "cp-draft", "UAH");
+
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices?page=1&pageSize=10&status=Issued");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(0, document.RootElement.GetProperty("totalCount").GetInt32());
+        Assert.Equal(0, document.RootElement.GetProperty("items").GetArrayLength());
+    }
+
+    [Fact]
+    public async Task List_status_filter_pages_within_filtered_set()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("c1000000-0000-0000-0000-000000000059"),
+            Guid.Parse("c2000000-0000-0000-0000-000000000059"));
+
+        var draft1 = await CreateInvoiceAsync(workspaceId, "INV-D1", "cp-1", "UAH");
+        await Task.Delay(20);
+        var draft2 = await CreateInvoiceAsync(workspaceId, "INV-D2", "cp-2", "UAH");
+        await Task.Delay(20);
+        var issuedId = await CreateIssuableInvoiceAsync(workspaceId, "INV-ISS");
+        var issue = await _client.PostAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices/{issuedId}/issue",
+            null);
+        Assert.Equal(HttpStatusCode.OK, issue.StatusCode);
+
+        var page1Response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices?page=1&pageSize=1&status=Draft");
+        Assert.Equal(HttpStatusCode.OK, page1Response.StatusCode);
+        using var page1 = JsonDocument.Parse(await page1Response.Content.ReadAsStringAsync());
+        Assert.Equal(2, page1.RootElement.GetProperty("totalCount").GetInt32());
+        Assert.Equal(
+            draft2,
+            Assert.Single(page1.RootElement.GetProperty("items").EnumerateArray()).GetProperty("id").GetGuid());
+
+        var page2Response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices?page=2&pageSize=1&status=Draft");
+        Assert.Equal(HttpStatusCode.OK, page2Response.StatusCode);
+        using var page2 = JsonDocument.Parse(await page2Response.Content.ReadAsStringAsync());
+        Assert.Equal(2, page2.RootElement.GetProperty("totalCount").GetInt32());
+        Assert.Equal(
+            draft1,
+            Assert.Single(page2.RootElement.GetProperty("items").EnumerateArray()).GetProperty("id").GetGuid());
+    }
+
+    [Fact]
+    public async Task List_status_filter_is_workspace_scoped()
+    {
+        var workspaceA = await CreateWorkspaceAsync(
+            Guid.Parse("c1000000-0000-0000-0000-000000000060"),
+            Guid.Parse("c2000000-0000-0000-0000-000000000060"));
+        var workspaceB = await CreateWorkspaceAsync(
+            Guid.Parse("d1000000-0000-0000-0000-000000000060"),
+            Guid.Parse("d2000000-0000-0000-0000-000000000060"));
+
+        var draftA = await CreateInvoiceAsync(workspaceA, "INV-A", "cp-a", "UAH");
+        await CreateInvoiceAsync(workspaceB, "INV-B", "cp-b", "UAH");
+
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceA}/invoices?page=1&pageSize=10&status=Draft");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(1, document.RootElement.GetProperty("totalCount").GetInt32());
+        Assert.Equal(
+            draftA,
+            Assert.Single(document.RootElement.GetProperty("items").EnumerateArray()).GetProperty("id").GetGuid());
+    }
+
+    [Fact]
     public async Task Get_by_id_still_resolves_after_list_route()
     {
         var workspaceId = await CreateWorkspaceAsync(
@@ -650,6 +875,8 @@ public sealed class InvoiceEndpointTests : IAsyncLifetime
         Assert.Contains("GetInvoiceById", json);
         Assert.Contains("documentNumber", json);
         Assert.Contains("pageSize", json);
+        Assert.Contains("status", json);
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(json, "\"ListInvoices\""));
         Assert.Single(System.Text.RegularExpressions.Regex.Matches(json, "\"ListInvoicesByDocumentNumber\""));
     }
 
@@ -711,9 +938,9 @@ public sealed class InvoiceEndpointTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
-    private async Task<Guid> CreateIssuableInvoiceAsync(Guid workspaceId)
+    private async Task<Guid> CreateIssuableInvoiceAsync(Guid workspaceId, string documentNumber = "INV-READY")
     {
-        var invoiceId = await CreateInvoiceAsync(workspaceId, "INV-READY", "cp", "UAH");
+        var invoiceId = await CreateInvoiceAsync(workspaceId, documentNumber, "cp", "UAH");
         await AddLineAsync(workspaceId, invoiceId, 1m, 25m, "Ready");
         await SetDueDateAsync(workspaceId, invoiceId, FutureDue);
         return invoiceId;

@@ -61,16 +61,28 @@ public sealed class InvoiceRepository : IInvoiceRepository
         FinanceWorkspaceId financeWorkspaceId,
         int page,
         int pageSize,
+        InvoiceStatus? status = null,
         CancellationToken cancellationToken = default)
     {
         var filtered = _dbContext.Invoices
             .Where(invoice => invoice.FinanceWorkspaceId == financeWorkspaceId);
 
+        if (status is not null)
+        {
+            filtered = filtered.Where(invoice => invoice.Status == status.Value);
+        }
+
         var totalCount = await filtered.CountAsync(cancellationToken);
 
-        var invoices = await InvoicesWithLines()
-            .Where(invoice => invoice.FinanceWorkspaceId == financeWorkspaceId)
-            .ToListAsync(cancellationToken);
+        var invoicesQuery = InvoicesWithLines()
+            .Where(invoice => invoice.FinanceWorkspaceId == financeWorkspaceId);
+
+        if (status is not null)
+        {
+            invoicesQuery = invoicesQuery.Where(invoice => invoice.Status == status.Value);
+        }
+
+        var invoices = await invoicesQuery.ToListAsync(cancellationToken);
 
         var items = invoices
             .OrderByDescending(invoice => invoice.CreatedAt)

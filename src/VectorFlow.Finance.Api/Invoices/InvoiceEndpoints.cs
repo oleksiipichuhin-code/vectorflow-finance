@@ -126,11 +126,12 @@ internal static class InvoiceEndpoints
         Guid financeWorkspaceId,
         int page,
         int pageSize,
+        string? status,
         GetInvoicesPagedHandler handler,
         CancellationToken cancellationToken)
     {
         var result = await handler.HandleAsync(
-            new GetInvoicesPagedQuery(financeWorkspaceId, page, pageSize),
+            new GetInvoicesPagedQuery(financeWorkspaceId, page, pageSize, status),
             cancellationToken);
 
         return ApplicationResultHttp.ToHttpResult(result);

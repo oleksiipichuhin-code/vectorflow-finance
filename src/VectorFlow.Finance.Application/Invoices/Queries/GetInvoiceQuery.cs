@@ -14,4 +14,5 @@ public sealed record GetInvoicesByDocumentNumberQuery(
 public sealed record GetInvoicesPagedQuery(
     Guid FinanceWorkspaceId,
     int Page,
-    int PageSize);
+    int PageSize,
+    string? Status = null);

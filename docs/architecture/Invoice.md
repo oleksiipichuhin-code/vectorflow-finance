@@ -60,33 +60,34 @@ Application use cases over the F4E aggregate (no persistence implementation, no 
 - create invoice in an existing finance workspace;
 - get invoice by id (workspace-scoped);
 - list invoices for a finance workspace (CreatedAt descending, then InvoiceId descending; empty list when none);
-- list invoices for a finance workspace with paging (`page`, `pageSize`; CreatedAt descending, then InvoiceId descending; empty page when none; returns `items`, `page`, `pageSize`, `totalCount`);
+- list invoices for a finance workspace with paging (`page`, `pageSize`, optional exact `status` of `Draft` or `Issued`; CreatedAt descending, then InvoiceId descending; empty page when none; returns `items`, `page`, `pageSize`, `totalCount`);
 - list invoices by document number within a finance workspace (CreatedAt descending, then InvoiceId descending; empty list when none; multiple invoices may share one DocumentNumber; exact ordinal match after trim);
 - draft mutations: document number, counterparty reference, currency, due date, add/update/remove line;
 - issue invoice (`Draft` → `Issued`).
 
-`IInvoiceRepository` is the Application persistence port (`GetByIdAsync`, `ListByWorkspaceAsync`, `ListByDocumentNumberAsync`, and `ListPagedAsync` always workspace-scoped, `AddAsync`, `SaveChangesAsync`). Multi-field filters and full-text search remain later slices. Issue does not create journal entries or ledger postings.
+`IInvoiceRepository` is the Application persistence port (`GetByIdAsync`, `ListByWorkspaceAsync`, `ListByDocumentNumberAsync`, and `ListPagedAsync` always workspace-scoped, `AddAsync`, `SaveChangesAsync`). Optional paged `status` filter is exact enum match only. Remaining multi-field filters and full-text search remain later slices. Issue does not create journal entries or ledger postings.
 
 ## Persistence (F4E3)
 
 Invoice aggregates are stored via EF Core in Infrastructure:
 
-- `InvoiceRepository` implements `IInvoiceRepository` with workspace-scoped `GetByIdAsync`, `ListByWorkspaceAsync`, `ListByDocumentNumberAsync`, and `ListPagedAsync` (CreatedAt descending, then Id descending; filter by FinanceWorkspaceId; paged path uses CountAsync plus in-memory Order/Skip/Take after Include lines — SQLite cannot ORDER BY DateTimeOffset);
+- `InvoiceRepository` implements `IInvoiceRepository` with workspace-scoped `GetByIdAsync`, `ListByWorkspaceAsync`, `ListByDocumentNumberAsync`, and `ListPagedAsync` (CreatedAt descending, then Id descending; filter by FinanceWorkspaceId and optional Status in SQL; paged path uses CountAsync on the filtered set plus in-memory Order/Skip/Take after Include lines — SQLite cannot ORDER BY DateTimeOffset);
 - `Invoice` and `InvoiceLine` map as aggregate root + child rows (`_lines` field access, cascade delete);
 - `TotalAmount` and `DomainEvents` are not persisted columns;
 - migration `AddInvoices` creates `Invoices` / `InvoiceLines`;
 - `DocumentNumber` uniqueness is not enforced at the database and no DocumentNumber index is added;
-- multi-field filters and full-text search are not implemented;
+- no Status index is added (workspace index only);
+- remaining multi-field filters and full-text search are not implemented;
 - general-ledger posting, payments, and accruals remain later slices.
 
-## HTTP surface (F4E4 / F4J / F4M / F4N)
+## HTTP surface (F4E4 / F4J / F4M / F4N / F4O)
 
 Workspace-scoped Invoice HTTP API under `/api/finance-workspaces/{financeWorkspaceId}/invoices`:
 
 | Method | Route | Application use case | Success |
 |--------|-------|----------------------|---------|
 | POST | `/` | Create invoice | 201 |
-| GET | `/?page={page}&pageSize={pageSize}` | List invoices for workspace (paged, newest first) | 200 |
+| GET | `/?page={page}&pageSize={pageSize}&status={status?}` | List invoices for workspace (paged, newest first; optional status) | 200 |
 | GET | `/by-document-number?documentNumber={value}` | List invoices by document number (newest first) | 200 |
 | GET | `/{invoiceId}` | Get by id | 200 |
 | POST | `/{invoiceId}/change-document-number` | Change document number | 200 |
@@ -98,6 +99,6 @@ Workspace-scoped Invoice HTTP API under `/api/finance-workspaces/{financeWorkspa
 | DELETE | `/{invoiceId}/lines/{lineId}` | Remove line | 200 |
 | POST | `/{invoiceId}/issue` | Issue invoice | 200 |
 
-Status mapping via existing `ApplicationResultHttp`: ValidationFailed → 400, NotFound → 404, Conflict → 409. Single-invoice responses use Application `InvoiceDto`. List-by-document-number returns a JSON array of `InvoiceDto` (empty array when none; not 404). Paged list returns Application `PageResult<InvoiceDto>` with `items`, `page`, `pageSize`, and `totalCount` (empty `items` when none; not 404). List and list-by-document-number are read-only. Ordering: `CreatedAt` descending, then `InvoiceId` descending. Paged list requires `page >= 1` and `1 <= pageSize <= 100`; invalid paging is ValidationFailed. List-by-document-number filters by workspace and exact ordinal `DocumentNumber` after trim; blank/overlength document numbers are ValidationFailed; multiple invoices may share one document number; there is no DocumentNumber index or uniqueness guarantee. Paged list does not include multi-field filters, full-text search, or client-controlled sort. List-by-document-number does not include pagination or total-count metadata.
+Status mapping via existing `ApplicationResultHttp`: ValidationFailed → 400, NotFound → 404, Conflict → 409. Single-invoice responses use Application `InvoiceDto`. List-by-document-number returns a JSON array of `InvoiceDto` (empty array when none; not 404). Paged list returns Application `PageResult<InvoiceDto>` with `items`, `page`, `pageSize`, and `totalCount` (empty `items` when none; not 404). List and list-by-document-number are read-only. Ordering: `CreatedAt` descending, then `InvoiceId` descending. Paged list requires `page >= 1` and `1 <= pageSize <= 100`; invalid paging is ValidationFailed. Optional paged query parameter `status` accepts exact Ordinal `Draft` or `Issued` only; missing `status` means no status filter (F4N all-status behavior); explicitly blank, whitespace, case variants, numeric values, or unknown names are ValidationFailed. Status filtering and `totalCount` use the same SQL predicates; ordering and Skip/Take remain in-memory because SQLite cannot ORDER BY DateTimeOffset. List-by-document-number filters by workspace and exact ordinal `DocumentNumber` after trim; blank/overlength document numbers are ValidationFailed; multiple invoices may share one document number; there is no DocumentNumber index or uniqueness guarantee. Paged list does not include DocumentNumber filter, remaining multi-field filters, full-text search, or client-controlled sort. List-by-document-number does not include pagination or total-count metadata.
 
-Deferred: multi-field filters / full-text search, payments, accruals, ledger posting from Issue, authorization redesign.
+Deferred: remaining multi-field filters / full-text search, payments, accruals, ledger posting from Issue, authorization redesign.

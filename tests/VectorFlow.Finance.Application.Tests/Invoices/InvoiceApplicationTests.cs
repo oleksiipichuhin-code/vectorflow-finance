@@ -321,6 +321,7 @@ public sealed class InvoiceApplicationTests
         Assert.Equal(workspaceA, invoices.LastListedWorkspaceId!.Value.Value);
         Assert.Equal(1, invoices.LastListedPage);
         Assert.Equal(10, invoices.LastListedPageSize);
+        Assert.Null(invoices.LastListedStatus);
         Assert.Equal(cts.Token, invoices.LastListPagedCancellationToken);
     }
 
@@ -419,6 +420,161 @@ public sealed class InvoiceApplicationTests
 
         Assert.Equal(ApplicationErrorKind.ValidationFailed, result.ErrorKind);
         Assert.Equal(0, invoices.ListPagedCallCount);
+    }
+
+    [Fact]
+    public async Task ListPaged_missing_status_passes_null_to_repository()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        await CreateInvoiceAsync(invoices, workspaces, clock, workspaceId, "INV-DRAFT");
+
+        var result = await new GetInvoicesPagedHandler(invoices).HandleAsync(
+            new GetInvoicesPagedQuery(workspaceId, Page: 1, PageSize: 10));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(1, invoices.ListPagedCallCount);
+        Assert.Null(invoices.LastListedStatus);
+        Assert.Equal(1, result.Value!.TotalCount);
+    }
+
+    [Fact]
+    public async Task ListPaged_status_Draft_passes_Draft_to_repository()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        var draft = await CreateInvoiceAsync(invoices, workspaces, clock, workspaceId, "INV-DRAFT");
+        var ready = await CreateIssuableAsync(invoices, workspaces, clock, workspaceId);
+        clock.UtcNow = T2;
+        await new IssueInvoiceHandler(invoices, clock).HandleAsync(
+            new IssueInvoiceCommand(workspaceId, ready.Id));
+
+        var result = await new GetInvoicesPagedHandler(invoices).HandleAsync(
+            new GetInvoicesPagedQuery(workspaceId, Page: 1, PageSize: 10, Status: "Draft"));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(InvoiceStatus.Draft, invoices.LastListedStatus);
+        Assert.Equal(draft.Id, Assert.Single(result.Value!.Items).Id);
+        Assert.Equal(1, result.Value.TotalCount);
+        Assert.Equal(nameof(InvoiceStatus.Draft), result.Value.Items[0].Status);
+    }
+
+    [Fact]
+    public async Task ListPaged_status_Issued_passes_Issued_to_repository()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        await CreateInvoiceAsync(invoices, workspaces, clock, workspaceId, "INV-DRAFT");
+        var ready = await CreateIssuableAsync(invoices, workspaces, clock, workspaceId);
+        clock.UtcNow = T2;
+        var issued = await new IssueInvoiceHandler(invoices, clock).HandleAsync(
+            new IssueInvoiceCommand(workspaceId, ready.Id));
+        Assert.True(issued.IsSuccess);
+
+        var result = await new GetInvoicesPagedHandler(invoices).HandleAsync(
+            new GetInvoicesPagedQuery(workspaceId, Page: 1, PageSize: 10, Status: "Issued"));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(InvoiceStatus.Issued, invoices.LastListedStatus);
+        Assert.Equal(issued.Value!.Id, Assert.Single(result.Value!.Items).Id);
+        Assert.Equal(1, result.Value.TotalCount);
+        Assert.Equal(nameof(InvoiceStatus.Issued), result.Value.Items[0].Status);
+    }
+
+    [Fact]
+    public async Task ListPaged_explicit_blank_status_returns_ValidationFailed()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        var result = await new GetInvoicesPagedHandler(invoices).HandleAsync(
+            new GetInvoicesPagedQuery(workspaceId, Page: 1, PageSize: 10, Status: ""));
+
+        Assert.Equal(ApplicationErrorKind.ValidationFailed, result.ErrorKind);
+        Assert.Equal(0, invoices.ListPagedCallCount);
+    }
+
+    [Fact]
+    public async Task ListPaged_whitespace_status_returns_ValidationFailed()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        var result = await new GetInvoicesPagedHandler(invoices).HandleAsync(
+            new GetInvoicesPagedQuery(workspaceId, Page: 1, PageSize: 10, Status: "   "));
+
+        Assert.Equal(ApplicationErrorKind.ValidationFailed, result.ErrorKind);
+        Assert.Equal(0, invoices.ListPagedCallCount);
+    }
+
+    [Fact]
+    public async Task ListPaged_unknown_status_Paid_returns_ValidationFailed()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        var result = await new GetInvoicesPagedHandler(invoices).HandleAsync(
+            new GetInvoicesPagedQuery(workspaceId, Page: 1, PageSize: 10, Status: "Paid"));
+
+        Assert.Equal(ApplicationErrorKind.ValidationFailed, result.ErrorKind);
+        Assert.Equal(0, invoices.ListPagedCallCount);
+    }
+
+    [Fact]
+    public async Task ListPaged_lowercase_status_returns_ValidationFailed()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        var result = await new GetInvoicesPagedHandler(invoices).HandleAsync(
+            new GetInvoicesPagedQuery(workspaceId, Page: 1, PageSize: 10, Status: "draft"));
+
+        Assert.Equal(ApplicationErrorKind.ValidationFailed, result.ErrorKind);
+        Assert.Equal(0, invoices.ListPagedCallCount);
+    }
+
+    [Fact]
+    public async Task ListPaged_numeric_status_returns_ValidationFailed()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        var result = await new GetInvoicesPagedHandler(invoices).HandleAsync(
+            new GetInvoicesPagedQuery(workspaceId, Page: 1, PageSize: 10, Status: "0"));
+
+        Assert.Equal(ApplicationErrorKind.ValidationFailed, result.ErrorKind);
+        Assert.Equal(0, invoices.ListPagedCallCount);
+    }
+
+    [Fact]
+    public async Task ListPaged_padded_status_returns_ValidationFailed_without_repository_call()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        var result = await new GetInvoicesPagedHandler(invoices).HandleAsync(
+            new GetInvoicesPagedQuery(workspaceId, Page: 1, PageSize: 10, Status: " Draft "));
+
+        Assert.Equal(ApplicationErrorKind.ValidationFailed, result.ErrorKind);
+        Assert.Equal(0, invoices.ListPagedCallCount);
+    }
+
+    [Fact]
+    public async Task ListPaged_status_filter_empty_match_returns_empty_page()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        await CreateInvoiceAsync(invoices, workspaces, clock, workspaceId, "INV-DRAFT");
+
+        var result = await new GetInvoicesPagedHandler(invoices).HandleAsync(
+            new GetInvoicesPagedQuery(workspaceId, Page: 1, PageSize: 10, Status: "Issued"));
+
+        Assert.True(result.IsSuccess);
+        Assert.Empty(result.Value!.Items);
+        Assert.Equal(0, result.Value.TotalCount);
+        Assert.Equal(1, result.Value.Page);
+        Assert.Equal(10, result.Value.PageSize);
+        Assert.Equal(InvoiceStatus.Issued, invoices.LastListedStatus);
     }
 
     [Fact]
