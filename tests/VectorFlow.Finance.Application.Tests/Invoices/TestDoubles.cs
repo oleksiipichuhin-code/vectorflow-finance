@@ -12,7 +12,13 @@ internal sealed class InMemoryInvoiceRepository : IInvoiceRepository
 
     public int ListByWorkspaceCallCount { get; private set; }
 
+    public int ListByDocumentNumberCallCount { get; private set; }
+
     public FinanceWorkspaceId? LastListedWorkspaceId { get; private set; }
+
+    public string? LastListedDocumentNumber { get; private set; }
+
+    public CancellationToken? LastListByDocumentNumberCancellationToken { get; private set; }
 
     public int AddCallCount { get; private set; }
 
@@ -43,6 +49,27 @@ internal sealed class InMemoryInvoiceRepository : IInvoiceRepository
 
         IReadOnlyList<Invoice> invoices = _byId.Values
             .Where(invoice => invoice.FinanceWorkspaceId == financeWorkspaceId)
+            .OrderByDescending(invoice => invoice.CreatedAt)
+            .ThenByDescending(invoice => invoice.Id.Value)
+            .ToList();
+
+        return Task.FromResult(invoices);
+    }
+
+    public Task<IReadOnlyList<Invoice>> ListByDocumentNumberAsync(
+        FinanceWorkspaceId financeWorkspaceId,
+        string documentNumber,
+        CancellationToken cancellationToken = default)
+    {
+        ListByDocumentNumberCallCount++;
+        LastListedWorkspaceId = financeWorkspaceId;
+        LastListedDocumentNumber = documentNumber;
+        LastListByDocumentNumberCancellationToken = cancellationToken;
+
+        IReadOnlyList<Invoice> invoices = _byId.Values
+            .Where(invoice =>
+                invoice.FinanceWorkspaceId == financeWorkspaceId &&
+                string.Equals(invoice.DocumentNumber, documentNumber, StringComparison.Ordinal))
             .OrderByDescending(invoice => invoice.CreatedAt)
             .ThenByDescending(invoice => invoice.Id.Value)
             .ToList();

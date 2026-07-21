@@ -6,3 +6,7 @@ public sealed record GetInvoiceByIdQuery(
 
 public sealed record GetInvoicesQuery(
     Guid FinanceWorkspaceId);
+
+public sealed record GetInvoicesByDocumentNumberQuery(
+    Guid FinanceWorkspaceId,
+    string? DocumentNumber);

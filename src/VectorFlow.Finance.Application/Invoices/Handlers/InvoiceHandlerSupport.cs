@@ -40,4 +40,25 @@ internal static class InvoiceHandlerSupport
 
     public static ApplicationResult<InvoiceDto> FromInvalidOperationException(InvalidOperationException ex) =>
         ApplicationResult<InvoiceDto>.Conflict(ex.Message);
+
+    /// <summary>
+    /// Mirrors Domain <c>Invoice.NormalizeDocumentNumber</c> (trim; blank and max-length rejected).
+    /// </summary>
+    public static string NormalizeDocumentNumber(string? documentNumber)
+    {
+        if (string.IsNullOrWhiteSpace(documentNumber))
+        {
+            throw new ArgumentException("Invoice document number must not be blank.", nameof(documentNumber));
+        }
+
+        var normalized = documentNumber.Trim();
+        if (normalized.Length > Invoice.DocumentNumberMaxLength)
+        {
+            throw new ArgumentException(
+                $"Invoice document number must not exceed {Invoice.DocumentNumberMaxLength} characters.",
+                nameof(documentNumber));
+        }
+
+        return normalized;
+    }
 }

@@ -175,6 +175,152 @@ public sealed class InvoiceRepositoryTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ListByDocumentNumber_returns_all_matching_newest_first()
+    {
+        var older = Invoice.Create(
+            InvoiceId.New(),
+            _workspaceA,
+            "INV-DUP",
+            new CounterpartyReference("cp-old"),
+            new Currency("UAH"),
+            T0);
+        var newer = Invoice.Create(
+            InvoiceId.New(),
+            _workspaceA,
+            "INV-DUP",
+            new CounterpartyReference("cp-new"),
+            new Currency("UAH"),
+            T1);
+        var otherNumber = Invoice.Create(
+            InvoiceId.New(),
+            _workspaceA,
+            "INV-OTHER",
+            new CounterpartyReference("cp-other"),
+            new Currency("UAH"),
+            T2);
+        var otherWorkspace = Invoice.Create(
+            InvoiceId.New(),
+            _workspaceB,
+            "INV-DUP",
+            new CounterpartyReference("cp-b"),
+            new Currency("USD"),
+            T2);
+        var caseVariant = Invoice.Create(
+            InvoiceId.New(),
+            _workspaceA,
+            "inv-dup",
+            new CounterpartyReference("cp-case"),
+            new Currency("UAH"),
+            T2);
+
+        await _repository.AddAsync(older);
+        await _repository.AddAsync(newer);
+        await _repository.AddAsync(otherNumber);
+        await _repository.AddAsync(otherWorkspace);
+        await _repository.AddAsync(caseVariant);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var listed = await new InvoiceRepository(readContext)
+            .ListByDocumentNumberAsync(_workspaceA, "INV-DUP");
+
+        Assert.Equal(2, listed.Count);
+        Assert.Equal(newer.Id, listed[0].Id);
+        Assert.Equal(older.Id, listed[1].Id);
+        Assert.All(listed, invoice => Assert.Equal("INV-DUP", invoice.DocumentNumber));
+    }
+
+    [Fact]
+    public async Task ListByDocumentNumber_empty_returns_empty_collection()
+    {
+        await _repository.AddAsync(Invoice.Create(
+            InvoiceId.New(),
+            _workspaceA,
+            "INV-A",
+            new CounterpartyReference("cp"),
+            new Currency("UAH"),
+            T0));
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var listed = await new InvoiceRepository(readContext)
+            .ListByDocumentNumberAsync(_workspaceA, "INV-MISSING");
+
+        Assert.Empty(listed);
+    }
+
+    [Fact]
+    public async Task ListByDocumentNumber_equal_created_at_orders_by_id_descending()
+    {
+        var lowerId = new InvoiceId(Guid.Parse("11111111-1111-1111-1111-111111111111"));
+        var higherId = new InvoiceId(Guid.Parse("99999999-9999-9999-9999-999999999999"));
+        var lower = Invoice.Create(
+            lowerId,
+            _workspaceA,
+            "INV-TIE",
+            new CounterpartyReference("cp-a"),
+            new Currency("UAH"),
+            T0);
+        var higher = Invoice.Create(
+            higherId,
+            _workspaceA,
+            "INV-TIE",
+            new CounterpartyReference("cp-b"),
+            new Currency("UAH"),
+            T0);
+
+        await _repository.AddAsync(lower);
+        await _repository.AddAsync(higher);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var listed = await new InvoiceRepository(readContext)
+            .ListByDocumentNumberAsync(_workspaceA, "INV-TIE");
+
+        Assert.Equal(2, listed.Count);
+        Assert.Equal(higherId, listed[0].Id);
+        Assert.Equal(lowerId, listed[1].Id);
+    }
+
+    [Fact]
+    public async Task ListByDocumentNumber_preserves_list_by_workspace_and_get_by_id()
+    {
+        var first = Invoice.Create(
+            InvoiceId.New(),
+            _workspaceA,
+            "INV-KEEP",
+            new CounterpartyReference("cp-1"),
+            new Currency("UAH"),
+            T0);
+        var second = Invoice.Create(
+            InvoiceId.New(),
+            _workspaceA,
+            "INV-OTHER",
+            new CounterpartyReference("cp-2"),
+            new Currency("UAH"),
+            T1);
+
+        await _repository.AddAsync(first);
+        await _repository.AddAsync(second);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var repo = new InvoiceRepository(readContext);
+
+        var byNumber = await repo.ListByDocumentNumberAsync(_workspaceA, "INV-KEEP");
+        Assert.Equal(first.Id, Assert.Single(byNumber).Id);
+
+        var byWorkspace = await repo.ListByWorkspaceAsync(_workspaceA);
+        Assert.Equal(2, byWorkspace.Count);
+        Assert.Equal(second.Id, byWorkspace[0].Id);
+        Assert.Equal(first.Id, byWorkspace[1].Id);
+
+        var loaded = await repo.GetByIdAsync(_workspaceA, first.Id);
+        Assert.NotNull(loaded);
+        Assert.Equal("INV-KEEP", loaded.DocumentNumber);
+    }
+
+    [Fact]
     public async Task GetById_same_workspace_returns_invoice()
     {
         var invoice = Invoice.Create(
@@ -434,8 +580,7 @@ public sealed class InvoiceRepositoryTests : IAsyncLifetime
             index => index.GetDatabaseName() == "IX_Invoices_FinanceWorkspaceId");
         Assert.DoesNotContain(
             invoiceEntity.GetIndexes(),
-            index => index.Properties.Any(property => property.Name == nameof(Invoice.DocumentNumber))
-                     && index.IsUnique);
+            index => index.Properties.Any(property => property.Name == nameof(Invoice.DocumentNumber)));
 
         Assert.Contains(
             lineEntity.GetIndexes(),

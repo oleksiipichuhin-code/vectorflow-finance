@@ -21,6 +21,15 @@ public interface IInvoiceRepository
         FinanceWorkspaceId financeWorkspaceId,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Returns invoices for the workspace with the given document number (exact ordinal match),
+    /// ordered by CreatedAt descending, then Id descending.
+    /// </summary>
+    Task<IReadOnlyList<Invoice>> ListByDocumentNumberAsync(
+        FinanceWorkspaceId financeWorkspaceId,
+        string documentNumber,
+        CancellationToken cancellationToken = default);
+
     Task AddAsync(
         Invoice invoice,
         CancellationToken cancellationToken = default);

@@ -8,7 +8,9 @@ using VectorFlow.Finance.Application.Invoices.Queries;
 using VectorFlow.Finance.Application.Tests.Workspaces;
 using VectorFlow.Finance.Application.Workspaces.Commands;
 using VectorFlow.Finance.Application.Workspaces.Handlers;
+using VectorFlow.Finance.Domain;
 using VectorFlow.Finance.Domain.Invoices;
+using VectorFlow.Finance.Domain.Workspaces;
 using Xunit;
 
 namespace VectorFlow.Finance.Application.Tests.Invoices;
@@ -285,6 +287,188 @@ public sealed class InvoiceApplicationTests
     }
 
     [Fact]
+    public async Task ListByDocumentNumber_returns_all_matching_newest_first()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceA = await SeedWorkspaceAsync(workspaces, clock);
+        var workspaceB = await SeedWorkspaceAsync(
+            workspaces,
+            clock,
+            Guid.Parse("cccccccc-3333-3333-3333-333333333333"),
+            Guid.Parse("dddddddd-4444-4444-4444-444444444444"),
+            "Other");
+
+        clock.UtcNow = T0;
+        var older = await CreateInvoiceAsync(invoices, workspaces, clock, workspaceA, "INV-DUP");
+        clock.UtcNow = T1;
+        var newer = await CreateInvoiceAsync(invoices, workspaces, clock, workspaceA, "INV-DUP");
+        clock.UtcNow = T2;
+        await CreateInvoiceAsync(invoices, workspaces, clock, workspaceA, "INV-OTHER");
+        await CreateInvoiceAsync(invoices, workspaces, clock, workspaceB, "INV-DUP");
+
+        using var cts = new CancellationTokenSource();
+        var result = await new GetInvoicesByDocumentNumberHandler(invoices).HandleAsync(
+            new GetInvoicesByDocumentNumberQuery(workspaceA, "INV-DUP"),
+            cts.Token);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(2, result.Value!.Count);
+        Assert.Equal(newer.Id, result.Value[0].Id);
+        Assert.Equal(older.Id, result.Value[1].Id);
+        Assert.Equal(1, invoices.ListByDocumentNumberCallCount);
+        Assert.Equal(workspaceA, invoices.LastListedWorkspaceId!.Value.Value);
+        Assert.Equal("INV-DUP", invoices.LastListedDocumentNumber);
+        Assert.Equal(cts.Token, invoices.LastListByDocumentNumberCancellationToken);
+    }
+
+    [Fact]
+    public async Task ListByDocumentNumber_empty_returns_empty_list()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        await CreateInvoiceAsync(invoices, workspaces, clock, workspaceId, "INV-A");
+
+        var result = await new GetInvoicesByDocumentNumberHandler(invoices).HandleAsync(
+            new GetInvoicesByDocumentNumberQuery(workspaceId, "INV-MISSING"));
+
+        Assert.True(result.IsSuccess);
+        Assert.Empty(result.Value!);
+        Assert.Equal(1, invoices.ListByDocumentNumberCallCount);
+    }
+
+    [Fact]
+    public async Task ListByDocumentNumber_case_variation_does_not_match()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        await CreateInvoiceAsync(invoices, workspaces, clock, workspaceId, "INV-Case");
+
+        var result = await new GetInvoicesByDocumentNumberHandler(invoices).HandleAsync(
+            new GetInvoicesByDocumentNumberQuery(workspaceId, "inv-case"));
+
+        Assert.True(result.IsSuccess);
+        Assert.Empty(result.Value!);
+    }
+
+    [Fact]
+    public async Task ListByDocumentNumber_trims_input_whitespace()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        var created = await CreateInvoiceAsync(invoices, workspaces, clock, workspaceId, "INV-TRIM");
+
+        var result = await new GetInvoicesByDocumentNumberHandler(invoices).HandleAsync(
+            new GetInvoicesByDocumentNumberQuery(workspaceId, "  INV-TRIM  "));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(created.Id, Assert.Single(result.Value!).Id);
+        Assert.Equal("INV-TRIM", invoices.LastListedDocumentNumber);
+    }
+
+    [Fact]
+    public async Task ListByDocumentNumber_equal_created_at_orders_by_id_descending()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        var workspace = new FinanceWorkspaceId(workspaceId);
+        var lowerId = new InvoiceId(Guid.Parse("11111111-1111-1111-1111-111111111111"));
+        var higherId = new InvoiceId(Guid.Parse("99999999-9999-9999-9999-999999999999"));
+
+        await invoices.AddAsync(Invoice.Create(
+            lowerId,
+            workspace,
+            "INV-TIE",
+            new CounterpartyReference("cp-a"),
+            new Currency("UAH"),
+            T0));
+        await invoices.AddAsync(Invoice.Create(
+            higherId,
+            workspace,
+            "INV-TIE",
+            new CounterpartyReference("cp-b"),
+            new Currency("UAH"),
+            T0));
+
+        var result = await new GetInvoicesByDocumentNumberHandler(invoices).HandleAsync(
+            new GetInvoicesByDocumentNumberQuery(workspaceId, "INV-TIE"));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(2, result.Value!.Count);
+        Assert.Equal(higherId.Value, result.Value[0].Id);
+        Assert.Equal(lowerId.Value, result.Value[1].Id);
+    }
+
+    [Fact]
+    public async Task ListByDocumentNumber_maps_invoice_dto_fields()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        clock.UtcNow = T0;
+        var created = await CreateInvoiceAsync(
+            invoices, workspaces, clock, workspaceId, "INV-MAP", "cp-map", "USD");
+        clock.UtcNow = T1;
+        var withLine = await new AddInvoiceLineHandler(invoices, clock).HandleAsync(
+            new AddInvoiceLineCommand(workspaceId, created.Id, 2m, 25m, "Item"));
+        Assert.True(withLine.IsSuccess);
+
+        var result = await new GetInvoicesByDocumentNumberHandler(invoices).HandleAsync(
+            new GetInvoicesByDocumentNumberQuery(workspaceId, "INV-MAP"));
+
+        Assert.True(result.IsSuccess);
+        var dto = Assert.Single(result.Value!);
+        Assert.Equal(created.Id, dto.Id);
+        Assert.Equal(workspaceId, dto.FinanceWorkspaceId);
+        Assert.Equal("INV-MAP", dto.DocumentNumber);
+        Assert.Equal("cp-map", dto.CounterpartyReference);
+        Assert.Equal("USD", dto.Currency);
+        Assert.Equal(nameof(InvoiceStatus.Draft), dto.Status);
+        Assert.Equal(50m, dto.TotalAmount);
+        Assert.Equal(T0, dto.CreatedAtUtc);
+        Assert.Equal(T1, dto.UpdatedAtUtc);
+        var line = Assert.Single(dto.Lines);
+        Assert.Equal("Item", line.Description);
+    }
+
+    [Fact]
+    public async Task ListByDocumentNumber_rejects_blank_document_number()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        var result = await new GetInvoicesByDocumentNumberHandler(invoices).HandleAsync(
+            new GetInvoicesByDocumentNumberQuery(workspaceId, "   "));
+
+        Assert.Equal(ApplicationErrorKind.ValidationFailed, result.ErrorKind);
+        Assert.Equal(0, invoices.ListByDocumentNumberCallCount);
+    }
+
+    [Fact]
+    public async Task ListByDocumentNumber_rejects_overlength_document_number()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        var overlength = new string('A', Invoice.DocumentNumberMaxLength + 1);
+
+        var result = await new GetInvoicesByDocumentNumberHandler(invoices).HandleAsync(
+            new GetInvoicesByDocumentNumberQuery(workspaceId, overlength));
+
+        Assert.Equal(ApplicationErrorKind.ValidationFailed, result.ErrorKind);
+        Assert.Equal(0, invoices.ListByDocumentNumberCallCount);
+    }
+
+    [Fact]
+    public async Task ListByDocumentNumber_rejects_empty_workspace_id()
+    {
+        var (invoices, _, _) = CreateHarness();
+
+        var result = await new GetInvoicesByDocumentNumberHandler(invoices).HandleAsync(
+            new GetInvoicesByDocumentNumberQuery(Guid.Empty, "INV-1"));
+
+        Assert.Equal(ApplicationErrorKind.ValidationFailed, result.ErrorKind);
+        Assert.Equal(0, invoices.ListByDocumentNumberCallCount);
+    }
+
+    [Fact]
     public async Task ChangeDocumentNumber_updates_and_saves_once()
     {
         var (invoices, workspaces, clock) = CreateHarness();
@@ -553,6 +737,7 @@ public sealed class InvoiceApplicationTests
         Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(CreateInvoiceHandler));
         Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(GetInvoiceHandler));
         Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(GetInvoicesHandler));
+        Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(GetInvoicesByDocumentNumberHandler));
         Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(IssueInvoiceHandler));
         Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(AddInvoiceLineHandler));
         Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(UpdateInvoiceLineHandler));

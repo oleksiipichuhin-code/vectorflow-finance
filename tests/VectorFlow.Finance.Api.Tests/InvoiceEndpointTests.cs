@@ -154,6 +154,148 @@ public sealed class InvoiceEndpointTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task List_by_document_number_returns_matching_invoices_newest_first()
+    {
+        var workspaceA = await CreateWorkspaceAsync(
+            Guid.Parse("c1000000-0000-0000-0000-000000000040"),
+            Guid.Parse("c2000000-0000-0000-0000-000000000040"));
+        var workspaceB = await CreateWorkspaceAsync(
+            Guid.Parse("d1000000-0000-0000-0000-000000000040"),
+            Guid.Parse("d2000000-0000-0000-0000-000000000040"));
+
+        var older = await CreateInvoiceAsync(workspaceA, "INV-DUP", "cp-old", "UAH");
+        await Task.Delay(20);
+        var newer = await CreateInvoiceAsync(workspaceA, "INV-DUP", "cp-new", "UAH");
+        await CreateInvoiceAsync(workspaceA, "INV-OTHER", "cp-other", "UAH");
+        await CreateInvoiceAsync(workspaceA, "inv-dup", "cp-case", "UAH");
+        await CreateInvoiceAsync(workspaceB, "INV-DUP", "cp-b", "USD");
+
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceA}/invoices/by-document-number?documentNumber=INV-DUP");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(JsonValueKind.Array, document.RootElement.ValueKind);
+        Assert.Equal(2, document.RootElement.GetArrayLength());
+        Assert.Equal(newer, document.RootElement[0].GetProperty("id").GetGuid());
+        Assert.Equal(older, document.RootElement[1].GetProperty("id").GetGuid());
+        Assert.Equal("INV-DUP", document.RootElement[0].GetProperty("documentNumber").GetString());
+        Assert.True(document.RootElement[0].TryGetProperty("createdAtUtc", out _));
+        Assert.True(document.RootElement[0].TryGetProperty("lines", out _));
+    }
+
+    [Fact]
+    public async Task List_by_document_number_empty_returns_200_with_empty_array()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("c1000000-0000-0000-0000-000000000041"),
+            Guid.Parse("c2000000-0000-0000-0000-000000000041"));
+        await CreateInvoiceAsync(workspaceId, "INV-A", "cp", "UAH");
+
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices/by-document-number?documentNumber=INV-MISSING");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(JsonValueKind.Array, document.RootElement.ValueKind);
+        Assert.Equal(0, document.RootElement.GetArrayLength());
+    }
+
+    [Fact]
+    public async Task List_by_document_number_binds_encoded_spaces_and_punctuation()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("c1000000-0000-0000-0000-000000000042"),
+            Guid.Parse("c2000000-0000-0000-0000-000000000042"));
+        var invoiceId = await CreateInvoiceAsync(workspaceId, "INV 2026/07", "cp", "UAH");
+
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices/by-document-number?documentNumber=INV%202026%2F07");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(invoiceId, Assert.Single(document.RootElement.EnumerateArray()).GetProperty("id").GetGuid());
+        Assert.Equal("INV 2026/07", document.RootElement[0].GetProperty("documentNumber").GetString());
+    }
+
+    [Fact]
+    public async Task List_by_document_number_missing_parameter_returns_400()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("c1000000-0000-0000-0000-000000000043"),
+            Guid.Parse("c2000000-0000-0000-0000-000000000043"));
+
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices/by-document-number");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        await AssertErrorAsync(response, "ValidationFailed");
+    }
+
+    [Fact]
+    public async Task List_by_document_number_blank_returns_400()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("c1000000-0000-0000-0000-000000000044"),
+            Guid.Parse("c2000000-0000-0000-0000-000000000044"));
+
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices/by-document-number?documentNumber=%20%20%20");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        await AssertErrorAsync(response, "ValidationFailed");
+    }
+
+    [Fact]
+    public async Task List_by_document_number_overlength_returns_400()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("c1000000-0000-0000-0000-000000000045"),
+            Guid.Parse("c2000000-0000-0000-0000-000000000045"));
+        var overlength = new string('A', 65);
+
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices/by-document-number?documentNumber={overlength}");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        await AssertErrorAsync(response, "ValidationFailed");
+    }
+
+    [Fact]
+    public async Task List_by_document_number_empty_finance_workspace_id_returns_400()
+    {
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{Guid.Empty}/invoices/by-document-number?documentNumber=INV-1");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        await AssertErrorAsync(response, "ValidationFailed");
+    }
+
+    [Fact]
+    public async Task List_and_get_by_id_still_resolve_after_by_document_number_route()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("c1000000-0000-0000-0000-000000000046"),
+            Guid.Parse("c2000000-0000-0000-0000-000000000046"));
+        var invoiceId = await CreateInvoiceAsync(workspaceId, "INV-KEEP", "cp", "UAH");
+
+        var byNumber = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices/by-document-number?documentNumber=INV-KEEP");
+        Assert.Equal(HttpStatusCode.OK, byNumber.StatusCode);
+
+        var list = await _client.GetAsync($"/api/finance-workspaces/{workspaceId}/invoices");
+        Assert.Equal(HttpStatusCode.OK, list.StatusCode);
+        using var listDocument = JsonDocument.Parse(await list.Content.ReadAsStringAsync());
+        Assert.Equal(1, listDocument.RootElement.GetArrayLength());
+
+        var get = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices/{invoiceId}");
+        Assert.Equal(HttpStatusCode.OK, get.StatusCode);
+        using var getDocument = JsonDocument.Parse(await get.Content.ReadAsStringAsync());
+        Assert.Equal(invoiceId, getDocument.RootElement.GetProperty("id").GetGuid());
+    }
+
+    [Fact]
     public async Task Create_missing_workspace_returns_404()
     {
         var response = await _client.PostAsJsonAsync(
@@ -425,10 +567,16 @@ public sealed class InvoiceEndpointTests : IAsyncLifetime
 
         var json = await response.Content.ReadAsStringAsync();
         Assert.Contains("/api/finance-workspaces/{financeWorkspaceId}/invoices", json);
+        Assert.Contains(
+            "/api/finance-workspaces/{financeWorkspaceId}/invoices/by-document-number",
+            json);
         Assert.Contains("CreateInvoice", json);
         Assert.Contains("ListInvoices", json);
+        Assert.Contains("ListInvoicesByDocumentNumber", json);
         Assert.Contains("IssueInvoice", json);
         Assert.Contains("GetInvoiceById", json);
+        Assert.Contains("documentNumber", json);
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(json, "\"ListInvoicesByDocumentNumber\""));
     }
 
     private async Task<Guid> CreateWorkspaceAsync(Guid organizationId, Guid platformWorkspaceId)

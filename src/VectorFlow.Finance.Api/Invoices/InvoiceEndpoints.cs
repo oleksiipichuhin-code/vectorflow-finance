@@ -25,6 +25,12 @@ internal static class InvoiceEndpoints
             .Produces(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status400BadRequest);
 
+        group.MapGet("/by-document-number", ListByDocumentNumberAsync)
+            .WithName("ListInvoicesByDocumentNumber")
+            .WithSummary("List invoices for a finance workspace by document number (newest first).")
+            .Produces(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status400BadRequest);
+
         group.MapGet("/{invoiceId:guid}", GetByIdAsync)
             .WithName("GetInvoiceById")
             .WithSummary("Get an invoice by id within a finance workspace.")
@@ -123,6 +129,19 @@ internal static class InvoiceEndpoints
     {
         var result = await handler.HandleAsync(
             new GetInvoicesQuery(financeWorkspaceId),
+            cancellationToken);
+
+        return ApplicationResultHttp.ToHttpResult(result);
+    }
+
+    private static async Task<IResult> ListByDocumentNumberAsync(
+        Guid financeWorkspaceId,
+        string? documentNumber,
+        GetInvoicesByDocumentNumberHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new GetInvoicesByDocumentNumberQuery(financeWorkspaceId, documentNumber),
             cancellationToken);
 
         return ApplicationResultHttp.ToHttpResult(result);
