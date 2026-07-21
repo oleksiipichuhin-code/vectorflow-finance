@@ -13,9 +13,17 @@ internal sealed class InMemoryAccrualRepository : IAccrualRepository
 
     public int ListByWorkspaceCallCount { get; private set; }
 
+    public int ListPagedCallCount { get; private set; }
+
     public int ListBySourceInvoiceCallCount { get; private set; }
 
     public FinanceWorkspaceId? LastListedWorkspaceId { get; private set; }
+
+    public int? LastListedPage { get; private set; }
+
+    public int? LastListedPageSize { get; private set; }
+
+    public CancellationToken? LastListPagedCancellationToken { get; private set; }
 
     public InvoiceId? LastListedSourceInvoiceId { get; private set; }
 
@@ -53,6 +61,32 @@ internal sealed class InMemoryAccrualRepository : IAccrualRepository
             .ToList();
 
         return Task.FromResult(accruals);
+    }
+
+    public Task<(IReadOnlyList<Accrual> Items, int TotalCount)> ListPagedAsync(
+        FinanceWorkspaceId financeWorkspaceId,
+        int page,
+        int pageSize,
+        CancellationToken cancellationToken = default)
+    {
+        ListPagedCallCount++;
+        LastListedWorkspaceId = financeWorkspaceId;
+        LastListedPage = page;
+        LastListedPageSize = pageSize;
+        LastListPagedCancellationToken = cancellationToken;
+
+        var matched = _byId.Values
+            .Where(accrual => accrual.FinanceWorkspaceId == financeWorkspaceId)
+            .OrderByDescending(accrual => accrual.CreatedAt)
+            .ThenByDescending(accrual => accrual.Id.Value)
+            .ToList();
+
+        IReadOnlyList<Accrual> items = matched
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToList();
+
+        return Task.FromResult((items, matched.Count));
     }
 
     public Task<IReadOnlyList<Accrual>> ListBySourceInvoiceAsync(

@@ -41,6 +41,31 @@ public sealed class AccrualRepository : IAccrualRepository
             .ToList();
     }
 
+    public async Task<(IReadOnlyList<Accrual> Items, int TotalCount)> ListPagedAsync(
+        FinanceWorkspaceId financeWorkspaceId,
+        int page,
+        int pageSize,
+        CancellationToken cancellationToken = default)
+    {
+        // SQLite cannot ORDER BY DateTimeOffset; order and page in memory after workspace materialization.
+        var accruals = await _dbContext.Accruals
+            .Where(accrual => accrual.FinanceWorkspaceId == financeWorkspaceId)
+            .ToListAsync(cancellationToken);
+
+        var ordered = accruals
+            .OrderByDescending(accrual => accrual.CreatedAt)
+            .ThenByDescending(accrual => accrual.Id.Value)
+            .ToList();
+
+        var totalCount = ordered.Count;
+        var items = ordered
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToList();
+
+        return (items, totalCount);
+    }
+
     public async Task<IReadOnlyList<Accrual>> ListBySourceInvoiceAsync(
         FinanceWorkspaceId financeWorkspaceId,
         InvoiceId sourceInvoiceId,

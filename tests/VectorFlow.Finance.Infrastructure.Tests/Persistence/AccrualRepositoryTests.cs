@@ -164,6 +164,176 @@ public sealed class AccrualRepositoryTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ListPaged_returns_workspace_page_newest_first_with_total()
+    {
+        var older = Accrual.Create(
+            AccrualId.New(),
+            _workspaceA,
+            AccrualType.Revenue,
+            10m,
+            new Currency("UAH"),
+            RecognitionDate,
+            "Older",
+            sourceInvoiceId: null,
+            T0);
+        var newer = Accrual.Create(
+            AccrualId.New(),
+            _workspaceA,
+            AccrualType.Expense,
+            20m,
+            new Currency("UAH"),
+            RecognitionDate,
+            "Newer",
+            sourceInvoiceId: null,
+            T1);
+        var other = Accrual.Create(
+            AccrualId.New(),
+            _workspaceB,
+            AccrualType.Revenue,
+            30m,
+            new Currency("USD"),
+            RecognitionDate,
+            "Other",
+            sourceInvoiceId: null,
+            T2);
+
+        await _repository.AddAsync(older);
+        await _repository.AddAsync(newer);
+        await _repository.AddAsync(other);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var (items, totalCount) = await new AccrualRepository(readContext)
+            .ListPagedAsync(_workspaceA, page: 1, pageSize: 10);
+
+        Assert.Equal(2, totalCount);
+        Assert.Equal(2, items.Count);
+        Assert.Equal(newer.Id, items[0].Id);
+        Assert.Equal(older.Id, items[1].Id);
+    }
+
+    [Fact]
+    public async Task ListPaged_empty_returns_empty_items_with_zero_total()
+    {
+        await using var readContext = CreateContext();
+        var (items, totalCount) = await new AccrualRepository(readContext)
+            .ListPagedAsync(_workspaceA, page: 1, pageSize: 10);
+
+        Assert.Empty(items);
+        Assert.Equal(0, totalCount);
+    }
+
+    [Fact]
+    public async Task ListPaged_orders_and_pages_deterministically()
+    {
+        var first = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 1m, new Currency("UAH"),
+            RecognitionDate, "1", null, T0);
+        var second = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 2m, new Currency("UAH"),
+            RecognitionDate, "2", null, T1);
+        var third = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 3m, new Currency("UAH"),
+            RecognitionDate, "3", null, T2);
+
+        await _repository.AddAsync(first);
+        await _repository.AddAsync(second);
+        await _repository.AddAsync(third);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var repo = new AccrualRepository(readContext);
+
+        var (page1, total1) = await repo.ListPagedAsync(_workspaceA, page: 1, pageSize: 2);
+        var (page2, total2) = await repo.ListPagedAsync(_workspaceA, page: 2, pageSize: 2);
+        var (beyond, totalBeyond) = await repo.ListPagedAsync(_workspaceA, page: 3, pageSize: 2);
+        var (pageSizeOne, totalOne) = await repo.ListPagedAsync(_workspaceA, page: 1, pageSize: 1);
+
+        Assert.Equal(3, total1);
+        Assert.Equal(3, total2);
+        Assert.Equal(3, totalBeyond);
+        Assert.Equal(3, totalOne);
+        Assert.Equal(new[] { third.Id, second.Id }, page1.Select(a => a.Id).ToArray());
+        Assert.Equal(new[] { first.Id }, page2.Select(a => a.Id).ToArray());
+        Assert.Empty(beyond);
+        Assert.Equal(third.Id, Assert.Single(pageSizeOne).Id);
+    }
+
+    [Fact]
+    public async Task ListPaged_equal_created_at_orders_by_id_descending()
+    {
+        var lowerId = new AccrualId(Guid.Parse("11111111-1111-1111-1111-111111111111"));
+        var higherId = new AccrualId(Guid.Parse("99999999-9999-9999-9999-999999999999"));
+        var lower = Accrual.Create(
+            lowerId, _workspaceA, AccrualType.Revenue, 10m, new Currency("UAH"),
+            RecognitionDate, "Lower", null, T0);
+        var higher = Accrual.Create(
+            higherId, _workspaceA, AccrualType.Expense, 20m, new Currency("UAH"),
+            RecognitionDate, "Higher", null, T0);
+
+        await _repository.AddAsync(lower);
+        await _repository.AddAsync(higher);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var (items, totalCount) = await new AccrualRepository(readContext)
+            .ListPagedAsync(_workspaceA, page: 1, pageSize: 10);
+
+        Assert.Equal(2, totalCount);
+        Assert.Equal(higherId, items[0].Id);
+        Assert.Equal(lowerId, items[1].Id);
+    }
+
+    [Fact]
+    public async Task ListPaged_partial_final_page_and_stable_reread()
+    {
+        var a = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 1m, new Currency("UAH"),
+            RecognitionDate, "A", null, T0);
+        var b = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 2m, new Currency("UAH"),
+            RecognitionDate, "B", null, T1);
+        var c = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 3m, new Currency("UAH"),
+            RecognitionDate, "C", null, T2);
+
+        await _repository.AddAsync(a);
+        await _repository.AddAsync(b);
+        await _repository.AddAsync(c);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var repo = new AccrualRepository(readContext);
+        var (page2a, totalA) = await repo.ListPagedAsync(_workspaceA, page: 2, pageSize: 2);
+        var (page2b, totalB) = await repo.ListPagedAsync(_workspaceA, page: 2, pageSize: 2);
+
+        Assert.Equal(3, totalA);
+        Assert.Equal(3, totalB);
+        Assert.Equal(a.Id, Assert.Single(page2a).Id);
+        Assert.Equal(page2a.Select(x => x.Id).ToArray(), page2b.Select(x => x.Id).ToArray());
+    }
+
+    [Fact]
+    public async Task ListPaged_does_not_change_non_paged_list_behavior()
+    {
+        var accrual = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 10m, new Currency("UAH"),
+            RecognitionDate, "Only", null, T0);
+
+        await _repository.AddAsync(accrual);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var repo = new AccrualRepository(readContext);
+        var listed = await repo.ListByWorkspaceAsync(_workspaceA);
+        var (paged, total) = await repo.ListPagedAsync(_workspaceA, page: 1, pageSize: 10);
+
+        Assert.Equal(accrual.Id, Assert.Single(listed).Id);
+        Assert.Equal(1, total);
+        Assert.Equal(accrual.Id, Assert.Single(paged).Id);
+    }
+
+    [Fact]
     public async Task ListByWorkspace_equal_created_at_orders_by_id_descending()
     {
         var lowerId = new AccrualId(Guid.Parse("11111111-1111-1111-1111-111111111111"));

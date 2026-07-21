@@ -139,12 +139,13 @@ Application use cases over the F4F aggregate (no persistence implementation, no 
 - create accrual in an existing finance workspace;
 - get accrual by id (workspace-scoped);
 - list accruals for a finance workspace (CreatedAt descending, then AccrualId descending; empty list when none);
+- list accruals for a finance workspace with paging (`page`, `pageSize`; CreatedAt descending, then AccrualId descending; empty page when none; returns `items`, `page`, `pageSize`, `totalCount`);
 - list accruals by source invoice id within a finance workspace (CreatedAt descending, then AccrualId descending; empty list when none; multiple accruals may share one SourceInvoiceId; Invoice existence is not validated);
 - draft mutations: type, amount, currency, recognition date, description, source invoice (set/clear via nullable id);
 - recognize accrual (`Draft` → `Recognized`);
 - reverse accrual (`Recognized` → `Reversed`).
 
-`IAccrualRepository` is the Application persistence port (`GetByIdAsync`, `ListByWorkspaceAsync`, and `ListBySourceInvoiceAsync` always workspace-scoped, `AddAsync`, `SaveChangesAsync`). Search, filters, and pagination remain later slices.
+`IAccrualRepository` is the Application persistence port (`GetByIdAsync`, `ListByWorkspaceAsync`, `ListPagedAsync`, and `ListBySourceInvoiceAsync` always workspace-scoped, `AddAsync`, `SaveChangesAsync`). Paged listing requires `page >= 1` and `1 <= pageSize <= 100`. Remaining search and filters remain later slices.
 
 Result mapping follows Invoice Application:
 
@@ -162,15 +163,15 @@ Source invoice existence is **not** checked in Application (same posture as Doma
 
 Accrual aggregates are stored via EF Core in Infrastructure:
 
-- `AccrualRepository` implements `IAccrualRepository` with workspace-scoped `GetByIdAsync`, `ListByWorkspaceAsync`, and `ListBySourceInvoiceAsync` (CreatedAt descending, then Id descending; filter by FinanceWorkspaceId and SourceInvoiceId; no Invoice join);
+- `AccrualRepository` implements `IAccrualRepository` with workspace-scoped `GetByIdAsync`, `ListByWorkspaceAsync`, `ListPagedAsync`, and `ListBySourceInvoiceAsync` (CreatedAt descending, then Id descending; filter by FinanceWorkspaceId and SourceInvoiceId; no Invoice join). Paged path: SQL filters FinanceWorkspaceId, then a single materialization; `totalCount`, Order, Skip, and Take run in memory because the SQLite provider cannot ORDER BY DateTimeOffset (same trade-off as Invoice paged listing);
 - Domain `Accrual` maps directly (no separate persistence entity);
 - `DomainEvents` is not a persisted column;
 - nullable `SourceInvoiceId` stores optional `InvoiceId` as `Guid?` with **no** FK to `Invoices` and **no** uniqueness constraint;
 - lifecycle fields (`Status`, `RecognizedAt`, `ReversedAt`, `ReversalReason`, timestamps) round-trip faithfully through private-constructor materialization;
 - migration `AddAccruals` creates table `Accruals` with workspace FK (`Restrict`) and `IX_Accruals_FinanceWorkspaceId`;
-- search, filters, pagination, Invoice existence validation, concurrency tokens, ledger posting, and payments remain later slices.
+- search, filters, Invoice existence validation, concurrency tokens, ledger posting, and payments remain later slices.
 
-## HTTP surface (F4I / F4K / F4L)
+## HTTP surface (F4I / F4K / F4L / F4Q)
 
 Workspace-scoped Accrual HTTP API under `/api/finance-workspaces/{financeWorkspaceId}/accruals`:
 
@@ -178,6 +179,7 @@ Workspace-scoped Accrual HTTP API under `/api/finance-workspaces/{financeWorkspa
 |--------|-------|----------------------|---------|
 | POST | `/` | Create accrual | 201 |
 | GET | `/` | List accruals for workspace (newest first) | 200 |
+| GET | `/paged?page={page}&pageSize={pageSize}` | List accruals for workspace (paged, newest first) | 200 |
 | GET | `/by-invoice/{invoiceId}` | List accruals by source invoice id (newest first) | 200 |
 | GET | `/{accrualId}` | Get by id | 200 |
 | POST | `/{accrualId}/change-type` | Change type | 200 |
@@ -189,9 +191,9 @@ Workspace-scoped Accrual HTTP API under `/api/finance-workspaces/{financeWorkspa
 | POST | `/{accrualId}/recognize` | Recognize accrual | 200 |
 | POST | `/{accrualId}/reverse` | Reverse accrual | 200 |
 
-Status mapping via existing `ApplicationResultHttp`: ValidationFailed → 400, NotFound → 404 (missing or cross-workspace), Conflict → 409. Single-accrual responses use Application `AccrualDto`. List and list-by-invoice return a JSON array of `AccrualDto` (empty array when none; not 404). List and list-by-invoice are read-only. Ordering: `CreatedAt` descending, then `AccrualId` descending. List-by-invoice filters by workspace and `SourceInvoiceId`; multiple accruals may share one source invoice; Invoice existence is not validated; there is no FK or uniqueness guarantee. List and list-by-invoice do not include search, filters, pagination, or total-count metadata.
+Status mapping via existing `ApplicationResultHttp`: ValidationFailed → 400, NotFound → 404 (missing or cross-workspace), Conflict → 409. Single-accrual responses use Application `AccrualDto`. List and list-by-invoice return a JSON array of `AccrualDto` (empty array when none; not 404). Paged list returns Application `PageResult<AccrualDto>` with `items`, `page`, `pageSize`, and `totalCount` (empty `items` when none; not 404). List, paged list, and list-by-invoice are read-only. Ordering: `CreatedAt` descending, then `AccrualId` descending. Paged list requires `page >= 1` and `1 <= pageSize <= 100` (same limits as Invoice F4N; omitted values bind as `0` and fail validation — no silent defaults); invalid paging is ValidationFailed. Workspace isolation is applied in SQL; `totalCount` is the full workspace-filtered count before paging; ordering and Skip/Take are in-memory because SQLite cannot ORDER BY DateTimeOffset. Paged list does not include status, source-invoice, CreatedAt range, or text filters. List-by-invoice filters by workspace and `SourceInvoiceId`; multiple accruals may share one source invoice; Invoice existence is not validated; there is no FK or uniqueness guarantee. Non-paged list and list-by-invoice do not include pagination or total-count metadata.
 
-Deferred: search/pagination/filters, Invoice existence validation, ledger posting from Recognize/Reverse, concurrency tokens, compensating accruals, authorization redesign, background recognition jobs.
+Deferred: search/filters (status, CreatedAt range, text), Invoice existence validation, ledger posting from Recognize/Reverse, concurrency tokens, compensating accruals, authorization redesign, background recognition jobs.
 
 ## Notes on conventions adapted for F4F
 

@@ -23,6 +23,17 @@ public interface IAccrualRepository
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Returns a workspace-scoped page of accruals ordered by CreatedAt descending, then Id descending,
+    /// together with the total matching count. CreatedAt ordering and Skip/Take run in memory
+    /// (SQLite cannot ORDER BY DateTimeOffset).
+    /// </summary>
+    Task<(IReadOnlyList<Accrual> Items, int TotalCount)> ListPagedAsync(
+        FinanceWorkspaceId financeWorkspaceId,
+        int page,
+        int pageSize,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Returns accruals for the workspace with the given source invoice id,
     /// ordered by CreatedAt descending, then Id descending.
     /// </summary>
