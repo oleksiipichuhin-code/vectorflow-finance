@@ -701,6 +701,7 @@ public sealed class AccrualApplicationTests
         Assert.Null(accruals.LastListedCreatedFromUtc);
         Assert.Null(accruals.LastListedCreatedToUtc);
         Assert.Null(accruals.LastListedStatus);
+        Assert.Null(accruals.LastListedPagedSourceInvoiceId);
     }
 
     [Fact]
@@ -860,6 +861,205 @@ public sealed class AccrualApplicationTests
                 PageSize: 1,
                 CreatedFromUtc: T0,
                 CreatedToUtc: T2));
+
+        Assert.True(page1.IsSuccess);
+        Assert.True(page2.IsSuccess);
+        Assert.Equal(3, page1.Value!.TotalCount);
+        Assert.Equal(3, page2.Value!.TotalCount);
+        Assert.Equal(newest.Id, Assert.Single(page1.Value.Items).Id);
+        Assert.Equal(mid.Id, Assert.Single(page2.Value.Items).Id);
+    }
+
+    [Fact]
+    public async Task ListPaged_omitted_source_invoice_passes_null_to_repository()
+    {
+        var (accruals, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "1");
+
+        var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
+            new GetAccrualsPagedQuery(workspaceId, Page: 1, PageSize: 10));
+
+        Assert.True(result.IsSuccess);
+        Assert.Null(accruals.LastListedPagedSourceInvoiceId);
+    }
+
+    [Fact]
+    public async Task ListPaged_source_invoice_passes_id_to_repository()
+    {
+        var (accruals, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
+            new GetAccrualsPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 10,
+                SourceInvoiceId: SourceInvoiceId));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(SourceInvoiceId, accruals.LastListedPagedSourceInvoiceId!.Value.Value);
+    }
+
+    [Fact]
+    public async Task ListPaged_empty_source_invoice_returns_ValidationFailed()
+    {
+        var (accruals, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
+            new GetAccrualsPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 10,
+                SourceInvoiceId: Guid.Empty));
+
+        Assert.Equal(ApplicationErrorKind.ValidationFailed, result.ErrorKind);
+        Assert.Equal(0, accruals.ListPagedCallCount);
+    }
+
+    [Fact]
+    public async Task ListPaged_source_invoice_filters_matching_accruals()
+    {
+        var (accruals, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        var otherInvoiceId = Guid.Parse("33333333-3333-3333-3333-333333333333");
+
+        clock.UtcNow = T0;
+        await CreateAccrualAsync(
+            accruals, workspaces, clock, workspaceId, description: "Other", sourceInvoiceId: otherInvoiceId);
+        clock.UtcNow = T1;
+        var olderMatch = await CreateAccrualAsync(
+            accruals, workspaces, clock, workspaceId, description: "Match older", sourceInvoiceId: SourceInvoiceId);
+        clock.UtcNow = T2;
+        var newerMatch = await CreateAccrualAsync(
+            accruals, workspaces, clock, workspaceId, description: "Match newer", sourceInvoiceId: SourceInvoiceId);
+        await CreateAccrualAsync(
+            accruals, workspaces, clock, workspaceId, description: "Unlinked", sourceInvoiceId: null);
+
+        var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
+            new GetAccrualsPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 10,
+                SourceInvoiceId: SourceInvoiceId));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(2, result.Value!.TotalCount);
+        Assert.Equal(newerMatch.Id, result.Value.Items[0].Id);
+        Assert.Equal(olderMatch.Id, result.Value.Items[1].Id);
+        Assert.All(result.Value.Items, dto => Assert.Equal(SourceInvoiceId, dto.SourceInvoiceId));
+    }
+
+    [Fact]
+    public async Task ListPaged_source_invoice_no_match_returns_empty_page()
+    {
+        var (accruals, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        await CreateAccrualAsync(
+            accruals, workspaces, clock, workspaceId, description: "Other", sourceInvoiceId: SourceInvoiceId);
+
+        var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
+            new GetAccrualsPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 10,
+                SourceInvoiceId: Guid.Parse("33333333-3333-3333-3333-333333333333")));
+
+        Assert.True(result.IsSuccess);
+        Assert.Empty(result.Value!.Items);
+        Assert.Equal(0, result.Value.TotalCount);
+    }
+
+    [Fact]
+    public async Task ListPaged_source_invoice_with_status_and_created_range_forwards_all()
+    {
+        var (accruals, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
+            new GetAccrualsPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 10,
+                Status: "Draft",
+                CreatedFromUtc: T0,
+                CreatedToUtc: T2,
+                SourceInvoiceId: SourceInvoiceId));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(AccrualStatus.Draft, accruals.LastListedStatus);
+        Assert.Equal(T0, accruals.LastListedCreatedFromUtc);
+        Assert.Equal(T2, accruals.LastListedCreatedToUtc);
+        Assert.Equal(SourceInvoiceId, accruals.LastListedPagedSourceInvoiceId!.Value.Value);
+    }
+
+    [Fact]
+    public async Task ListPaged_source_invoice_composes_with_status_and_created_range()
+    {
+        var (accruals, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        var otherInvoiceId = Guid.Parse("33333333-3333-3333-3333-333333333333");
+
+        clock.UtcNow = T0;
+        await CreateAccrualAsync(
+            accruals, workspaces, clock, workspaceId, description: "Draft other invoice", sourceInvoiceId: otherInvoiceId);
+        clock.UtcNow = T1;
+        var match = await CreateAccrualAsync(
+            accruals, workspaces, clock, workspaceId, description: "Draft match", sourceInvoiceId: SourceInvoiceId);
+        clock.UtcNow = T2;
+        var recognizedMatch = await CreateAccrualAsync(
+            accruals, workspaces, clock, workspaceId, description: "Recognized match", sourceInvoiceId: SourceInvoiceId);
+        var recognized = await new RecognizeAccrualHandler(accruals, clock).HandleAsync(
+            new RecognizeAccrualCommand(workspaceId, recognizedMatch.Id));
+        Assert.True(recognized.IsSuccess);
+
+        var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
+            new GetAccrualsPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 10,
+                Status: "Draft",
+                CreatedFromUtc: T0,
+                CreatedToUtc: T2,
+                SourceInvoiceId: SourceInvoiceId));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(1, result.Value!.TotalCount);
+        Assert.Equal(match.Id, Assert.Single(result.Value.Items).Id);
+        Assert.NotEqual(recognizedMatch.Id, result.Value.Items[0].Id);
+    }
+
+    [Fact]
+    public async Task ListPaged_source_invoice_pages_after_filter()
+    {
+        var (accruals, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        clock.UtcNow = T0;
+        await CreateAccrualAsync(
+            accruals, workspaces, clock, workspaceId, description: "1", sourceInvoiceId: SourceInvoiceId);
+        clock.UtcNow = T1;
+        var mid = await CreateAccrualAsync(
+            accruals, workspaces, clock, workspaceId, description: "2", sourceInvoiceId: SourceInvoiceId);
+        clock.UtcNow = T2;
+        var newest = await CreateAccrualAsync(
+            accruals, workspaces, clock, workspaceId, description: "3", sourceInvoiceId: SourceInvoiceId);
+        await CreateAccrualAsync(
+            accruals, workspaces, clock, workspaceId, description: "Other", sourceInvoiceId: null);
+
+        var page1 = await new GetAccrualsPagedHandler(accruals).HandleAsync(
+            new GetAccrualsPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 1,
+                SourceInvoiceId: SourceInvoiceId));
+        var page2 = await new GetAccrualsPagedHandler(accruals).HandleAsync(
+            new GetAccrualsPagedQuery(
+                workspaceId,
+                Page: 2,
+                PageSize: 1,
+                SourceInvoiceId: SourceInvoiceId));
 
         Assert.True(page1.IsSuccess);
         Assert.True(page2.IsSuccess);

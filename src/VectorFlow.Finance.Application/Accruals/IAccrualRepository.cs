@@ -24,10 +24,12 @@ public interface IAccrualRepository
 
     /// <summary>
     /// Returns a workspace-scoped page of accruals ordered by CreatedAt descending, then Id descending,
-    /// together with the total matching count. Optional <paramref name="status"/> is applied in the
-    /// query; inclusive CreatedAt bounds (<paramref name="createdFromUtc"/> / <paramref name="createdToUtc"/>)
-    /// are applied in memory after materialization (SQLite cannot translate DateTimeOffset comparisons).
-    /// Both filters apply to the page and the total count.
+    /// together with the total matching count. Optional <paramref name="status"/> and optional
+    /// <paramref name="sourceInvoiceId"/> are applied in the query; inclusive CreatedAt bounds
+    /// (<paramref name="createdFromUtc"/> / <paramref name="createdToUtc"/>) are applied in memory after
+    /// materialization (SQLite cannot translate DateTimeOffset comparisons). All filters apply to the
+    /// page and the total count. A null <paramref name="sourceInvoiceId"/> means no SourceInvoiceId
+    /// filter (positive match only when provided; no IS NULL mode).
     /// </summary>
     Task<(IReadOnlyList<Accrual> Items, int TotalCount)> ListPagedAsync(
         FinanceWorkspaceId financeWorkspaceId,
@@ -36,6 +38,7 @@ public interface IAccrualRepository
         AccrualStatus? status = null,
         DateTimeOffset? createdFromUtc = null,
         DateTimeOffset? createdToUtc = null,
+        InvoiceId? sourceInvoiceId = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

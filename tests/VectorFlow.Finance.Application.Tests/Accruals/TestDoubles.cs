@@ -29,6 +29,8 @@ internal sealed class InMemoryAccrualRepository : IAccrualRepository
 
     public DateTimeOffset? LastListedCreatedToUtc { get; private set; }
 
+    public InvoiceId? LastListedPagedSourceInvoiceId { get; private set; }
+
     public CancellationToken? LastListPagedCancellationToken { get; private set; }
 
     public InvoiceId? LastListedSourceInvoiceId { get; private set; }
@@ -76,6 +78,7 @@ internal sealed class InMemoryAccrualRepository : IAccrualRepository
         AccrualStatus? status = null,
         DateTimeOffset? createdFromUtc = null,
         DateTimeOffset? createdToUtc = null,
+        InvoiceId? sourceInvoiceId = null,
         CancellationToken cancellationToken = default)
     {
         ListPagedCallCount++;
@@ -85,6 +88,7 @@ internal sealed class InMemoryAccrualRepository : IAccrualRepository
         LastListedStatus = status;
         LastListedCreatedFromUtc = createdFromUtc;
         LastListedCreatedToUtc = createdToUtc;
+        LastListedPagedSourceInvoiceId = sourceInvoiceId;
         LastListPagedCancellationToken = cancellationToken;
 
         var matched = _byId.Values
@@ -92,6 +96,7 @@ internal sealed class InMemoryAccrualRepository : IAccrualRepository
             .Where(accrual => status is null || accrual.Status == status.Value)
             .Where(accrual => createdFromUtc is null || accrual.CreatedAt >= createdFromUtc.Value)
             .Where(accrual => createdToUtc is null || accrual.CreatedAt <= createdToUtc.Value)
+            .Where(accrual => sourceInvoiceId is null || accrual.SourceInvoiceId == sourceInvoiceId.Value)
             .OrderByDescending(accrual => accrual.CreatedAt)
             .ThenByDescending(accrual => accrual.Id.Value)
             .ToList();

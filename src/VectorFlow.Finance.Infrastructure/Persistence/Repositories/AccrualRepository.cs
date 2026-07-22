@@ -48,13 +48,15 @@ public sealed class AccrualRepository : IAccrualRepository
         AccrualStatus? status = null,
         DateTimeOffset? createdFromUtc = null,
         DateTimeOffset? createdToUtc = null,
+        InvoiceId? sourceInvoiceId = null,
         CancellationToken cancellationToken = default)
     {
         // SQLite cannot translate DateTimeOffset comparisons; CreatedAt bounds are applied in memory.
         var accruals = await ApplySqlPagedFilters(
                 _dbContext.Accruals,
                 financeWorkspaceId,
-                status)
+                status,
+                sourceInvoiceId)
             .ToListAsync(cancellationToken);
 
         IEnumerable<Accrual> filtered = accruals;
@@ -86,13 +88,19 @@ public sealed class AccrualRepository : IAccrualRepository
     private static IQueryable<Accrual> ApplySqlPagedFilters(
         IQueryable<Accrual> source,
         FinanceWorkspaceId financeWorkspaceId,
-        AccrualStatus? status)
+        AccrualStatus? status,
+        InvoiceId? sourceInvoiceId)
     {
         var filtered = source.Where(accrual => accrual.FinanceWorkspaceId == financeWorkspaceId);
 
         if (status is not null)
         {
             filtered = filtered.Where(accrual => accrual.Status == status.Value);
+        }
+
+        if (sourceInvoiceId is not null)
+        {
+            filtered = filtered.Where(accrual => accrual.SourceInvoiceId == sourceInvoiceId.Value);
         }
 
         return filtered;

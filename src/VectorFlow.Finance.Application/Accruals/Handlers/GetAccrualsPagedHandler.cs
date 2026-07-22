@@ -1,6 +1,7 @@
 using VectorFlow.Finance.Application.Abstractions;
 using VectorFlow.Finance.Application.Accruals.Queries;
 using VectorFlow.Finance.Domain.Accruals;
+using VectorFlow.Finance.Domain.Invoices;
 using VectorFlow.Finance.Domain.Workspaces;
 
 namespace VectorFlow.Finance.Application.Accruals.Handlers;
@@ -22,12 +23,14 @@ public sealed class GetAccrualsPagedHandler
     {
         FinanceWorkspaceId financeWorkspaceId;
         AccrualStatus? status;
+        InvoiceId? sourceInvoiceId;
         try
         {
             financeWorkspaceId = new FinanceWorkspaceId(query.FinanceWorkspaceId);
             EnsurePaging(query.Page, query.PageSize);
             status = ParseStatusFilter(query.Status);
             EnsureCreatedAtRange(query.CreatedFromUtc, query.CreatedToUtc);
+            sourceInvoiceId = ParseSourceInvoiceIdFilter(query.SourceInvoiceId);
         }
         catch (ArgumentException ex)
         {
@@ -41,6 +44,7 @@ public sealed class GetAccrualsPagedHandler
             status,
             query.CreatedFromUtc,
             query.CreatedToUtc,
+            sourceInvoiceId,
             cancellationToken);
 
         var page = new PageResult<AccrualDto>(
@@ -111,4 +115,11 @@ public sealed class GetAccrualsPagedHandler
                 "CreatedFromUtc must not be later than CreatedToUtc.");
         }
     }
+
+    /// <summary>
+    /// Missing (<c>null</c>) means no SourceInvoiceId filter. When provided, empty Guid is rejected
+    /// via <see cref="InvoiceId"/> (same posture as list-by-invoice). Positive match only; no IS NULL mode.
+    /// </summary>
+    private static InvoiceId? ParseSourceInvoiceIdFilter(Guid? sourceInvoiceId) =>
+        sourceInvoiceId is null ? null : new InvoiceId(sourceInvoiceId.Value);
 }
