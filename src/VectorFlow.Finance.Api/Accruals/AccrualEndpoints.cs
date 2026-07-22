@@ -27,7 +27,7 @@ internal static class AccrualEndpoints
 
         group.MapGet("/paged", ListPagedAsync)
             .WithName("ListAccrualsPaged")
-            .WithSummary("List accruals for a finance workspace with paging (newest first; optional exact status, CreatedAt range, source invoice id, type, RecognitionDate range, and currency).")
+            .WithSummary("List accruals for a finance workspace with paging (newest first; optional exact status, CreatedAt range, source invoice id, type, RecognitionDate range, currency, and Amount range).")
             .Produces(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status400BadRequest);
 
@@ -155,6 +155,8 @@ internal static class AccrualEndpoints
         DateTimeOffset? recognitionFromUtc,
         DateTimeOffset? recognitionToUtc,
         string? currency,
+        decimal? amountFrom,
+        decimal? amountTo,
         GetAccrualsPagedHandler handler,
         CancellationToken cancellationToken)
     {
@@ -170,7 +172,9 @@ internal static class AccrualEndpoints
                 type,
                 recognitionFromUtc,
                 recognitionToUtc,
-                currency),
+                currency,
+                amountFrom,
+                amountTo),
             cancellationToken);
 
         return ApplicationResultHttp.ToHttpResult(result);

@@ -18,7 +18,9 @@ public sealed record GetAccrualsPagedQuery(
     string? Type = null,
     DateTimeOffset? RecognitionFromUtc = null,
     DateTimeOffset? RecognitionToUtc = null,
-    string? Currency = null);
+    string? Currency = null,
+    decimal? AmountFrom = null,
+    decimal? AmountTo = null);
 
 public sealed record GetAccrualsByInvoiceQuery(
     Guid FinanceWorkspaceId,

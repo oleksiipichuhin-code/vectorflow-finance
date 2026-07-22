@@ -27,14 +27,16 @@ public interface IAccrualRepository
     /// together with the total matching count. Optional <paramref name="status"/>, optional
     /// <paramref name="sourceInvoiceId"/>, optional <paramref name="type"/>, and optional
     /// <paramref name="currency"/> (exact Ordinal match on normalized Currency.Code) are applied in the
-    /// query; inclusive CreatedAt bounds (<paramref name="createdFromUtc"/> / <paramref name="createdToUtc"/>)
-    /// and inclusive RecognitionDate bounds (<paramref name="recognitionFromUtc"/> /
-    /// <paramref name="recognitionToUtc"/>) are applied in memory after materialization (SQLite cannot
-    /// translate DateTimeOffset comparisons). All filters apply to the page and the total count. A null
-    /// <paramref name="sourceInvoiceId"/> means no SourceInvoiceId filter (positive match only when
-    /// provided; no IS NULL mode). A null <paramref name="type"/> means no Type filter. A null
-    /// <paramref name="currency"/> means no Currency filter (positive exact match only when provided;
-    /// no partial/full-text mode).
+    /// query; inclusive CreatedAt bounds (<paramref name="createdFromUtc"/> / <paramref name="createdToUtc"/>),
+    /// inclusive RecognitionDate bounds (<paramref name="recognitionFromUtc"/> /
+    /// <paramref name="recognitionToUtc"/>), and inclusive Amount bounds (<paramref name="amountFrom"/> /
+    /// <paramref name="amountTo"/>) are applied in memory after materialization (SQLite cannot translate
+    /// DateTimeOffset comparisons; Amount bounds stay with the existing in-memory filter stage). All
+    /// filters apply to the page and the total count. A null <paramref name="sourceInvoiceId"/> means no
+    /// SourceInvoiceId filter (positive match only when provided; no IS NULL mode). A null
+    /// <paramref name="type"/> means no Type filter. A null <paramref name="currency"/> means no Currency
+    /// filter (positive exact match only when provided; no partial/full-text mode). A null
+    /// <paramref name="amountFrom"/> / <paramref name="amountTo"/> means no that Amount bound.
     /// </summary>
     Task<(IReadOnlyList<Accrual> Items, int TotalCount)> ListPagedAsync(
         FinanceWorkspaceId financeWorkspaceId,
@@ -48,6 +50,8 @@ public interface IAccrualRepository
         DateTimeOffset? recognitionFromUtc = null,
         DateTimeOffset? recognitionToUtc = null,
         string? currency = null,
+        decimal? amountFrom = null,
+        decimal? amountTo = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

@@ -91,9 +91,10 @@ F3A–F3F are published. Decimal precision policy for Debit/Credit remains an op
 | F4X | Invoice Paged Counterparty Composition | Complete |
 | F4Y | Invoice Paged Currency Composition | Complete |
 | F4Z | Accrual Paged Currency Composition | Complete |
+| F4AA | Accrual Paged Amount Range Composition | Complete |
 | F4Q+ | Later invoice and Accrual query enhancements | Planned |
 
-F4A–F4Y are published. F4Z Accrual Paged Currency Composition (optional exact Ordinal `currency` on paged Accrual listing after existing `Currency` trim + `ToUpperInvariant` normalization, composing with optional exact `status`, inclusive `createdFromUtc` / `createdToUtc`, exact `sourceInvoiceId`, exact `type`, and inclusive `recognitionFromUtc` / `recognitionToUtc`; blank/whitespace ValidationFailed; SQL-side currency predicate with existing in-memory DateTimeOffset bounds; no partial/prefix/full-text mode; no new ISO allowlist; no multi-currency semantics) is published. Remaining invoice query enhancements (other multi-field filters / full-text search), Accrual text-search filters, and other deferred Accrual query capabilities remain planned under F4Q+. F4 as a whole remains incomplete.
+F4A–F4Z are published. F4AA Accrual Paged Amount Range Composition (optional inclusive `amountFrom` / `amountTo` on paged Accrual listing; either bound alone allowed; equal bounds match that exact amount; `amountFrom > amountTo` is ValidationFailed; composes with optional exact `status`, inclusive `createdFromUtc` / `createdToUtc`, exact `sourceInvoiceId`, exact `type`, inclusive `recognitionFromUtc` / `recognitionToUtc`, and exact `currency`; Amount bounds applied in memory with existing DateTimeOffset in-memory filter stage; no Domain, migration, schema, package, Contracts, or DI changes) is published. Remaining invoice query enhancements (other multi-field filters / full-text search), Accrual text-search filters, and other deferred Accrual query capabilities remain planned under F4Q+. F4 as a whole remains incomplete.
 
 ## F5 sub-slices
 
