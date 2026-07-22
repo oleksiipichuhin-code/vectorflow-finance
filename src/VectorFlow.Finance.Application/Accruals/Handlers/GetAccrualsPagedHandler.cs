@@ -24,6 +24,7 @@ public sealed class GetAccrualsPagedHandler
         FinanceWorkspaceId financeWorkspaceId;
         AccrualStatus? status;
         InvoiceId? sourceInvoiceId;
+        AccrualType? type;
         try
         {
             financeWorkspaceId = new FinanceWorkspaceId(query.FinanceWorkspaceId);
@@ -31,6 +32,7 @@ public sealed class GetAccrualsPagedHandler
             status = ParseStatusFilter(query.Status);
             EnsureCreatedAtRange(query.CreatedFromUtc, query.CreatedToUtc);
             sourceInvoiceId = ParseSourceInvoiceIdFilter(query.SourceInvoiceId);
+            type = ParseTypeFilter(query.Type);
         }
         catch (ArgumentException ex)
         {
@@ -45,6 +47,7 @@ public sealed class GetAccrualsPagedHandler
             query.CreatedFromUtc,
             query.CreatedToUtc,
             sourceInvoiceId,
+            type,
             cancellationToken);
 
         var page = new PageResult<AccrualDto>(
@@ -122,4 +125,31 @@ public sealed class GetAccrualsPagedHandler
     /// </summary>
     private static InvoiceId? ParseSourceInvoiceIdFilter(Guid? sourceInvoiceId) =>
         sourceInvoiceId is null ? null : new InvoiceId(sourceInvoiceId.Value);
+
+    /// <summary>
+    /// Missing (<c>null</c>) means no type filter. Explicit blank/whitespace or any non-exact
+    /// <c>Revenue</c>/<c>Expense</c> value is validation failure (Ordinal, no trim/case-fold).
+    /// Distinct from mutation-side <c>TryParseAccrualType</c> (trim + ignoreCase).
+    /// </summary>
+    private static AccrualType? ParseTypeFilter(string? type)
+    {
+        if (type is null)
+        {
+            return null;
+        }
+
+        if (string.Equals(type, nameof(AccrualType.Revenue), StringComparison.Ordinal))
+        {
+            return AccrualType.Revenue;
+        }
+
+        if (string.Equals(type, nameof(AccrualType.Expense), StringComparison.Ordinal))
+        {
+            return AccrualType.Expense;
+        }
+
+        throw new ArgumentException(
+            "Type must be exactly Revenue or Expense when provided.",
+            nameof(type));
+    }
 }
