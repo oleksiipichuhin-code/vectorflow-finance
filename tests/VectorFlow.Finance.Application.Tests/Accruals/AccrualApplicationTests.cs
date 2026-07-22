@@ -1322,6 +1322,275 @@ public sealed class AccrualApplicationTests
     }
 
     [Fact]
+    public async Task ListPaged_omitted_recognition_bounds_pass_null_to_repository()
+    {
+        var (accruals, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "1");
+
+        var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
+            new GetAccrualsPagedQuery(workspaceId, Page: 1, PageSize: 10));
+
+        Assert.True(result.IsSuccess);
+        Assert.Null(accruals.LastListedRecognitionFromUtc);
+        Assert.Null(accruals.LastListedRecognitionToUtc);
+    }
+
+    [Fact]
+    public async Task ListPaged_recognition_from_only_passes_bound_to_repository()
+    {
+        var (accruals, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
+            new GetAccrualsPagedQuery(workspaceId, Page: 1, PageSize: 10, RecognitionFromUtc: T1));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(T1, accruals.LastListedRecognitionFromUtc);
+        Assert.Null(accruals.LastListedRecognitionToUtc);
+    }
+
+    [Fact]
+    public async Task ListPaged_recognition_to_only_passes_bound_to_repository()
+    {
+        var (accruals, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
+            new GetAccrualsPagedQuery(workspaceId, Page: 1, PageSize: 10, RecognitionToUtc: T1));
+
+        Assert.True(result.IsSuccess);
+        Assert.Null(accruals.LastListedRecognitionFromUtc);
+        Assert.Equal(T1, accruals.LastListedRecognitionToUtc);
+    }
+
+    [Fact]
+    public async Task ListPaged_recognition_both_bounds_pass_to_repository()
+    {
+        var (accruals, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
+            new GetAccrualsPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 10,
+                RecognitionFromUtc: T0,
+                RecognitionToUtc: T2));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(T0, accruals.LastListedRecognitionFromUtc);
+        Assert.Equal(T2, accruals.LastListedRecognitionToUtc);
+    }
+
+    [Fact]
+    public async Task ListPaged_equal_recognition_bounds_are_accepted()
+    {
+        var (accruals, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
+            new GetAccrualsPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 10,
+                RecognitionFromUtc: T1,
+                RecognitionToUtc: T1));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(T1, accruals.LastListedRecognitionFromUtc);
+        Assert.Equal(T1, accruals.LastListedRecognitionToUtc);
+        Assert.Equal(1, accruals.ListPagedCallCount);
+    }
+
+    [Fact]
+    public async Task ListPaged_recognition_from_after_to_returns_ValidationFailed()
+    {
+        var (accruals, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
+            new GetAccrualsPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 10,
+                RecognitionFromUtc: T2,
+                RecognitionToUtc: T0));
+
+        Assert.Equal(ApplicationErrorKind.ValidationFailed, result.ErrorKind);
+        Assert.Equal(0, accruals.ListPagedCallCount);
+    }
+
+    [Fact]
+    public async Task ListPaged_recognition_from_filters_inclusive_via_repository()
+    {
+        var (accruals, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        await CreateAccrualAsync(
+            accruals, workspaces, clock, workspaceId,
+            recognitionDate: T0, description: "Earlier");
+        var onBound = await CreateAccrualAsync(
+            accruals, workspaces, clock, workspaceId,
+            recognitionDate: T1, description: "On bound");
+        var later = await CreateAccrualAsync(
+            accruals, workspaces, clock, workspaceId,
+            recognitionDate: T2, description: "Later");
+
+        var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
+            new GetAccrualsPagedQuery(workspaceId, Page: 1, PageSize: 10, RecognitionFromUtc: T1));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(2, result.Value!.TotalCount);
+        Assert.Contains(result.Value.Items, item => item.Id == onBound.Id);
+        Assert.Contains(result.Value.Items, item => item.Id == later.Id);
+    }
+
+    [Fact]
+    public async Task ListPaged_recognition_preserves_status_created_source_type_and_paging()
+    {
+        var (accruals, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        using var cts = new CancellationTokenSource();
+        var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
+            new GetAccrualsPagedQuery(
+                workspaceId,
+                Page: 2,
+                PageSize: 5,
+                Status: "Draft",
+                CreatedFromUtc: T0,
+                CreatedToUtc: T2,
+                SourceInvoiceId: SourceInvoiceId,
+                Type: "Revenue",
+                RecognitionFromUtc: RecognitionDate,
+                RecognitionToUtc: RecognitionDateAlt),
+            cts.Token);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(AccrualStatus.Draft, accruals.LastListedStatus);
+        Assert.Equal(T0, accruals.LastListedCreatedFromUtc);
+        Assert.Equal(T2, accruals.LastListedCreatedToUtc);
+        Assert.Equal(SourceInvoiceId, accruals.LastListedPagedSourceInvoiceId!.Value.Value);
+        Assert.Equal(AccrualType.Revenue, accruals.LastListedType);
+        Assert.Equal(RecognitionDate, accruals.LastListedRecognitionFromUtc);
+        Assert.Equal(RecognitionDateAlt, accruals.LastListedRecognitionToUtc);
+        Assert.Equal(2, accruals.LastListedPage);
+        Assert.Equal(5, accruals.LastListedPageSize);
+        Assert.Equal(cts.Token, accruals.LastListPagedCancellationToken);
+    }
+
+    [Fact]
+    public async Task ListPaged_recognition_composes_with_status_created_source_and_type()
+    {
+        var (accruals, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        var otherInvoiceId = Guid.Parse("33333333-3333-3333-3333-333333333333");
+
+        clock.UtcNow = T0;
+        await CreateAccrualAsync(
+            accruals, workspaces, clock, workspaceId,
+            type: "Revenue",
+            recognitionDate: T0,
+            description: "Recognition out of range",
+            sourceInvoiceId: SourceInvoiceId);
+        clock.UtcNow = T1;
+        var match = await CreateAccrualAsync(
+            accruals, workspaces, clock, workspaceId,
+            type: "Revenue",
+            recognitionDate: T1,
+            description: "Match",
+            sourceInvoiceId: SourceInvoiceId);
+        clock.UtcNow = T2;
+        await CreateAccrualAsync(
+            accruals, workspaces, clock, workspaceId,
+            type: "Expense",
+            recognitionDate: T1,
+            description: "Wrong type",
+            sourceInvoiceId: SourceInvoiceId);
+        await CreateAccrualAsync(
+            accruals, workspaces, clock, workspaceId,
+            type: "Revenue",
+            recognitionDate: T1,
+            description: "Wrong invoice",
+            sourceInvoiceId: otherInvoiceId);
+        await CreateAccrualAsync(
+            accruals, workspaces, clock, workspaceId,
+            type: "Revenue",
+            recognitionDate: T2,
+            description: "Recognition after",
+            sourceInvoiceId: SourceInvoiceId);
+        var toRecognize = await CreateAccrualAsync(
+            accruals, workspaces, clock, workspaceId,
+            type: "Revenue",
+            recognitionDate: T1,
+            description: "Wrong status",
+            sourceInvoiceId: SourceInvoiceId);
+        var recognized = await new RecognizeAccrualHandler(accruals, clock).HandleAsync(
+            new RecognizeAccrualCommand(workspaceId, toRecognize.Id));
+        Assert.True(recognized.IsSuccess);
+
+        var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
+            new GetAccrualsPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 10,
+                Status: "Draft",
+                CreatedFromUtc: T1,
+                CreatedToUtc: T2,
+                SourceInvoiceId: SourceInvoiceId,
+                Type: "Revenue",
+                RecognitionFromUtc: T1,
+                RecognitionToUtc: T1));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(1, result.Value!.TotalCount);
+        Assert.Equal(match.Id, Assert.Single(result.Value.Items).Id);
+    }
+
+    [Fact]
+    public async Task ListPaged_recognition_range_pages_after_filter()
+    {
+        var (accruals, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        clock.UtcNow = T0;
+        await CreateAccrualAsync(
+            accruals, workspaces, clock, workspaceId,
+            recognitionDate: T0, description: "1");
+        clock.UtcNow = T1;
+        var mid = await CreateAccrualAsync(
+            accruals, workspaces, clock, workspaceId,
+            recognitionDate: T1, description: "2");
+        clock.UtcNow = T2;
+        var newest = await CreateAccrualAsync(
+            accruals, workspaces, clock, workspaceId,
+            recognitionDate: T1, description: "3");
+
+        var page1 = await new GetAccrualsPagedHandler(accruals).HandleAsync(
+            new GetAccrualsPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 1,
+                RecognitionFromUtc: T1,
+                RecognitionToUtc: T1));
+        var page2 = await new GetAccrualsPagedHandler(accruals).HandleAsync(
+            new GetAccrualsPagedQuery(
+                workspaceId,
+                Page: 2,
+                PageSize: 1,
+                RecognitionFromUtc: T1,
+                RecognitionToUtc: T1));
+
+        Assert.True(page1.IsSuccess);
+        Assert.True(page2.IsSuccess);
+        Assert.Equal(2, page1.Value!.TotalCount);
+        Assert.Equal(2, page2.Value!.TotalCount);
+        Assert.Equal(newest.Id, Assert.Single(page1.Value.Items).Id);
+        Assert.Equal(mid.Id, Assert.Single(page2.Value.Items).Id);
+    }
+
+    [Fact]
     public async Task List_equal_created_at_orders_by_id_descending()
     {
         var (accruals, workspaces, clock) = CreateHarness();

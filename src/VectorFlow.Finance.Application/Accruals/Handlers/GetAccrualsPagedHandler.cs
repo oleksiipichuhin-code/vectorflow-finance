@@ -33,6 +33,7 @@ public sealed class GetAccrualsPagedHandler
             EnsureCreatedAtRange(query.CreatedFromUtc, query.CreatedToUtc);
             sourceInvoiceId = ParseSourceInvoiceIdFilter(query.SourceInvoiceId);
             type = ParseTypeFilter(query.Type);
+            EnsureRecognitionDateRange(query.RecognitionFromUtc, query.RecognitionToUtc);
         }
         catch (ArgumentException ex)
         {
@@ -48,6 +49,8 @@ public sealed class GetAccrualsPagedHandler
             query.CreatedToUtc,
             sourceInvoiceId,
             type,
+            query.RecognitionFromUtc,
+            query.RecognitionToUtc,
             cancellationToken);
 
         var page = new PageResult<AccrualDto>(
@@ -116,6 +119,17 @@ public sealed class GetAccrualsPagedHandler
         {
             throw new ArgumentException(
                 "CreatedFromUtc must not be later than CreatedToUtc.");
+        }
+    }
+
+    private static void EnsureRecognitionDateRange(
+        DateTimeOffset? recognitionFromUtc,
+        DateTimeOffset? recognitionToUtc)
+    {
+        if (recognitionFromUtc is { } from && recognitionToUtc is { } to && from > to)
+        {
+            throw new ArgumentException(
+                "RecognitionFromUtc must not be later than RecognitionToUtc.");
         }
     }
 

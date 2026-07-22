@@ -33,6 +33,10 @@ internal sealed class InMemoryAccrualRepository : IAccrualRepository
 
     public AccrualType? LastListedType { get; private set; }
 
+    public DateTimeOffset? LastListedRecognitionFromUtc { get; private set; }
+
+    public DateTimeOffset? LastListedRecognitionToUtc { get; private set; }
+
     public CancellationToken? LastListPagedCancellationToken { get; private set; }
 
     public InvoiceId? LastListedSourceInvoiceId { get; private set; }
@@ -82,6 +86,8 @@ internal sealed class InMemoryAccrualRepository : IAccrualRepository
         DateTimeOffset? createdToUtc = null,
         InvoiceId? sourceInvoiceId = null,
         AccrualType? type = null,
+        DateTimeOffset? recognitionFromUtc = null,
+        DateTimeOffset? recognitionToUtc = null,
         CancellationToken cancellationToken = default)
     {
         ListPagedCallCount++;
@@ -93,6 +99,8 @@ internal sealed class InMemoryAccrualRepository : IAccrualRepository
         LastListedCreatedToUtc = createdToUtc;
         LastListedPagedSourceInvoiceId = sourceInvoiceId;
         LastListedType = type;
+        LastListedRecognitionFromUtc = recognitionFromUtc;
+        LastListedRecognitionToUtc = recognitionToUtc;
         LastListPagedCancellationToken = cancellationToken;
 
         var matched = _byId.Values
@@ -102,6 +110,8 @@ internal sealed class InMemoryAccrualRepository : IAccrualRepository
             .Where(accrual => createdToUtc is null || accrual.CreatedAt <= createdToUtc.Value)
             .Where(accrual => sourceInvoiceId is null || accrual.SourceInvoiceId == sourceInvoiceId.Value)
             .Where(accrual => type is null || accrual.Type == type.Value)
+            .Where(accrual => recognitionFromUtc is null || accrual.RecognitionDate >= recognitionFromUtc.Value)
+            .Where(accrual => recognitionToUtc is null || accrual.RecognitionDate <= recognitionToUtc.Value)
             .OrderByDescending(accrual => accrual.CreatedAt)
             .ThenByDescending(accrual => accrual.Id.Value)
             .ToList();

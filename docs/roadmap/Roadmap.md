@@ -86,10 +86,11 @@ F3A–F3F are published. Decimal precision policy for Debit/Credit remains an op
 | F4S | Accrual Paged CreatedAt Range Filter | Complete |
 | F4T | Accrual Paged Source-Invoice Composition | Complete |
 | F4U | Invoice Paged DocumentNumber Composition | Complete |
-| F4V | Accrual Paged Type Composition | Complete locally / awaiting publication |
+| F4V | Accrual Paged Type Composition | Complete |
+| F4W | Accrual Paged RecognitionDate Range Composition | Complete locally / awaiting publication |
 | F4Q+ | Later invoice and Accrual query enhancements | Planned |
 
-F4A–F4U are published. F4V Accrual Paged Type Composition (optional exact Ordinal `type` of `Revenue` / `Expense` on `/accruals/paged`, composing with optional exact `status`, inclusive `createdFromUtc` / `createdToUtc`, and exact `sourceInvoiceId`; omit-only, no trim/case-fold, no multi-value / text mode) is complete in the working tree until separately published. Remaining invoice query enhancements (other multi-field filters / full-text search), Accrual RecognitionDate and text-search filters, and other deferred Accrual query capabilities remain planned under F4Q+. F4 as a whole remains incomplete.
+F4A–F4V are published. F4W Accrual Paged RecognitionDate Range Composition (optional inclusive `recognitionFromUtc` / `recognitionToUtc` on `/accruals/paged`, filtering `RecognitionDate` not `RecognizedAt`, composing with optional exact `status`, inclusive `createdFromUtc` / `createdToUtc`, exact `sourceInvoiceId`, and exact Ordinal `type`; either bound alone allowed; equal bounds valid; `from > to` ValidationFailed) is complete in the working tree until separately published. Remaining invoice query enhancements (other multi-field filters / full-text search), Accrual text-search filters, and other deferred Accrual query capabilities remain planned under F4Q+. F4 as a whole remains incomplete.
 
 ## F5 sub-slices
 

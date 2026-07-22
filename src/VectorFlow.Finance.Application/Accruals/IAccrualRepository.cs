@@ -27,10 +27,11 @@ public interface IAccrualRepository
     /// together with the total matching count. Optional <paramref name="status"/>, optional
     /// <paramref name="sourceInvoiceId"/>, and optional <paramref name="type"/> are applied in the query;
     /// inclusive CreatedAt bounds (<paramref name="createdFromUtc"/> / <paramref name="createdToUtc"/>)
-    /// are applied in memory after materialization (SQLite cannot translate DateTimeOffset comparisons).
-    /// All filters apply to the page and the total count. A null <paramref name="sourceInvoiceId"/> means
-    /// no SourceInvoiceId filter (positive match only when provided; no IS NULL mode). A null
-    /// <paramref name="type"/> means no Type filter.
+    /// and inclusive RecognitionDate bounds (<paramref name="recognitionFromUtc"/> /
+    /// <paramref name="recognitionToUtc"/>) are applied in memory after materialization (SQLite cannot
+    /// translate DateTimeOffset comparisons). All filters apply to the page and the total count. A null
+    /// <paramref name="sourceInvoiceId"/> means no SourceInvoiceId filter (positive match only when
+    /// provided; no IS NULL mode). A null <paramref name="type"/> means no Type filter.
     /// </summary>
     Task<(IReadOnlyList<Accrual> Items, int TotalCount)> ListPagedAsync(
         FinanceWorkspaceId financeWorkspaceId,
@@ -41,6 +42,8 @@ public interface IAccrualRepository
         DateTimeOffset? createdToUtc = null,
         InvoiceId? sourceInvoiceId = null,
         AccrualType? type = null,
+        DateTimeOffset? recognitionFromUtc = null,
+        DateTimeOffset? recognitionToUtc = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
