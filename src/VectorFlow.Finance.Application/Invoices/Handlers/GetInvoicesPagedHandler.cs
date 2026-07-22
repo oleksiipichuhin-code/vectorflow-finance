@@ -23,6 +23,7 @@ public sealed class GetInvoicesPagedHandler
         FinanceWorkspaceId financeWorkspaceId;
         InvoiceStatus? status;
         string? documentNumber;
+        string? counterpartyReference;
         try
         {
             financeWorkspaceId = new FinanceWorkspaceId(query.FinanceWorkspaceId);
@@ -30,6 +31,7 @@ public sealed class GetInvoicesPagedHandler
             status = ParseStatusFilter(query.Status);
             EnsureCreatedAtRange(query.CreatedFromUtc, query.CreatedToUtc);
             documentNumber = ParseDocumentNumberFilter(query.DocumentNumber);
+            counterpartyReference = ParseCounterpartyReferenceFilter(query.CounterpartyReference);
         }
         catch (ArgumentException ex)
         {
@@ -44,6 +46,7 @@ public sealed class GetInvoicesPagedHandler
             query.CreatedFromUtc,
             query.CreatedToUtc,
             documentNumber,
+            counterpartyReference,
             cancellationToken);
 
         var page = new PageResult<InvoiceDto>(
@@ -117,4 +120,13 @@ public sealed class GetInvoicesPagedHandler
     /// </summary>
     private static string? ParseDocumentNumberFilter(string? documentNumber) =>
         documentNumber is null ? null : InvoiceHandlerSupport.NormalizeDocumentNumber(documentNumber);
+
+    /// <summary>
+    /// Missing (<c>null</c>) means no CounterpartyReference filter. When provided, normalize/validate via
+    /// <see cref="CounterpartyReference"/>. Positive exact Ordinal match only; no partial/full-text mode.
+    /// </summary>
+    private static string? ParseCounterpartyReferenceFilter(string? counterpartyReference) =>
+        counterpartyReference is null
+            ? null
+            : new CounterpartyReference(counterpartyReference).Value;
 }

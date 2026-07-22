@@ -65,6 +65,7 @@ public sealed class InvoiceRepository : IInvoiceRepository
         DateTimeOffset? createdFromUtc = null,
         DateTimeOffset? createdToUtc = null,
         string? documentNumber = null,
+        string? counterpartyReference = null,
         CancellationToken cancellationToken = default)
     {
         // SQLite cannot translate DateTimeOffset comparisons; CreatedAt bounds are applied in memory.
@@ -72,7 +73,8 @@ public sealed class InvoiceRepository : IInvoiceRepository
                 InvoicesWithLines(),
                 financeWorkspaceId,
                 status,
-                documentNumber)
+                documentNumber,
+                counterpartyReference)
             .ToListAsync(cancellationToken);
 
         IEnumerable<Invoice> filtered = invoices;
@@ -105,7 +107,8 @@ public sealed class InvoiceRepository : IInvoiceRepository
         IQueryable<Invoice> source,
         FinanceWorkspaceId financeWorkspaceId,
         InvoiceStatus? status,
-        string? documentNumber)
+        string? documentNumber,
+        string? counterpartyReference)
     {
         var filtered = source.Where(invoice => invoice.FinanceWorkspaceId == financeWorkspaceId);
 
@@ -117,6 +120,12 @@ public sealed class InvoiceRepository : IInvoiceRepository
         if (documentNumber is not null)
         {
             filtered = filtered.Where(invoice => invoice.DocumentNumber == documentNumber);
+        }
+
+        if (counterpartyReference is not null)
+        {
+            var reference = new CounterpartyReference(counterpartyReference);
+            filtered = filtered.Where(invoice => invoice.CounterpartyReference == reference);
         }
 
         return filtered;

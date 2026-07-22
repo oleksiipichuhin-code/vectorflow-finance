@@ -913,6 +913,283 @@ public sealed class InvoiceApplicationTests
     }
 
     [Fact]
+    public async Task ListPaged_omitted_counterparty_reference_passes_null_to_repository()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        await CreateInvoiceAsync(invoices, workspaces, clock, workspaceId, "INV-1", "cp-a");
+
+        var result = await new GetInvoicesPagedHandler(invoices).HandleAsync(
+            new GetInvoicesPagedQuery(workspaceId, Page: 1, PageSize: 10));
+
+        Assert.True(result.IsSuccess);
+        Assert.Null(invoices.LastListedPagedCounterpartyReference);
+        Assert.Equal(1, result.Value!.TotalCount);
+    }
+
+    [Fact]
+    public async Task ListPaged_counterparty_reference_passes_normalized_value_to_repository()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        var result = await new GetInvoicesPagedHandler(invoices).HandleAsync(
+            new GetInvoicesPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 10,
+                CounterpartyReference: "  cp-trim  "));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("cp-trim", invoices.LastListedPagedCounterpartyReference);
+    }
+
+    [Fact]
+    public async Task ListPaged_blank_counterparty_reference_returns_ValidationFailed()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        var result = await new GetInvoicesPagedHandler(invoices).HandleAsync(
+            new GetInvoicesPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 10,
+                CounterpartyReference: ""));
+
+        Assert.Equal(ApplicationErrorKind.ValidationFailed, result.ErrorKind);
+        Assert.Equal(0, invoices.ListPagedCallCount);
+    }
+
+    [Fact]
+    public async Task ListPaged_whitespace_counterparty_reference_returns_ValidationFailed()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        var result = await new GetInvoicesPagedHandler(invoices).HandleAsync(
+            new GetInvoicesPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 10,
+                CounterpartyReference: "   "));
+
+        Assert.Equal(ApplicationErrorKind.ValidationFailed, result.ErrorKind);
+        Assert.Equal(0, invoices.ListPagedCallCount);
+    }
+
+    [Fact]
+    public async Task ListPaged_overlength_counterparty_reference_returns_ValidationFailed()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        var overlength = new string('A', CounterpartyReference.MaxLength + 1);
+
+        var result = await new GetInvoicesPagedHandler(invoices).HandleAsync(
+            new GetInvoicesPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 10,
+                CounterpartyReference: overlength));
+
+        Assert.Equal(ApplicationErrorKind.ValidationFailed, result.ErrorKind);
+        Assert.Equal(0, invoices.ListPagedCallCount);
+    }
+
+    [Fact]
+    public async Task ListPaged_counterparty_reference_filters_matching_invoices()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        clock.UtcNow = T0;
+        await CreateInvoiceAsync(invoices, workspaces, clock, workspaceId, "INV-OTHER", "cp-other");
+        clock.UtcNow = T1;
+        var olderMatch = await CreateInvoiceAsync(invoices, workspaces, clock, workspaceId, "INV-A", "cp-match");
+        clock.UtcNow = T2;
+        var newerMatch = await CreateInvoiceAsync(invoices, workspaces, clock, workspaceId, "INV-B", "cp-match");
+        await CreateInvoiceAsync(invoices, workspaces, clock, workspaceId, "INV-C", "Cp-Match");
+
+        var result = await new GetInvoicesPagedHandler(invoices).HandleAsync(
+            new GetInvoicesPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 10,
+                CounterpartyReference: "cp-match"));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(2, result.Value!.TotalCount);
+        Assert.Equal(newerMatch.Id, result.Value.Items[0].Id);
+        Assert.Equal(olderMatch.Id, result.Value.Items[1].Id);
+        Assert.All(result.Value.Items, dto => Assert.Equal("cp-match", dto.CounterpartyReference));
+    }
+
+    [Fact]
+    public async Task ListPaged_counterparty_reference_no_match_returns_empty_page()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        await CreateInvoiceAsync(invoices, workspaces, clock, workspaceId, "INV-A", "cp-a");
+
+        var result = await new GetInvoicesPagedHandler(invoices).HandleAsync(
+            new GetInvoicesPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 10,
+                CounterpartyReference: "cp-missing"));
+
+        Assert.True(result.IsSuccess);
+        Assert.Empty(result.Value!.Items);
+        Assert.Equal(0, result.Value.TotalCount);
+    }
+
+    [Fact]
+    public async Task ListPaged_counterparty_reference_with_status_created_range_and_document_number_forwards_all()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        var result = await new GetInvoicesPagedHandler(invoices).HandleAsync(
+            new GetInvoicesPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 10,
+                Status: "Draft",
+                CreatedFromUtc: T0,
+                CreatedToUtc: T2,
+                DocumentNumber: "INV-X",
+                CounterpartyReference: "cp-x"));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(InvoiceStatus.Draft, invoices.LastListedStatus);
+        Assert.Equal(T0, invoices.LastListedCreatedFromUtc);
+        Assert.Equal(T2, invoices.LastListedCreatedToUtc);
+        Assert.Equal("INV-X", invoices.LastListedPagedDocumentNumber);
+        Assert.Equal("cp-x", invoices.LastListedPagedCounterpartyReference);
+    }
+
+    [Fact]
+    public async Task ListPaged_counterparty_reference_composes_with_status()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        clock.UtcNow = T0;
+        var draftMatch = await CreateInvoiceAsync(invoices, workspaces, clock, workspaceId, "INV-A", "cp-match");
+        clock.UtcNow = T1;
+        var toIssue = await CreateInvoiceAsync(invoices, workspaces, clock, workspaceId, "INV-B", "cp-match");
+        var withLine = await new AddInvoiceLineHandler(invoices, clock).HandleAsync(
+            new AddInvoiceLineCommand(workspaceId, toIssue.Id, 2m, 50m, "Service"));
+        Assert.True(withLine.IsSuccess);
+        var withDue = await new SetInvoiceDueDateHandler(invoices, clock).HandleAsync(
+            new SetInvoiceDueDateCommand(workspaceId, toIssue.Id, DueNextDay));
+        Assert.True(withDue.IsSuccess);
+        var issued = await new IssueInvoiceHandler(invoices, clock).HandleAsync(
+            new IssueInvoiceCommand(workspaceId, toIssue.Id));
+        Assert.True(issued.IsSuccess);
+
+        var result = await new GetInvoicesPagedHandler(invoices).HandleAsync(
+            new GetInvoicesPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 10,
+                Status: "Draft",
+                CounterpartyReference: "cp-match"));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(1, result.Value!.TotalCount);
+        Assert.Equal(draftMatch.Id, Assert.Single(result.Value.Items).Id);
+    }
+
+    [Fact]
+    public async Task ListPaged_counterparty_reference_composes_with_created_range()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        clock.UtcNow = T0;
+        await CreateInvoiceAsync(invoices, workspaces, clock, workspaceId, "INV-A", "cp-match");
+        clock.UtcNow = T1;
+        var inRange = await CreateInvoiceAsync(invoices, workspaces, clock, workspaceId, "INV-B", "cp-match");
+        clock.UtcNow = T2;
+        await CreateInvoiceAsync(invoices, workspaces, clock, workspaceId, "INV-C", "cp-other");
+
+        var result = await new GetInvoicesPagedHandler(invoices).HandleAsync(
+            new GetInvoicesPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 10,
+                CreatedFromUtc: T1,
+                CreatedToUtc: T1,
+                CounterpartyReference: "cp-match"));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(1, result.Value!.TotalCount);
+        Assert.Equal(inRange.Id, Assert.Single(result.Value.Items).Id);
+    }
+
+    [Fact]
+    public async Task ListPaged_counterparty_reference_composes_with_document_number()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        clock.UtcNow = T0;
+        var match = await CreateInvoiceAsync(invoices, workspaces, clock, workspaceId, "INV-MATCH", "cp-match");
+        clock.UtcNow = T1;
+        await CreateInvoiceAsync(invoices, workspaces, clock, workspaceId, "INV-MATCH", "cp-other");
+        clock.UtcNow = T2;
+        await CreateInvoiceAsync(invoices, workspaces, clock, workspaceId, "INV-OTHER", "cp-match");
+
+        var result = await new GetInvoicesPagedHandler(invoices).HandleAsync(
+            new GetInvoicesPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 10,
+                DocumentNumber: "INV-MATCH",
+                CounterpartyReference: "cp-match"));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(1, result.Value!.TotalCount);
+        Assert.Equal(match.Id, Assert.Single(result.Value.Items).Id);
+    }
+
+    [Fact]
+    public async Task ListPaged_counterparty_reference_pages_after_filter()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        clock.UtcNow = T0;
+        await CreateInvoiceAsync(invoices, workspaces, clock, workspaceId, "INV-1", "cp-match");
+        clock.UtcNow = T1;
+        var mid = await CreateInvoiceAsync(invoices, workspaces, clock, workspaceId, "INV-2", "cp-match");
+        clock.UtcNow = T2;
+        var newest = await CreateInvoiceAsync(invoices, workspaces, clock, workspaceId, "INV-3", "cp-match");
+        await CreateInvoiceAsync(invoices, workspaces, clock, workspaceId, "INV-4", "cp-other");
+
+        var page1 = await new GetInvoicesPagedHandler(invoices).HandleAsync(
+            new GetInvoicesPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 1,
+                CounterpartyReference: "cp-match"));
+        var page2 = await new GetInvoicesPagedHandler(invoices).HandleAsync(
+            new GetInvoicesPagedQuery(
+                workspaceId,
+                Page: 2,
+                PageSize: 1,
+                CounterpartyReference: "cp-match"));
+
+        Assert.True(page1.IsSuccess);
+        Assert.Equal(3, page1.Value!.TotalCount);
+        Assert.Equal(newest.Id, Assert.Single(page1.Value.Items).Id);
+        Assert.True(page2.IsSuccess);
+        Assert.Equal(3, page2.Value!.TotalCount);
+        Assert.Equal(mid.Id, Assert.Single(page2.Value.Items).Id);
+    }
+
+    [Fact]
     public async Task ListByDocumentNumber_returns_all_matching_newest_first()
     {
         var (invoices, workspaces, clock) = CreateHarness();

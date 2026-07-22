@@ -32,6 +32,8 @@ internal sealed class InMemoryInvoiceRepository : IInvoiceRepository
 
     public string? LastListedPagedDocumentNumber { get; private set; }
 
+    public string? LastListedPagedCounterpartyReference { get; private set; }
+
     public CancellationToken? LastListByDocumentNumberCancellationToken { get; private set; }
 
     public CancellationToken? LastListPagedCancellationToken { get; private set; }
@@ -101,6 +103,7 @@ internal sealed class InMemoryInvoiceRepository : IInvoiceRepository
         DateTimeOffset? createdFromUtc = null,
         DateTimeOffset? createdToUtc = null,
         string? documentNumber = null,
+        string? counterpartyReference = null,
         CancellationToken cancellationToken = default)
     {
         ListPagedCallCount++;
@@ -111,6 +114,7 @@ internal sealed class InMemoryInvoiceRepository : IInvoiceRepository
         LastListedCreatedFromUtc = createdFromUtc;
         LastListedCreatedToUtc = createdToUtc;
         LastListedPagedDocumentNumber = documentNumber;
+        LastListedPagedCounterpartyReference = counterpartyReference;
         LastListPagedCancellationToken = cancellationToken;
 
         var matched = _byId.Values
@@ -119,6 +123,12 @@ internal sealed class InMemoryInvoiceRepository : IInvoiceRepository
             .Where(invoice =>
                 documentNumber is null ||
                 string.Equals(invoice.DocumentNumber, documentNumber, StringComparison.Ordinal))
+            .Where(invoice =>
+                counterpartyReference is null ||
+                string.Equals(
+                    invoice.CounterpartyReference.Value,
+                    counterpartyReference,
+                    StringComparison.Ordinal))
             .Where(invoice => createdFromUtc is null || invoice.CreatedAt >= createdFromUtc.Value)
             .Where(invoice => createdToUtc is null || invoice.CreatedAt <= createdToUtc.Value)
             .OrderByDescending(invoice => invoice.CreatedAt)

@@ -18,4 +18,5 @@ public sealed record GetInvoicesPagedQuery(
     string? Status = null,
     DateTimeOffset? CreatedFromUtc = null,
     DateTimeOffset? CreatedToUtc = null,
-    string? DocumentNumber = null);
+    string? DocumentNumber = null,
+    string? CounterpartyReference = null);
