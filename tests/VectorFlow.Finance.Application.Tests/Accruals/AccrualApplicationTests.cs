@@ -1591,6 +1591,202 @@ public sealed class AccrualApplicationTests
     }
 
     [Fact]
+    public async Task ListPaged_omitted_currency_passes_null_to_repository()
+    {
+        var (accruals, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, currency: "UAH");
+
+        var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
+            new GetAccrualsPagedQuery(workspaceId, Page: 1, PageSize: 10));
+
+        Assert.True(result.IsSuccess);
+        Assert.Null(accruals.LastListedPagedCurrency);
+        Assert.Equal(1, result.Value!.TotalCount);
+    }
+
+    [Fact]
+    public async Task ListPaged_currency_passes_normalized_code_to_repository()
+    {
+        var (accruals, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
+            new GetAccrualsPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 10,
+                Currency: "usd"));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("USD", accruals.LastListedPagedCurrency);
+    }
+
+    [Fact]
+    public async Task ListPaged_currency_trims_and_uppercases_before_repository()
+    {
+        var (accruals, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
+            new GetAccrualsPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 10,
+                Currency: "  usd  "));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("USD", accruals.LastListedPagedCurrency);
+    }
+
+    [Fact]
+    public async Task ListPaged_blank_currency_returns_ValidationFailed()
+    {
+        var (accruals, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
+            new GetAccrualsPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 10,
+                Currency: ""));
+
+        Assert.Equal(ApplicationErrorKind.ValidationFailed, result.ErrorKind);
+        Assert.Equal(0, accruals.ListPagedCallCount);
+    }
+
+    [Fact]
+    public async Task ListPaged_whitespace_currency_returns_ValidationFailed()
+    {
+        var (accruals, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
+            new GetAccrualsPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 10,
+                Currency: "   "));
+
+        Assert.Equal(ApplicationErrorKind.ValidationFailed, result.ErrorKind);
+        Assert.Equal(0, accruals.ListPagedCallCount);
+    }
+
+    [Fact]
+    public async Task ListPaged_currency_filters_matching_accruals()
+    {
+        var (accruals, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        clock.UtcNow = T0;
+        await CreateAccrualAsync(
+            accruals, workspaces, clock, workspaceId, currency: "EUR", description: "Other");
+        clock.UtcNow = T1;
+        var olderMatch = await CreateAccrualAsync(
+            accruals, workspaces, clock, workspaceId, currency: "USD", description: "Older");
+        clock.UtcNow = T2;
+        var newerMatch = await CreateAccrualAsync(
+            accruals, workspaces, clock, workspaceId, currency: "USD", description: "Newer");
+
+        var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
+            new GetAccrualsPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 10,
+                Currency: "USD"));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(2, result.Value!.TotalCount);
+        Assert.Equal(newerMatch.Id, result.Value.Items[0].Id);
+        Assert.Equal(olderMatch.Id, result.Value.Items[1].Id);
+        Assert.All(result.Value.Items, dto => Assert.Equal("USD", dto.Currency));
+    }
+
+    [Fact]
+    public async Task ListPaged_currency_no_match_returns_empty_page()
+    {
+        var (accruals, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, currency: "UAH");
+
+        var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
+            new GetAccrualsPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 10,
+                Currency: "USD"));
+
+        Assert.True(result.IsSuccess);
+        Assert.Empty(result.Value!.Items);
+        Assert.Equal(0, result.Value.TotalCount);
+    }
+
+    [Fact]
+    public async Task ListPaged_currency_with_status_created_source_type_and_recognition_forwards_all()
+    {
+        var (accruals, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
+            new GetAccrualsPagedQuery(
+                workspaceId,
+                Page: 2,
+                PageSize: 5,
+                Status: "Draft",
+                CreatedFromUtc: T0,
+                CreatedToUtc: T2,
+                SourceInvoiceId: SourceInvoiceId,
+                Type: "Revenue",
+                RecognitionFromUtc: RecognitionDate,
+                RecognitionToUtc: RecognitionDateAlt,
+                Currency: "usd"));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(AccrualStatus.Draft, accruals.LastListedStatus);
+        Assert.Equal(T0, accruals.LastListedCreatedFromUtc);
+        Assert.Equal(T2, accruals.LastListedCreatedToUtc);
+        Assert.Equal(SourceInvoiceId, accruals.LastListedPagedSourceInvoiceId!.Value.Value);
+        Assert.Equal(AccrualType.Revenue, accruals.LastListedType);
+        Assert.Equal(RecognitionDate, accruals.LastListedRecognitionFromUtc);
+        Assert.Equal(RecognitionDateAlt, accruals.LastListedRecognitionToUtc);
+        Assert.Equal("USD", accruals.LastListedPagedCurrency);
+        Assert.Equal(2, accruals.LastListedPage);
+        Assert.Equal(5, accruals.LastListedPageSize);
+    }
+
+    [Fact]
+    public async Task ListPaged_currency_composes_with_status()
+    {
+        var (accruals, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        clock.UtcNow = T0;
+        var draftMatch = await CreateAccrualAsync(
+            accruals, workspaces, clock, workspaceId, currency: "USD", description: "Draft match");
+        clock.UtcNow = T1;
+        var toRecognize = await CreateAccrualAsync(
+            accruals, workspaces, clock, workspaceId, currency: "USD", description: "Recognized");
+        var recognized = await new RecognizeAccrualHandler(accruals, clock).HandleAsync(
+            new RecognizeAccrualCommand(workspaceId, toRecognize.Id));
+        Assert.True(recognized.IsSuccess);
+        await CreateAccrualAsync(
+            accruals, workspaces, clock, workspaceId, currency: "EUR", description: "Wrong currency");
+
+        var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
+            new GetAccrualsPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 10,
+                Status: "Draft",
+                Currency: "USD"));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(1, result.Value!.TotalCount);
+        Assert.Equal(draftMatch.Id, Assert.Single(result.Value.Items).Id);
+    }
+
+    [Fact]
     public async Task List_equal_created_at_orders_by_id_descending()
     {
         var (accruals, workspaces, clock) = CreateHarness();

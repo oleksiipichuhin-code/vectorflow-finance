@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using VectorFlow.Finance.Application.Accruals;
+using VectorFlow.Finance.Domain;
 using VectorFlow.Finance.Domain.Accruals;
 using VectorFlow.Finance.Domain.Invoices;
 using VectorFlow.Finance.Domain.Workspaces;
@@ -52,6 +53,7 @@ public sealed class AccrualRepository : IAccrualRepository
         AccrualType? type = null,
         DateTimeOffset? recognitionFromUtc = null,
         DateTimeOffset? recognitionToUtc = null,
+        string? currency = null,
         CancellationToken cancellationToken = default)
     {
         // SQLite cannot translate DateTimeOffset comparisons; CreatedAt and RecognitionDate bounds
@@ -61,7 +63,8 @@ public sealed class AccrualRepository : IAccrualRepository
                 financeWorkspaceId,
                 status,
                 sourceInvoiceId,
-                type)
+                type,
+                currency)
             .ToListAsync(cancellationToken);
 
         IEnumerable<Accrual> filtered = accruals;
@@ -105,7 +108,8 @@ public sealed class AccrualRepository : IAccrualRepository
         FinanceWorkspaceId financeWorkspaceId,
         AccrualStatus? status,
         InvoiceId? sourceInvoiceId,
-        AccrualType? type)
+        AccrualType? type,
+        string? currency)
     {
         var filtered = source.Where(accrual => accrual.FinanceWorkspaceId == financeWorkspaceId);
 
@@ -122,6 +126,12 @@ public sealed class AccrualRepository : IAccrualRepository
         if (type is not null)
         {
             filtered = filtered.Where(accrual => accrual.Type == type.Value);
+        }
+
+        if (currency is not null)
+        {
+            var currencyFilter = new Currency(currency);
+            filtered = filtered.Where(accrual => accrual.Currency == currencyFilter);
         }
 
         return filtered;

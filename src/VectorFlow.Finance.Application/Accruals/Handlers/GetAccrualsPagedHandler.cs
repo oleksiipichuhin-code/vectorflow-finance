@@ -1,5 +1,6 @@
 using VectorFlow.Finance.Application.Abstractions;
 using VectorFlow.Finance.Application.Accruals.Queries;
+using VectorFlow.Finance.Domain;
 using VectorFlow.Finance.Domain.Accruals;
 using VectorFlow.Finance.Domain.Invoices;
 using VectorFlow.Finance.Domain.Workspaces;
@@ -25,6 +26,7 @@ public sealed class GetAccrualsPagedHandler
         AccrualStatus? status;
         InvoiceId? sourceInvoiceId;
         AccrualType? type;
+        string? currency;
         try
         {
             financeWorkspaceId = new FinanceWorkspaceId(query.FinanceWorkspaceId);
@@ -34,6 +36,7 @@ public sealed class GetAccrualsPagedHandler
             sourceInvoiceId = ParseSourceInvoiceIdFilter(query.SourceInvoiceId);
             type = ParseTypeFilter(query.Type);
             EnsureRecognitionDateRange(query.RecognitionFromUtc, query.RecognitionToUtc);
+            currency = ParseCurrencyFilter(query.Currency);
         }
         catch (ArgumentException ex)
         {
@@ -51,6 +54,7 @@ public sealed class GetAccrualsPagedHandler
             type,
             query.RecognitionFromUtc,
             query.RecognitionToUtc,
+            currency,
             cancellationToken);
 
         var page = new PageResult<AccrualDto>(
@@ -166,4 +170,12 @@ public sealed class GetAccrualsPagedHandler
             "Type must be exactly Revenue or Expense when provided.",
             nameof(type));
     }
+
+    /// <summary>
+    /// Missing (<c>null</c>) means no Currency filter. When provided, normalize/validate via
+    /// <see cref="Currency"/> (trim + ToUpperInvariant). Positive exact Ordinal match on normalized
+    /// stored code only; no partial/full-text mode and no new ISO allowlist.
+    /// </summary>
+    private static string? ParseCurrencyFilter(string? currency) =>
+        currency is null ? null : new Currency(currency).Code;
 }

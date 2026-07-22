@@ -1673,6 +1673,165 @@ public sealed class AccrualEndpointTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ListPaged_currency_returns_only_matching()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("a1000000-0000-0000-0000-000000000081"),
+            Guid.Parse("a2000000-0000-0000-0000-000000000081"));
+
+        await CreateAccrualAsync(workspaceId, "Revenue", 10m, "Other", currency: "EUR");
+        var olderMatch = await CreateAccrualAsync(workspaceId, "Revenue", 20m, "Older", currency: "USD");
+        await Task.Delay(20);
+        var newerMatch = await CreateAccrualAsync(workspaceId, "Expense", 30m, "Newer", currency: "USD");
+
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/accruals/paged?page=1&pageSize=10&currency=USD");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = document.RootElement;
+        Assert.Equal(2, root.GetProperty("totalCount").GetInt32());
+        var items = root.GetProperty("items").EnumerateArray().ToArray();
+        Assert.Equal(2, items.Length);
+        Assert.Equal(newerMatch, items[0].GetProperty("id").GetGuid());
+        Assert.Equal(olderMatch, items[1].GetProperty("id").GetGuid());
+        Assert.All(items, item => Assert.Equal("USD", item.GetProperty("currency").GetString()));
+    }
+
+    [Fact]
+    public async Task ListPaged_omitted_currency_returns_all()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("a1000000-0000-0000-0000-000000000082"),
+            Guid.Parse("a2000000-0000-0000-0000-000000000082"));
+
+        await CreateAccrualAsync(workspaceId, "Revenue", 10m, "A", currency: "UAH");
+        await CreateAccrualAsync(workspaceId, "Expense", 20m, "B", currency: "USD");
+
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/accruals/paged?page=1&pageSize=10");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(2, document.RootElement.GetProperty("totalCount").GetInt32());
+        Assert.Equal(2, document.RootElement.GetProperty("items").GetArrayLength());
+    }
+
+    [Fact]
+    public async Task ListPaged_lowercase_currency_normalizes_and_filters()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("a1000000-0000-0000-0000-000000000083"),
+            Guid.Parse("a2000000-0000-0000-0000-000000000083"));
+        var match = await CreateAccrualAsync(workspaceId, "Revenue", 10m, "USD", currency: "USD");
+        await CreateAccrualAsync(workspaceId, "Expense", 20m, "EUR", currency: "EUR");
+
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/accruals/paged?page=1&pageSize=10&currency=usd");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(1, document.RootElement.GetProperty("totalCount").GetInt32());
+        Assert.Equal(
+            match,
+            Assert.Single(document.RootElement.GetProperty("items").EnumerateArray()).GetProperty("id").GetGuid());
+        Assert.Equal(
+            "USD",
+            Assert.Single(document.RootElement.GetProperty("items").EnumerateArray()).GetProperty("currency").GetString());
+    }
+
+    [Fact]
+    public async Task ListPaged_blank_currency_returns_400()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("a1000000-0000-0000-0000-000000000084"),
+            Guid.Parse("a2000000-0000-0000-0000-000000000084"));
+
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/accruals/paged?page=1&pageSize=10&currency=");
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        await AssertErrorAsync(response, "ValidationFailed");
+    }
+
+    [Fact]
+    public async Task ListPaged_whitespace_currency_returns_400()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("a1000000-0000-0000-0000-000000000085"),
+            Guid.Parse("a2000000-0000-0000-0000-000000000085"));
+
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/accruals/paged?page=1&pageSize=10&currency=%20%20%20");
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        await AssertErrorAsync(response, "ValidationFailed");
+    }
+
+    [Fact]
+    public async Task ListPaged_currency_trims_query_value()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("a1000000-0000-0000-0000-000000000086"),
+            Guid.Parse("a2000000-0000-0000-0000-000000000086"));
+        var match = await CreateAccrualAsync(workspaceId, "Revenue", 10m, "Trim", currency: "USD");
+
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/accruals/paged?page=1&pageSize=10&currency=%20%20USD%20%20");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(1, document.RootElement.GetProperty("totalCount").GetInt32());
+        Assert.Equal(
+            match,
+            Assert.Single(document.RootElement.GetProperty("items").EnumerateArray()).GetProperty("id").GetGuid());
+    }
+
+    [Fact]
+    public async Task ListPaged_currency_composes_with_type()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("a1000000-0000-0000-0000-000000000087"),
+            Guid.Parse("a2000000-0000-0000-0000-000000000087"));
+
+        var match = await CreateAccrualAsync(workspaceId, "Revenue", 10m, "Match", currency: "USD");
+        await CreateAccrualAsync(workspaceId, "Expense", 20m, "Wrong type", currency: "USD");
+        await CreateAccrualAsync(workspaceId, "Revenue", 30m, "Wrong currency", currency: "EUR");
+
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/accruals/paged?page=1&pageSize=10&type=Revenue&currency=USD");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(1, document.RootElement.GetProperty("totalCount").GetInt32());
+        Assert.Equal(
+            match,
+            Assert.Single(document.RootElement.GetProperty("items").EnumerateArray()).GetProperty("id").GetGuid());
+    }
+
+    [Fact]
+    public async Task ListPaged_currency_is_workspace_scoped()
+    {
+        var workspaceA = await CreateWorkspaceAsync(
+            Guid.Parse("a1000000-0000-0000-0000-000000000088"),
+            Guid.Parse("a2000000-0000-0000-0000-000000000088"));
+        var workspaceB = await CreateWorkspaceAsync(
+            Guid.Parse("b1000000-0000-0000-0000-000000000088"),
+            Guid.Parse("b2000000-0000-0000-0000-000000000088"));
+
+        var inA = await CreateAccrualAsync(workspaceA, "Revenue", 10m, "A", currency: "USD");
+        await CreateAccrualAsync(workspaceB, "Revenue", 20m, "B", currency: "USD");
+
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceA}/accruals/paged?page=1&pageSize=10&currency=USD");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(1, document.RootElement.GetProperty("totalCount").GetInt32());
+        Assert.Equal(
+            inA,
+            Assert.Single(document.RootElement.GetProperty("items").EnumerateArray()).GetProperty("id").GetGuid());
+    }
+
+    [Fact]
     public async Task Get_by_id_still_resolves_after_list_route()
     {
         var workspaceId = await CreateWorkspaceAsync(
@@ -2317,6 +2476,7 @@ public sealed class AccrualEndpointTests : IAsyncLifetime
         Assert.Contains("sourceInvoiceId", json);
         Assert.Contains("recognitionFromUtc", json);
         Assert.Contains("recognitionToUtc", json);
+        Assert.Contains("currency", json);
         Assert.Contains("date-time", json);
         Assert.Single(System.Text.RegularExpressions.Regex.Matches(json, "\"ListAccruals\""));
         Assert.Single(System.Text.RegularExpressions.Regex.Matches(json, "\"ListAccrualsPaged\""));
@@ -2354,7 +2514,8 @@ public sealed class AccrualEndpointTests : IAsyncLifetime
         decimal amount,
         string description,
         Guid? sourceInvoiceId = null,
-        DateTimeOffset? recognitionDateUtc = null)
+        DateTimeOffset? recognitionDateUtc = null,
+        string currency = "UAH")
     {
         var response = await _client.PostAsJsonAsync(
             $"/api/finance-workspaces/{workspaceId}/accruals",
@@ -2362,7 +2523,7 @@ public sealed class AccrualEndpointTests : IAsyncLifetime
             {
                 type,
                 amount,
-                currency = "UAH",
+                currency,
                 recognitionDateUtc = recognitionDateUtc ?? RecognitionDate,
                 description,
                 sourceInvoiceId

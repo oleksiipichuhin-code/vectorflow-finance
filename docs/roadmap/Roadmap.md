@@ -89,10 +89,11 @@ F3A–F3F are published. Decimal precision policy for Debit/Credit remains an op
 | F4V | Accrual Paged Type Composition | Complete |
 | F4W | Accrual Paged RecognitionDate Range Composition | Complete |
 | F4X | Invoice Paged Counterparty Composition | Complete |
-| F4Y | Invoice Paged Currency Composition | Implemented (unpublished) |
+| F4Y | Invoice Paged Currency Composition | Complete |
+| F4Z | Accrual Paged Currency Composition | Complete |
 | F4Q+ | Later invoice and Accrual query enhancements | Planned |
 
-F4A–F4X are published. F4Y Invoice Paged Currency Composition (optional exact Ordinal `currency` on paged Invoice listing after existing `Currency` trim + `ToUpperInvariant` normalization, composing with optional exact `status`, inclusive `createdFromUtc` / `createdToUtc`, exact Ordinal `documentNumber`, and exact Ordinal `counterpartyReference`; blank/whitespace ValidationFailed; no partial/prefix/full-text mode; no new ISO allowlist; no multi-currency semantics) is implemented locally / awaiting publication. Remaining invoice query enhancements (other multi-field filters / full-text search), Accrual text-search filters, and other deferred Accrual query capabilities remain planned under F4Q+. F4 as a whole remains incomplete.
+F4A–F4Y are published. F4Z Accrual Paged Currency Composition (optional exact Ordinal `currency` on paged Accrual listing after existing `Currency` trim + `ToUpperInvariant` normalization, composing with optional exact `status`, inclusive `createdFromUtc` / `createdToUtc`, exact `sourceInvoiceId`, exact `type`, and inclusive `recognitionFromUtc` / `recognitionToUtc`; blank/whitespace ValidationFailed; SQL-side currency predicate with existing in-memory DateTimeOffset bounds; no partial/prefix/full-text mode; no new ISO allowlist; no multi-currency semantics) is published. Remaining invoice query enhancements (other multi-field filters / full-text search), Accrual text-search filters, and other deferred Accrual query capabilities remain planned under F4Q+. F4 as a whole remains incomplete.
 
 ## F5 sub-slices
 
