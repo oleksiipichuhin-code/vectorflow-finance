@@ -1174,6 +1174,297 @@ public sealed class InvoiceEndpointTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task List_currency_returns_only_matching()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("c1000000-0000-0000-0000-0000000000a0"),
+            Guid.Parse("c2000000-0000-0000-0000-0000000000a0"));
+
+        await CreateInvoiceAsync(workspaceId, "INV-OTHER", "cp", "EUR");
+        var olderMatch = await CreateInvoiceAsync(workspaceId, "INV-A", "cp", "USD");
+        await Task.Delay(20);
+        var newerMatch = await CreateInvoiceAsync(workspaceId, "INV-B", "cp", "USD");
+
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices?page=1&pageSize=10&currency=USD");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = document.RootElement;
+        Assert.Equal(2, root.GetProperty("totalCount").GetInt32());
+        var items = root.GetProperty("items").EnumerateArray().ToArray();
+        Assert.Equal(2, items.Length);
+        Assert.Equal(newerMatch, items[0].GetProperty("id").GetGuid());
+        Assert.Equal(olderMatch, items[1].GetProperty("id").GetGuid());
+        Assert.All(items, item => Assert.Equal("USD", item.GetProperty("currency").GetString()));
+    }
+
+    [Fact]
+    public async Task List_omitted_currency_returns_all()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("c1000000-0000-0000-0000-0000000000a1"),
+            Guid.Parse("c2000000-0000-0000-0000-0000000000a1"));
+
+        await CreateInvoiceAsync(workspaceId, "INV-A", "cp", "UAH");
+        await CreateInvoiceAsync(workspaceId, "INV-B", "cp", "USD");
+
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices?page=1&pageSize=10");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(2, document.RootElement.GetProperty("totalCount").GetInt32());
+        Assert.Equal(2, document.RootElement.GetProperty("items").GetArrayLength());
+    }
+
+    [Fact]
+    public async Task List_lowercase_currency_normalizes_and_filters()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("c1000000-0000-0000-0000-0000000000a2"),
+            Guid.Parse("c2000000-0000-0000-0000-0000000000a2"));
+        var match = await CreateInvoiceAsync(workspaceId, "INV-USD", "cp", "USD");
+        await CreateInvoiceAsync(workspaceId, "INV-EUR", "cp", "EUR");
+
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices?page=1&pageSize=10&currency=usd");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(1, document.RootElement.GetProperty("totalCount").GetInt32());
+        Assert.Equal(
+            match,
+            Assert.Single(document.RootElement.GetProperty("items").EnumerateArray()).GetProperty("id").GetGuid());
+        Assert.Equal(
+            "USD",
+            Assert.Single(document.RootElement.GetProperty("items").EnumerateArray()).GetProperty("currency").GetString());
+    }
+
+    [Fact]
+    public async Task List_blank_currency_returns_400()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("c1000000-0000-0000-0000-0000000000a3"),
+            Guid.Parse("c2000000-0000-0000-0000-0000000000a3"));
+
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices?page=1&pageSize=10&currency=");
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        await AssertErrorAsync(response, "ValidationFailed");
+    }
+
+    [Fact]
+    public async Task List_whitespace_currency_returns_400()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("c1000000-0000-0000-0000-0000000000a4"),
+            Guid.Parse("c2000000-0000-0000-0000-0000000000a4"));
+
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices?page=1&pageSize=10&currency=%20%20%20");
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        await AssertErrorAsync(response, "ValidationFailed");
+    }
+
+    [Fact]
+    public async Task List_currency_trims_query_value()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("c1000000-0000-0000-0000-0000000000a5"),
+            Guid.Parse("c2000000-0000-0000-0000-0000000000a5"));
+        var match = await CreateInvoiceAsync(workspaceId, "INV-TRIM", "cp", "USD");
+
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices?page=1&pageSize=10&currency=%20%20USD%20%20");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(1, document.RootElement.GetProperty("totalCount").GetInt32());
+        Assert.Equal(
+            match,
+            Assert.Single(document.RootElement.GetProperty("items").EnumerateArray()).GetProperty("id").GetGuid());
+    }
+
+    [Fact]
+    public async Task List_currency_with_Draft_status_and_created_range()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("c1000000-0000-0000-0000-0000000000a6"),
+            Guid.Parse("c2000000-0000-0000-0000-0000000000a6"));
+
+        await CreateInvoiceAsync(workspaceId, "INV-OTHER", "cp", "EUR");
+        var match = await CreateInvoiceAsync(workspaceId, "INV-MATCH", "cp", "USD");
+        var toIssue = await CreateIssuableInvoiceAsync(workspaceId, "INV-ISSUE");
+        var changeCurrency = await _client.PostAsJsonAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices/{toIssue}/change-currency",
+            new { currency = "usd" });
+        Assert.Equal(HttpStatusCode.OK, changeCurrency.StatusCode);
+        var issueResponse = await _client.PostAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices/{toIssue}/issue",
+            null);
+        Assert.Equal(HttpStatusCode.OK, issueResponse.StatusCode);
+
+        var from = Uri.EscapeDataString(new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero).ToString("o"));
+        var to = Uri.EscapeDataString(new DateTimeOffset(2100, 1, 1, 0, 0, 0, TimeSpan.Zero).ToString("o"));
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices?page=1&pageSize=10&status=Draft&createdFromUtc={from}&createdToUtc={to}&currency=USD");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(1, document.RootElement.GetProperty("totalCount").GetInt32());
+        Assert.Equal(
+            match,
+            Assert.Single(document.RootElement.GetProperty("items").EnumerateArray()).GetProperty("id").GetGuid());
+    }
+
+    [Fact]
+    public async Task List_currency_composes_with_document_number()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("c1000000-0000-0000-0000-0000000000a7"),
+            Guid.Parse("c2000000-0000-0000-0000-0000000000a7"));
+
+        var match = await CreateInvoiceAsync(workspaceId, "INV-MATCH", "cp", "USD");
+        await CreateInvoiceAsync(workspaceId, "INV-MATCH", "cp", "EUR");
+        await CreateInvoiceAsync(workspaceId, "INV-OTHER", "cp", "USD");
+
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices?page=1&pageSize=10&documentNumber=INV-MATCH&currency=USD");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(1, document.RootElement.GetProperty("totalCount").GetInt32());
+        Assert.Equal(
+            match,
+            Assert.Single(document.RootElement.GetProperty("items").EnumerateArray()).GetProperty("id").GetGuid());
+    }
+
+    [Fact]
+    public async Task List_currency_composes_with_counterparty_reference()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("c1000000-0000-0000-0000-0000000000a8"),
+            Guid.Parse("c2000000-0000-0000-0000-0000000000a8"));
+
+        var match = await CreateInvoiceAsync(workspaceId, "INV-A", "cp-match", "USD");
+        await CreateInvoiceAsync(workspaceId, "INV-B", "cp-match", "EUR");
+        await CreateInvoiceAsync(workspaceId, "INV-C", "cp-other", "USD");
+
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices?page=1&pageSize=10&counterpartyReference=cp-match&currency=USD");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(1, document.RootElement.GetProperty("totalCount").GetInt32());
+        Assert.Equal(
+            match,
+            Assert.Single(document.RootElement.GetProperty("items").EnumerateArray()).GetProperty("id").GetGuid());
+    }
+
+    [Fact]
+    public async Task List_currency_with_all_current_filters()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("c1000000-0000-0000-0000-0000000000a9"),
+            Guid.Parse("c2000000-0000-0000-0000-0000000000a9"));
+
+        var match = await CreateInvoiceAsync(workspaceId, "INV-MATCH", "cp-match", "USD");
+        await CreateInvoiceAsync(workspaceId, "INV-MATCH", "cp-match", "EUR");
+        await CreateInvoiceAsync(workspaceId, "INV-MATCH", "cp-other", "USD");
+        await CreateInvoiceAsync(workspaceId, "INV-OTHER", "cp-match", "USD");
+        var toIssue = await CreateIssuableInvoiceAsync(workspaceId, "INV-MATCH");
+        var changeCp = await _client.PostAsJsonAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices/{toIssue}/change-counterparty",
+            new { counterpartyReference = "cp-match" });
+        Assert.Equal(HttpStatusCode.OK, changeCp.StatusCode);
+        var changeCurrency = await _client.PostAsJsonAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices/{toIssue}/change-currency",
+            new { currency = "usd" });
+        Assert.Equal(HttpStatusCode.OK, changeCurrency.StatusCode);
+        var issueResponse = await _client.PostAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices/{toIssue}/issue",
+            null);
+        Assert.Equal(HttpStatusCode.OK, issueResponse.StatusCode);
+
+        var from = Uri.EscapeDataString(new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero).ToString("o"));
+        var to = Uri.EscapeDataString(new DateTimeOffset(2100, 1, 1, 0, 0, 0, TimeSpan.Zero).ToString("o"));
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices?page=1&pageSize=10&status=Draft&createdFromUtc={from}&createdToUtc={to}&documentNumber=INV-MATCH&counterpartyReference=cp-match&currency=USD");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(1, document.RootElement.GetProperty("totalCount").GetInt32());
+        Assert.Equal(
+            match,
+            Assert.Single(document.RootElement.GetProperty("items").EnumerateArray()).GetProperty("id").GetGuid());
+    }
+
+    [Fact]
+    public async Task List_currency_pages_after_filter()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("c1000000-0000-0000-0000-0000000000aa"),
+            Guid.Parse("c2000000-0000-0000-0000-0000000000aa"));
+
+        await CreateInvoiceAsync(workspaceId, "INV-1", "cp", "USD");
+        await Task.Delay(20);
+        await CreateInvoiceAsync(workspaceId, "INV-2", "cp", "USD");
+        await Task.Delay(20);
+        await CreateInvoiceAsync(workspaceId, "INV-3", "cp", "USD");
+        await CreateInvoiceAsync(workspaceId, "INV-4", "cp", "EUR");
+
+        var baseline = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices?page=1&pageSize=10&currency=USD");
+        using var baselineDoc = JsonDocument.Parse(await baseline.Content.ReadAsStringAsync());
+        Assert.Equal(3, baselineDoc.RootElement.GetProperty("totalCount").GetInt32());
+        var ordered = baselineDoc.RootElement.GetProperty("items").EnumerateArray().ToArray();
+        Assert.Equal(3, ordered.Length);
+
+        var page1 = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices?page=1&pageSize=1&currency=USD");
+        var page2 = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices?page=2&pageSize=1&currency=USD");
+        Assert.Equal(HttpStatusCode.OK, page1.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, page2.StatusCode);
+
+        using var page1Doc = JsonDocument.Parse(await page1.Content.ReadAsStringAsync());
+        using var page2Doc = JsonDocument.Parse(await page2.Content.ReadAsStringAsync());
+        Assert.Equal(3, page1Doc.RootElement.GetProperty("totalCount").GetInt32());
+        Assert.Equal(3, page2Doc.RootElement.GetProperty("totalCount").GetInt32());
+        Assert.Equal(
+            ordered[0].GetProperty("id").GetGuid(),
+            Assert.Single(page1Doc.RootElement.GetProperty("items").EnumerateArray()).GetProperty("id").GetGuid());
+        Assert.Equal(
+            ordered[1].GetProperty("id").GetGuid(),
+            Assert.Single(page2Doc.RootElement.GetProperty("items").EnumerateArray()).GetProperty("id").GetGuid());
+    }
+
+    [Fact]
+    public async Task List_currency_is_workspace_scoped()
+    {
+        var workspaceA = await CreateWorkspaceAsync(
+            Guid.Parse("c1000000-0000-0000-0000-0000000000ab"),
+            Guid.Parse("c2000000-0000-0000-0000-0000000000ab"));
+        var workspaceB = await CreateWorkspaceAsync(
+            Guid.Parse("d1000000-0000-0000-0000-0000000000ab"),
+            Guid.Parse("d2000000-0000-0000-0000-0000000000ab"));
+
+        var inA = await CreateInvoiceAsync(workspaceA, "INV-A", "cp", "USD");
+        await CreateInvoiceAsync(workspaceB, "INV-B", "cp", "USD");
+
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceA}/invoices?page=1&pageSize=10&currency=USD");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(1, document.RootElement.GetProperty("totalCount").GetInt32());
+        Assert.Equal(
+            inA,
+            Assert.Single(document.RootElement.GetProperty("items").EnumerateArray()).GetProperty("id").GetGuid());
+    }
+
+    [Fact]
     public async Task Get_by_id_still_resolves_after_list_route()
     {
         var workspaceId = await CreateWorkspaceAsync(

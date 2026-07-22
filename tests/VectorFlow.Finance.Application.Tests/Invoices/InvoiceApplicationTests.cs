@@ -1069,6 +1069,195 @@ public sealed class InvoiceApplicationTests
     }
 
     [Fact]
+    public async Task ListPaged_omitted_currency_passes_null_to_repository()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        await CreateInvoiceAsync(invoices, workspaces, clock, workspaceId, "INV-1", "cp-a", "UAH");
+
+        var result = await new GetInvoicesPagedHandler(invoices).HandleAsync(
+            new GetInvoicesPagedQuery(workspaceId, Page: 1, PageSize: 10));
+
+        Assert.True(result.IsSuccess);
+        Assert.Null(invoices.LastListedPagedCurrency);
+        Assert.Equal(1, result.Value!.TotalCount);
+    }
+
+    [Fact]
+    public async Task ListPaged_currency_passes_normalized_code_to_repository()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        var result = await new GetInvoicesPagedHandler(invoices).HandleAsync(
+            new GetInvoicesPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 10,
+                Currency: "usd"));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("USD", invoices.LastListedPagedCurrency);
+    }
+
+    [Fact]
+    public async Task ListPaged_currency_trims_and_uppercases_before_repository()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        var result = await new GetInvoicesPagedHandler(invoices).HandleAsync(
+            new GetInvoicesPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 10,
+                Currency: "  usd  "));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("USD", invoices.LastListedPagedCurrency);
+    }
+
+    [Fact]
+    public async Task ListPaged_blank_currency_returns_ValidationFailed()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        var result = await new GetInvoicesPagedHandler(invoices).HandleAsync(
+            new GetInvoicesPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 10,
+                Currency: ""));
+
+        Assert.Equal(ApplicationErrorKind.ValidationFailed, result.ErrorKind);
+        Assert.Equal(0, invoices.ListPagedCallCount);
+    }
+
+    [Fact]
+    public async Task ListPaged_whitespace_currency_returns_ValidationFailed()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        var result = await new GetInvoicesPagedHandler(invoices).HandleAsync(
+            new GetInvoicesPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 10,
+                Currency: "   "));
+
+        Assert.Equal(ApplicationErrorKind.ValidationFailed, result.ErrorKind);
+        Assert.Equal(0, invoices.ListPagedCallCount);
+    }
+
+    [Fact]
+    public async Task ListPaged_currency_filters_matching_invoices()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        clock.UtcNow = T0;
+        await CreateInvoiceAsync(invoices, workspaces, clock, workspaceId, "INV-OTHER", "cp", "EUR");
+        clock.UtcNow = T1;
+        var olderMatch = await CreateInvoiceAsync(invoices, workspaces, clock, workspaceId, "INV-A", "cp", "USD");
+        clock.UtcNow = T2;
+        var newerMatch = await CreateInvoiceAsync(invoices, workspaces, clock, workspaceId, "INV-B", "cp", "USD");
+
+        var result = await new GetInvoicesPagedHandler(invoices).HandleAsync(
+            new GetInvoicesPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 10,
+                Currency: "USD"));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(2, result.Value!.TotalCount);
+        Assert.Equal(newerMatch.Id, result.Value.Items[0].Id);
+        Assert.Equal(olderMatch.Id, result.Value.Items[1].Id);
+        Assert.All(result.Value.Items, dto => Assert.Equal("USD", dto.Currency));
+    }
+
+    [Fact]
+    public async Task ListPaged_currency_no_match_returns_empty_page()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        await CreateInvoiceAsync(invoices, workspaces, clock, workspaceId, "INV-A", "cp", "UAH");
+
+        var result = await new GetInvoicesPagedHandler(invoices).HandleAsync(
+            new GetInvoicesPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 10,
+                Currency: "USD"));
+
+        Assert.True(result.IsSuccess);
+        Assert.Empty(result.Value!.Items);
+        Assert.Equal(0, result.Value.TotalCount);
+    }
+
+    [Fact]
+    public async Task ListPaged_currency_with_status_created_range_document_number_and_counterparty_forwards_all()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        var result = await new GetInvoicesPagedHandler(invoices).HandleAsync(
+            new GetInvoicesPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 10,
+                Status: "Draft",
+                CreatedFromUtc: T0,
+                CreatedToUtc: T2,
+                DocumentNumber: "INV-X",
+                CounterpartyReference: "cp-x",
+                Currency: "usd"));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(InvoiceStatus.Draft, invoices.LastListedStatus);
+        Assert.Equal(T0, invoices.LastListedCreatedFromUtc);
+        Assert.Equal(T2, invoices.LastListedCreatedToUtc);
+        Assert.Equal("INV-X", invoices.LastListedPagedDocumentNumber);
+        Assert.Equal("cp-x", invoices.LastListedPagedCounterpartyReference);
+        Assert.Equal("USD", invoices.LastListedPagedCurrency);
+    }
+
+    [Fact]
+    public async Task ListPaged_currency_composes_with_status()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        clock.UtcNow = T0;
+        var draftMatch = await CreateInvoiceAsync(invoices, workspaces, clock, workspaceId, "INV-A", "cp", "USD");
+        clock.UtcNow = T1;
+        var toIssue = await CreateInvoiceAsync(invoices, workspaces, clock, workspaceId, "INV-B", "cp", "USD");
+        var withLine = await new AddInvoiceLineHandler(invoices, clock).HandleAsync(
+            new AddInvoiceLineCommand(workspaceId, toIssue.Id, 2m, 50m, "Service"));
+        Assert.True(withLine.IsSuccess);
+        var withDue = await new SetInvoiceDueDateHandler(invoices, clock).HandleAsync(
+            new SetInvoiceDueDateCommand(workspaceId, toIssue.Id, DueNextDay));
+        Assert.True(withDue.IsSuccess);
+        var issued = await new IssueInvoiceHandler(invoices, clock).HandleAsync(
+            new IssueInvoiceCommand(workspaceId, toIssue.Id));
+        Assert.True(issued.IsSuccess);
+
+        var result = await new GetInvoicesPagedHandler(invoices).HandleAsync(
+            new GetInvoicesPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 10,
+                Status: "Draft",
+                Currency: "USD"));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(1, result.Value!.TotalCount);
+        Assert.Equal(draftMatch.Id, Assert.Single(result.Value.Items).Id);
+    }
+
+    [Fact]
     public async Task ListPaged_counterparty_reference_composes_with_status()
     {
         var (invoices, workspaces, clock) = CreateHarness();

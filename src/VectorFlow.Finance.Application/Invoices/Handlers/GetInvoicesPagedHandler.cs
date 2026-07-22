@@ -1,5 +1,6 @@
 using VectorFlow.Finance.Application.Abstractions;
 using VectorFlow.Finance.Application.Invoices.Queries;
+using VectorFlow.Finance.Domain;
 using VectorFlow.Finance.Domain.Invoices;
 using VectorFlow.Finance.Domain.Workspaces;
 
@@ -24,6 +25,7 @@ public sealed class GetInvoicesPagedHandler
         InvoiceStatus? status;
         string? documentNumber;
         string? counterpartyReference;
+        string? currency;
         try
         {
             financeWorkspaceId = new FinanceWorkspaceId(query.FinanceWorkspaceId);
@@ -32,6 +34,7 @@ public sealed class GetInvoicesPagedHandler
             EnsureCreatedAtRange(query.CreatedFromUtc, query.CreatedToUtc);
             documentNumber = ParseDocumentNumberFilter(query.DocumentNumber);
             counterpartyReference = ParseCounterpartyReferenceFilter(query.CounterpartyReference);
+            currency = ParseCurrencyFilter(query.Currency);
         }
         catch (ArgumentException ex)
         {
@@ -47,6 +50,7 @@ public sealed class GetInvoicesPagedHandler
             query.CreatedToUtc,
             documentNumber,
             counterpartyReference,
+            currency,
             cancellationToken);
 
         var page = new PageResult<InvoiceDto>(
@@ -129,4 +133,12 @@ public sealed class GetInvoicesPagedHandler
         counterpartyReference is null
             ? null
             : new CounterpartyReference(counterpartyReference).Value;
+
+    /// <summary>
+    /// Missing (<c>null</c>) means no Currency filter. When provided, normalize/validate via
+    /// <see cref="Currency"/> (trim + ToUpperInvariant). Positive exact Ordinal match on normalized
+    /// stored code only; no partial/full-text mode and no new ISO allowlist.
+    /// </summary>
+    private static string? ParseCurrencyFilter(string? currency) =>
+        currency is null ? null : new Currency(currency).Code;
 }

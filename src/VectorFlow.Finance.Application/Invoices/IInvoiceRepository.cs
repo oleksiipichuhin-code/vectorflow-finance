@@ -33,14 +33,17 @@ public interface IInvoiceRepository
     /// <summary>
     /// Returns a workspace-scoped page of invoices ordered by CreatedAt descending, then Id descending,
     /// together with the total matching count. Optional <paramref name="status"/>, optional
-    /// <paramref name="documentNumber"/> (exact ordinal match), and optional
-    /// <paramref name="counterpartyReference"/> (exact ordinal match) are applied in the query; inclusive
-    /// CreatedAt bounds (<paramref name="createdFromUtc"/> / <paramref name="createdToUtc"/>) are applied
-    /// in memory after materialization (SQLite cannot translate DateTimeOffset comparisons). All filters
-    /// apply to the page and the total count. A null <paramref name="documentNumber"/> means no
+    /// <paramref name="documentNumber"/> (exact ordinal match), optional
+    /// <paramref name="counterpartyReference"/> (exact ordinal match), and optional
+    /// <paramref name="currency"/> (exact Ordinal match on normalized Currency.Code) are applied in the
+    /// query; inclusive CreatedAt bounds (<paramref name="createdFromUtc"/> / <paramref name="createdToUtc"/>)
+    /// are applied in memory after materialization (SQLite cannot translate DateTimeOffset comparisons).
+    /// All filters apply to the page and the total count. A null <paramref name="documentNumber"/> means no
     /// DocumentNumber filter (positive exact match only when provided; no partial/full-text mode).
     /// A null <paramref name="counterpartyReference"/> means no CounterpartyReference filter
-    /// (positive exact match only when provided; no partial/full-text mode).
+    /// (positive exact match only when provided; no partial/full-text mode). A null
+    /// <paramref name="currency"/> means no Currency filter (positive exact match only when provided;
+    /// no partial/full-text mode).
     /// </summary>
     Task<(IReadOnlyList<Invoice> Items, int TotalCount)> ListPagedAsync(
         FinanceWorkspaceId financeWorkspaceId,
@@ -51,6 +54,7 @@ public interface IInvoiceRepository
         DateTimeOffset? createdToUtc = null,
         string? documentNumber = null,
         string? counterpartyReference = null,
+        string? currency = null,
         CancellationToken cancellationToken = default);
 
     Task AddAsync(

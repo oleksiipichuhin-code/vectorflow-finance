@@ -88,10 +88,11 @@ F3A–F3F are published. Decimal precision policy for Debit/Credit remains an op
 | F4U | Invoice Paged DocumentNumber Composition | Complete |
 | F4V | Accrual Paged Type Composition | Complete |
 | F4W | Accrual Paged RecognitionDate Range Composition | Complete |
-| F4X | Invoice Paged Counterparty Composition | Complete locally / awaiting publication |
+| F4X | Invoice Paged Counterparty Composition | Complete |
+| F4Y | Invoice Paged Currency Composition | Implemented (unpublished) |
 | F4Q+ | Later invoice and Accrual query enhancements | Planned |
 
-F4A–F4W are published. F4X Invoice Paged Counterparty Composition (optional exact Ordinal `counterpartyReference` on paged Invoice listing after `CounterpartyReference` trim/normalization, composing with optional exact `status`, inclusive `createdFromUtc` / `createdToUtc`, and exact Ordinal `documentNumber`; blank/whitespace/overlength ValidationFailed; no partial/case-insensitive/full-text mode) is complete in the working tree until separately published. Remaining invoice query enhancements (other multi-field filters / full-text search), Accrual text-search filters, and other deferred Accrual query capabilities remain planned under F4Q+. F4 as a whole remains incomplete.
+F4A–F4X are published. F4Y Invoice Paged Currency Composition (optional exact Ordinal `currency` on paged Invoice listing after existing `Currency` trim + `ToUpperInvariant` normalization, composing with optional exact `status`, inclusive `createdFromUtc` / `createdToUtc`, exact Ordinal `documentNumber`, and exact Ordinal `counterpartyReference`; blank/whitespace ValidationFailed; no partial/prefix/full-text mode; no new ISO allowlist; no multi-currency semantics) is implemented locally / awaiting publication. Remaining invoice query enhancements (other multi-field filters / full-text search), Accrual text-search filters, and other deferred Accrual query capabilities remain planned under F4Q+. F4 as a whole remains incomplete.
 
 ## F5 sub-slices
 

@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using VectorFlow.Finance.Application.Invoices;
+using VectorFlow.Finance.Domain;
 using VectorFlow.Finance.Domain.Invoices;
 using VectorFlow.Finance.Domain.Workspaces;
 using VectorFlow.Finance.Infrastructure.Persistence;
@@ -66,6 +67,7 @@ public sealed class InvoiceRepository : IInvoiceRepository
         DateTimeOffset? createdToUtc = null,
         string? documentNumber = null,
         string? counterpartyReference = null,
+        string? currency = null,
         CancellationToken cancellationToken = default)
     {
         // SQLite cannot translate DateTimeOffset comparisons; CreatedAt bounds are applied in memory.
@@ -74,7 +76,8 @@ public sealed class InvoiceRepository : IInvoiceRepository
                 financeWorkspaceId,
                 status,
                 documentNumber,
-                counterpartyReference)
+                counterpartyReference,
+                currency)
             .ToListAsync(cancellationToken);
 
         IEnumerable<Invoice> filtered = invoices;
@@ -108,7 +111,8 @@ public sealed class InvoiceRepository : IInvoiceRepository
         FinanceWorkspaceId financeWorkspaceId,
         InvoiceStatus? status,
         string? documentNumber,
-        string? counterpartyReference)
+        string? counterpartyReference,
+        string? currency)
     {
         var filtered = source.Where(invoice => invoice.FinanceWorkspaceId == financeWorkspaceId);
 
@@ -126,6 +130,12 @@ public sealed class InvoiceRepository : IInvoiceRepository
         {
             var reference = new CounterpartyReference(counterpartyReference);
             filtered = filtered.Where(invoice => invoice.CounterpartyReference == reference);
+        }
+
+        if (currency is not null)
+        {
+            var currencyFilter = new Currency(currency);
+            filtered = filtered.Where(invoice => invoice.Currency == currencyFilter);
         }
 
         return filtered;
