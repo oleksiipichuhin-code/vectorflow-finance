@@ -17,4 +17,5 @@ public sealed record GetInvoicesPagedQuery(
     int PageSize,
     string? Status = null,
     DateTimeOffset? CreatedFromUtc = null,
-    DateTimeOffset? CreatedToUtc = null);
+    DateTimeOffset? CreatedToUtc = null,
+    string? DocumentNumber = null);

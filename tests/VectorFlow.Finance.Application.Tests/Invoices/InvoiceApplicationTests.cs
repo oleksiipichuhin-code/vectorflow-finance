@@ -704,6 +704,215 @@ public sealed class InvoiceApplicationTests
     }
 
     [Fact]
+    public async Task ListPaged_omitted_document_number_passes_null_to_repository()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        await CreateInvoiceAsync(invoices, workspaces, clock, workspaceId, "INV-1");
+
+        var result = await new GetInvoicesPagedHandler(invoices).HandleAsync(
+            new GetInvoicesPagedQuery(workspaceId, Page: 1, PageSize: 10));
+
+        Assert.True(result.IsSuccess);
+        Assert.Null(invoices.LastListedPagedDocumentNumber);
+        Assert.Equal(1, result.Value!.TotalCount);
+    }
+
+    [Fact]
+    public async Task ListPaged_document_number_passes_normalized_value_to_repository()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        var result = await new GetInvoicesPagedHandler(invoices).HandleAsync(
+            new GetInvoicesPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 10,
+                DocumentNumber: "  INV-TRIM  "));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("INV-TRIM", invoices.LastListedPagedDocumentNumber);
+    }
+
+    [Fact]
+    public async Task ListPaged_blank_document_number_returns_ValidationFailed()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        var result = await new GetInvoicesPagedHandler(invoices).HandleAsync(
+            new GetInvoicesPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 10,
+                DocumentNumber: "   "));
+
+        Assert.Equal(ApplicationErrorKind.ValidationFailed, result.ErrorKind);
+        Assert.Equal(0, invoices.ListPagedCallCount);
+    }
+
+    [Fact]
+    public async Task ListPaged_overlength_document_number_returns_ValidationFailed()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        var overlength = new string('A', Invoice.DocumentNumberMaxLength + 1);
+
+        var result = await new GetInvoicesPagedHandler(invoices).HandleAsync(
+            new GetInvoicesPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 10,
+                DocumentNumber: overlength));
+
+        Assert.Equal(ApplicationErrorKind.ValidationFailed, result.ErrorKind);
+        Assert.Equal(0, invoices.ListPagedCallCount);
+    }
+
+    [Fact]
+    public async Task ListPaged_document_number_filters_matching_invoices()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        clock.UtcNow = T0;
+        await CreateInvoiceAsync(invoices, workspaces, clock, workspaceId, "INV-OTHER");
+        clock.UtcNow = T1;
+        var olderMatch = await CreateInvoiceAsync(invoices, workspaces, clock, workspaceId, "INV-MATCH");
+        clock.UtcNow = T2;
+        var newerMatch = await CreateInvoiceAsync(invoices, workspaces, clock, workspaceId, "INV-MATCH");
+        await CreateInvoiceAsync(invoices, workspaces, clock, workspaceId, "inv-match");
+
+        var result = await new GetInvoicesPagedHandler(invoices).HandleAsync(
+            new GetInvoicesPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 10,
+                DocumentNumber: "INV-MATCH"));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(2, result.Value!.TotalCount);
+        Assert.Equal(newerMatch.Id, result.Value.Items[0].Id);
+        Assert.Equal(olderMatch.Id, result.Value.Items[1].Id);
+        Assert.All(result.Value.Items, dto => Assert.Equal("INV-MATCH", dto.DocumentNumber));
+    }
+
+    [Fact]
+    public async Task ListPaged_document_number_no_match_returns_empty_page()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        await CreateInvoiceAsync(invoices, workspaces, clock, workspaceId, "INV-A");
+
+        var result = await new GetInvoicesPagedHandler(invoices).HandleAsync(
+            new GetInvoicesPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 10,
+                DocumentNumber: "INV-MISSING"));
+
+        Assert.True(result.IsSuccess);
+        Assert.Empty(result.Value!.Items);
+        Assert.Equal(0, result.Value.TotalCount);
+    }
+
+    [Fact]
+    public async Task ListPaged_document_number_with_status_and_created_range_forwards_all()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        var result = await new GetInvoicesPagedHandler(invoices).HandleAsync(
+            new GetInvoicesPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 10,
+                Status: "Draft",
+                CreatedFromUtc: T0,
+                CreatedToUtc: T2,
+                DocumentNumber: "INV-X"));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(InvoiceStatus.Draft, invoices.LastListedStatus);
+        Assert.Equal(T0, invoices.LastListedCreatedFromUtc);
+        Assert.Equal(T2, invoices.LastListedCreatedToUtc);
+        Assert.Equal("INV-X", invoices.LastListedPagedDocumentNumber);
+    }
+
+    [Fact]
+    public async Task ListPaged_document_number_composes_with_status_and_created_range()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        clock.UtcNow = T0;
+        await CreateInvoiceAsync(invoices, workspaces, clock, workspaceId, "INV-OTHER");
+        clock.UtcNow = T1;
+        var match = await CreateInvoiceAsync(invoices, workspaces, clock, workspaceId, "INV-MATCH");
+        clock.UtcNow = T2;
+        var toIssue = await CreateInvoiceAsync(invoices, workspaces, clock, workspaceId, "INV-MATCH");
+        var withLine = await new AddInvoiceLineHandler(invoices, clock).HandleAsync(
+            new AddInvoiceLineCommand(workspaceId, toIssue.Id, 2m, 50m, "Service"));
+        Assert.True(withLine.IsSuccess);
+        var withDue = await new SetInvoiceDueDateHandler(invoices, clock).HandleAsync(
+            new SetInvoiceDueDateCommand(workspaceId, toIssue.Id, DueNextDay));
+        Assert.True(withDue.IsSuccess);
+        var issued = await new IssueInvoiceHandler(invoices, clock).HandleAsync(
+            new IssueInvoiceCommand(workspaceId, toIssue.Id));
+        Assert.True(issued.IsSuccess);
+
+        var result = await new GetInvoicesPagedHandler(invoices).HandleAsync(
+            new GetInvoicesPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 10,
+                Status: "Draft",
+                CreatedFromUtc: T0,
+                CreatedToUtc: T2,
+                DocumentNumber: "INV-MATCH"));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(1, result.Value!.TotalCount);
+        Assert.Equal(match.Id, Assert.Single(result.Value.Items).Id);
+    }
+
+    [Fact]
+    public async Task ListPaged_document_number_pages_after_filter()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        clock.UtcNow = T0;
+        await CreateInvoiceAsync(invoices, workspaces, clock, workspaceId, "INV-MATCH");
+        clock.UtcNow = T1;
+        var mid = await CreateInvoiceAsync(invoices, workspaces, clock, workspaceId, "INV-MATCH");
+        clock.UtcNow = T2;
+        var newest = await CreateInvoiceAsync(invoices, workspaces, clock, workspaceId, "INV-MATCH");
+        await CreateInvoiceAsync(invoices, workspaces, clock, workspaceId, "INV-OTHER");
+
+        var page1 = await new GetInvoicesPagedHandler(invoices).HandleAsync(
+            new GetInvoicesPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 1,
+                DocumentNumber: "INV-MATCH"));
+        var page2 = await new GetInvoicesPagedHandler(invoices).HandleAsync(
+            new GetInvoicesPagedQuery(
+                workspaceId,
+                Page: 2,
+                PageSize: 1,
+                DocumentNumber: "INV-MATCH"));
+
+        Assert.True(page1.IsSuccess);
+        Assert.Equal(3, page1.Value!.TotalCount);
+        Assert.Equal(newest.Id, Assert.Single(page1.Value.Items).Id);
+        Assert.True(page2.IsSuccess);
+        Assert.Equal(3, page2.Value!.TotalCount);
+        Assert.Equal(mid.Id, Assert.Single(page2.Value.Items).Id);
+    }
+
+    [Fact]
     public async Task ListByDocumentNumber_returns_all_matching_newest_first()
     {
         var (invoices, workspaces, clock) = CreateHarness();

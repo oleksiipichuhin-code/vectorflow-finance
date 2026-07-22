@@ -64,13 +64,15 @@ public sealed class InvoiceRepository : IInvoiceRepository
         InvoiceStatus? status = null,
         DateTimeOffset? createdFromUtc = null,
         DateTimeOffset? createdToUtc = null,
+        string? documentNumber = null,
         CancellationToken cancellationToken = default)
     {
         // SQLite cannot translate DateTimeOffset comparisons; CreatedAt bounds are applied in memory.
         var invoices = await ApplySqlPagedFilters(
                 InvoicesWithLines(),
                 financeWorkspaceId,
-                status)
+                status,
+                documentNumber)
             .ToListAsync(cancellationToken);
 
         IEnumerable<Invoice> filtered = invoices;
@@ -102,13 +104,19 @@ public sealed class InvoiceRepository : IInvoiceRepository
     private static IQueryable<Invoice> ApplySqlPagedFilters(
         IQueryable<Invoice> source,
         FinanceWorkspaceId financeWorkspaceId,
-        InvoiceStatus? status)
+        InvoiceStatus? status,
+        string? documentNumber)
     {
         var filtered = source.Where(invoice => invoice.FinanceWorkspaceId == financeWorkspaceId);
 
         if (status is not null)
         {
             filtered = filtered.Where(invoice => invoice.Status == status.Value);
+        }
+
+        if (documentNumber is not null)
+        {
+            filtered = filtered.Where(invoice => invoice.DocumentNumber == documentNumber);
         }
 
         return filtered;

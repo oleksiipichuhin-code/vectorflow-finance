@@ -84,10 +84,11 @@ F3A–F3F are published. Decimal precision policy for Debit/Credit remains an op
 | F4Q | Accrual Paged Listing | Complete |
 | F4R | Accrual Paged Status Filter | Complete |
 | F4S | Accrual Paged CreatedAt Range Filter | Complete |
-| F4T | Accrual Paged Source-Invoice Composition | Complete locally / awaiting publication |
+| F4T | Accrual Paged Source-Invoice Composition | Complete |
+| F4U | Invoice Paged DocumentNumber Composition | Complete locally / awaiting publication |
 | F4Q+ | Later invoice and Accrual query enhancements | Planned |
 
-F4A–F4S are published. F4T Accrual Paged Source-Invoice Composition (optional positive `sourceInvoiceId` on `/accruals/paged`, composing with optional exact `status` and inclusive `createdFromUtc` / `createdToUtc`; omit-only, no IS NULL mode; Invoice existence not validated) is complete in the working tree until separately published. Remaining invoice query enhancements (other multi-field filters / full-text search), Accrual search/filters (text), and other deferred Accrual query capabilities remain planned under F4Q+. F4 as a whole remains incomplete.
+F4A–F4T are published. F4U Invoice Paged DocumentNumber Composition (optional exact `documentNumber` on `/invoices` paged listing, composing with optional exact `status` and inclusive `createdFromUtc` / `createdToUtc`; same trim/normalization as by-document-number; omit-only, no partial/full-text mode) is complete in the working tree until separately published. Remaining invoice query enhancements (other multi-field filters / full-text search), Accrual search/filters (text), and other deferred Accrual query capabilities remain planned under F4Q+. F4 as a whole remains incomplete.
 
 ## F5 sub-slices
 

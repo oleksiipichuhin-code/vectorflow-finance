@@ -32,10 +32,12 @@ public interface IInvoiceRepository
 
     /// <summary>
     /// Returns a workspace-scoped page of invoices ordered by CreatedAt descending, then Id descending,
-    /// together with the total matching count. Optional <paramref name="status"/> is applied in the
-    /// query; inclusive CreatedAt bounds (<paramref name="createdFromUtc"/> / <paramref name="createdToUtc"/>)
-    /// are applied in memory after materialization (SQLite cannot translate DateTimeOffset comparisons).
-    /// Both filters apply to the page and the total count.
+    /// together with the total matching count. Optional <paramref name="status"/> and optional
+    /// <paramref name="documentNumber"/> (exact ordinal match) are applied in the query; inclusive
+    /// CreatedAt bounds (<paramref name="createdFromUtc"/> / <paramref name="createdToUtc"/>) are applied
+    /// in memory after materialization (SQLite cannot translate DateTimeOffset comparisons). All filters
+    /// apply to the page and the total count. A null <paramref name="documentNumber"/> means no
+    /// DocumentNumber filter (positive exact match only when provided; no partial/full-text mode).
     /// </summary>
     Task<(IReadOnlyList<Invoice> Items, int TotalCount)> ListPagedAsync(
         FinanceWorkspaceId financeWorkspaceId,
@@ -44,6 +46,7 @@ public interface IInvoiceRepository
         InvoiceStatus? status = null,
         DateTimeOffset? createdFromUtc = null,
         DateTimeOffset? createdToUtc = null,
+        string? documentNumber = null,
         CancellationToken cancellationToken = default);
 
     Task AddAsync(

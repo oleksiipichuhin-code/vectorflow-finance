@@ -22,12 +22,14 @@ public sealed class GetInvoicesPagedHandler
     {
         FinanceWorkspaceId financeWorkspaceId;
         InvoiceStatus? status;
+        string? documentNumber;
         try
         {
             financeWorkspaceId = new FinanceWorkspaceId(query.FinanceWorkspaceId);
             EnsurePaging(query.Page, query.PageSize);
             status = ParseStatusFilter(query.Status);
             EnsureCreatedAtRange(query.CreatedFromUtc, query.CreatedToUtc);
+            documentNumber = ParseDocumentNumberFilter(query.DocumentNumber);
         }
         catch (ArgumentException ex)
         {
@@ -41,6 +43,7 @@ public sealed class GetInvoicesPagedHandler
             status,
             query.CreatedFromUtc,
             query.CreatedToUtc,
+            documentNumber,
             cancellationToken);
 
         var page = new PageResult<InvoiceDto>(
@@ -106,4 +109,12 @@ public sealed class GetInvoicesPagedHandler
                 "CreatedFromUtc must not be later than CreatedToUtc.");
         }
     }
+
+    /// <summary>
+    /// Missing (<c>null</c>) means no DocumentNumber filter. When provided, normalize/validate via
+    /// <see cref="InvoiceHandlerSupport.NormalizeDocumentNumber"/> (same posture as list-by-document-number).
+    /// Positive exact match only; no partial/full-text mode.
+    /// </summary>
+    private static string? ParseDocumentNumberFilter(string? documentNumber) =>
+        documentNumber is null ? null : InvoiceHandlerSupport.NormalizeDocumentNumber(documentNumber);
 }
