@@ -35,6 +35,7 @@ public sealed class GetInvoicesPagedHandler
             documentNumber = ParseDocumentNumberFilter(query.DocumentNumber);
             counterpartyReference = ParseCounterpartyReferenceFilter(query.CounterpartyReference);
             currency = ParseCurrencyFilter(query.Currency);
+            EnsureIssuedAtRange(query.IssuedFromUtc, query.IssuedToUtc);
         }
         catch (ArgumentException ex)
         {
@@ -51,6 +52,8 @@ public sealed class GetInvoicesPagedHandler
             documentNumber,
             counterpartyReference,
             currency,
+            query.IssuedFromUtc,
+            query.IssuedToUtc,
             cancellationToken);
 
         var page = new PageResult<InvoiceDto>(
@@ -114,6 +117,15 @@ public sealed class GetInvoicesPagedHandler
         {
             throw new ArgumentException(
                 "CreatedFromUtc must not be later than CreatedToUtc.");
+        }
+    }
+
+    private static void EnsureIssuedAtRange(DateTimeOffset? issuedFromUtc, DateTimeOffset? issuedToUtc)
+    {
+        if (issuedFromUtc is { } from && issuedToUtc is { } to && from > to)
+        {
+            throw new ArgumentException(
+                "IssuedFromUtc must not be later than IssuedToUtc.");
         }
     }
 

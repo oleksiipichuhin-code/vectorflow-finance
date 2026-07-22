@@ -68,9 +68,12 @@ public sealed class InvoiceRepository : IInvoiceRepository
         string? documentNumber = null,
         string? counterpartyReference = null,
         string? currency = null,
+        DateTimeOffset? issuedFromUtc = null,
+        DateTimeOffset? issuedToUtc = null,
         CancellationToken cancellationToken = default)
     {
-        // SQLite cannot translate DateTimeOffset comparisons; CreatedAt bounds are applied in memory.
+        // SQLite cannot translate DateTimeOffset comparisons; CreatedAt and IssuedAt bounds are applied
+        // in memory.
         var invoices = await ApplySqlPagedFilters(
                 InvoicesWithLines(),
                 financeWorkspaceId,
@@ -90,6 +93,18 @@ public sealed class InvoiceRepository : IInvoiceRepository
         if (createdToUtc is not null)
         {
             filtered = filtered.Where(invoice => invoice.CreatedAt <= createdToUtc.Value);
+        }
+
+        if (issuedFromUtc is not null)
+        {
+            filtered = filtered.Where(invoice =>
+                invoice.IssuedAt is { } issuedAt && issuedAt >= issuedFromUtc.Value);
+        }
+
+        if (issuedToUtc is not null)
+        {
+            filtered = filtered.Where(invoice =>
+                invoice.IssuedAt is { } issuedAt && issuedAt <= issuedToUtc.Value);
         }
 
         var matched = filtered

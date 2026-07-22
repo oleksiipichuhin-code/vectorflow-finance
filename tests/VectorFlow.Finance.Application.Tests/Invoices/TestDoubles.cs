@@ -36,6 +36,10 @@ internal sealed class InMemoryInvoiceRepository : IInvoiceRepository
 
     public string? LastListedPagedCurrency { get; private set; }
 
+    public DateTimeOffset? LastListedIssuedFromUtc { get; private set; }
+
+    public DateTimeOffset? LastListedIssuedToUtc { get; private set; }
+
     public CancellationToken? LastListByDocumentNumberCancellationToken { get; private set; }
 
     public CancellationToken? LastListPagedCancellationToken { get; private set; }
@@ -107,6 +111,8 @@ internal sealed class InMemoryInvoiceRepository : IInvoiceRepository
         string? documentNumber = null,
         string? counterpartyReference = null,
         string? currency = null,
+        DateTimeOffset? issuedFromUtc = null,
+        DateTimeOffset? issuedToUtc = null,
         CancellationToken cancellationToken = default)
     {
         ListPagedCallCount++;
@@ -119,6 +125,8 @@ internal sealed class InMemoryInvoiceRepository : IInvoiceRepository
         LastListedPagedDocumentNumber = documentNumber;
         LastListedPagedCounterpartyReference = counterpartyReference;
         LastListedPagedCurrency = currency;
+        LastListedIssuedFromUtc = issuedFromUtc;
+        LastListedIssuedToUtc = issuedToUtc;
         LastListPagedCancellationToken = cancellationToken;
 
         var matched = _byId.Values
@@ -138,6 +146,12 @@ internal sealed class InMemoryInvoiceRepository : IInvoiceRepository
                 string.Equals(invoice.Currency.Code, currency, StringComparison.Ordinal))
             .Where(invoice => createdFromUtc is null || invoice.CreatedAt >= createdFromUtc.Value)
             .Where(invoice => createdToUtc is null || invoice.CreatedAt <= createdToUtc.Value)
+            .Where(invoice =>
+                issuedFromUtc is null ||
+                (invoice.IssuedAt is { } issuedAt && issuedAt >= issuedFromUtc.Value))
+            .Where(invoice =>
+                issuedToUtc is null ||
+                (invoice.IssuedAt is { } issuedAt && issuedAt <= issuedToUtc.Value))
             .OrderByDescending(invoice => invoice.CreatedAt)
             .ThenByDescending(invoice => invoice.Id.Value)
             .ToList();

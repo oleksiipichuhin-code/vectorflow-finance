@@ -92,9 +92,10 @@ F3A–F3F are published. Decimal precision policy for Debit/Credit remains an op
 | F4Y | Invoice Paged Currency Composition | Complete |
 | F4Z | Accrual Paged Currency Composition | Complete |
 | F4AA | Accrual Paged Amount Range Composition | Complete |
+| F4AB | Invoice Paged IssuedAt Range Composition | Complete |
 | F4Q+ | Later invoice and Accrual query enhancements | Planned |
 
-F4A–F4Z are published. F4AA Accrual Paged Amount Range Composition (optional inclusive `amountFrom` / `amountTo` on paged Accrual listing; either bound alone allowed; equal bounds match that exact amount; `amountFrom > amountTo` is ValidationFailed; composes with optional exact `status`, inclusive `createdFromUtc` / `createdToUtc`, exact `sourceInvoiceId`, exact `type`, inclusive `recognitionFromUtc` / `recognitionToUtc`, and exact `currency`; Amount bounds applied in memory with existing DateTimeOffset in-memory filter stage; no Domain, migration, schema, package, Contracts, or DI changes) is published. Remaining invoice query enhancements (other multi-field filters / full-text search), Accrual text-search filters, and other deferred Accrual query capabilities remain planned under F4Q+. F4 as a whole remains incomplete.
+F4A–F4AA are published. F4AB Invoice Paged IssuedAt Range Composition (optional inclusive `issuedFromUtc` / `issuedToUtc` on paged Invoice listing; either bound alone allowed; equal bounds match that exact instant; `issuedFromUtc > issuedToUtc` is ValidationFailed; when any IssuedAt bound is present, null `IssuedAt` rows are excluded; composes with optional exact `status`, inclusive `createdFromUtc` / `createdToUtc`, exact `documentNumber`, exact `counterpartyReference`, and exact `currency` under AND with no implicit `status=Issued`; IssuedAt bounds applied in memory with existing CreatedAt DateTimeOffset filter stage; no Domain, migration, schema, package, Contracts, or DI changes) is published. Remaining invoice query enhancements (DueDate / TotalAmount / other multi-field filters / full-text search), Accrual text-search filters, and other deferred Accrual query capabilities remain planned under F4Q+. F4 as a whole remains incomplete.
 
 ## F5 sub-slices
 

@@ -37,13 +37,15 @@ public interface IInvoiceRepository
     /// <paramref name="counterpartyReference"/> (exact ordinal match), and optional
     /// <paramref name="currency"/> (exact Ordinal match on normalized Currency.Code) are applied in the
     /// query; inclusive CreatedAt bounds (<paramref name="createdFromUtc"/> / <paramref name="createdToUtc"/>)
+    /// and inclusive IssuedAt bounds (<paramref name="issuedFromUtc"/> / <paramref name="issuedToUtc"/>)
     /// are applied in memory after materialization (SQLite cannot translate DateTimeOffset comparisons).
-    /// All filters apply to the page and the total count. A null <paramref name="documentNumber"/> means no
-    /// DocumentNumber filter (positive exact match only when provided; no partial/full-text mode).
-    /// A null <paramref name="counterpartyReference"/> means no CounterpartyReference filter
-    /// (positive exact match only when provided; no partial/full-text mode). A null
-    /// <paramref name="currency"/> means no Currency filter (positive exact match only when provided;
-    /// no partial/full-text mode).
+    /// When any IssuedAt bound is present, invoices with null IssuedAt are excluded. All filters apply to
+    /// the page and the total count. A null <paramref name="documentNumber"/> means no DocumentNumber
+    /// filter (positive exact match only when provided; no partial/full-text mode). A null
+    /// <paramref name="counterpartyReference"/> means no CounterpartyReference filter (positive exact match
+    /// only when provided; no partial/full-text mode). A null <paramref name="currency"/> means no Currency
+    /// filter (positive exact match only when provided; no partial/full-text mode). A null
+    /// <paramref name="issuedFromUtc"/> / <paramref name="issuedToUtc"/> means no that IssuedAt bound.
     /// </summary>
     Task<(IReadOnlyList<Invoice> Items, int TotalCount)> ListPagedAsync(
         FinanceWorkspaceId financeWorkspaceId,
@@ -55,6 +57,8 @@ public interface IInvoiceRepository
         string? documentNumber = null,
         string? counterpartyReference = null,
         string? currency = null,
+        DateTimeOffset? issuedFromUtc = null,
+        DateTimeOffset? issuedToUtc = null,
         CancellationToken cancellationToken = default);
 
     Task AddAsync(
