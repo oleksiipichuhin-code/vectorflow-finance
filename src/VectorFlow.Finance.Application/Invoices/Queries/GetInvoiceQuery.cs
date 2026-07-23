@@ -22,4 +22,6 @@ public sealed record GetInvoicesPagedQuery(
     string? CounterpartyReference = null,
     string? Currency = null,
     DateTimeOffset? IssuedFromUtc = null,
-    DateTimeOffset? IssuedToUtc = null);
+    DateTimeOffset? IssuedToUtc = null,
+    DateTimeOffset? DueFromUtc = null,
+    DateTimeOffset? DueToUtc = null);

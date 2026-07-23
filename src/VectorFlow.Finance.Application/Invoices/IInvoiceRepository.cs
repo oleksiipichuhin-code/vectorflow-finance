@@ -38,14 +38,17 @@ public interface IInvoiceRepository
     /// <paramref name="currency"/> (exact Ordinal match on normalized Currency.Code) are applied in the
     /// query; inclusive CreatedAt bounds (<paramref name="createdFromUtc"/> / <paramref name="createdToUtc"/>)
     /// and inclusive IssuedAt bounds (<paramref name="issuedFromUtc"/> / <paramref name="issuedToUtc"/>)
+    /// and inclusive DueDate bounds (<paramref name="dueFromUtc"/> / <paramref name="dueToUtc"/>)
     /// are applied in memory after materialization (SQLite cannot translate DateTimeOffset comparisons).
-    /// When any IssuedAt bound is present, invoices with null IssuedAt are excluded. All filters apply to
-    /// the page and the total count. A null <paramref name="documentNumber"/> means no DocumentNumber
-    /// filter (positive exact match only when provided; no partial/full-text mode). A null
+    /// When any IssuedAt bound is present, invoices with null IssuedAt are excluded. When any DueDate
+    /// bound is present, invoices with null DueDate are excluded. All filters apply to the page and the
+    /// total count. A null <paramref name="documentNumber"/> means no DocumentNumber filter (positive
+    /// exact match only when provided; no partial/full-text mode). A null
     /// <paramref name="counterpartyReference"/> means no CounterpartyReference filter (positive exact match
     /// only when provided; no partial/full-text mode). A null <paramref name="currency"/> means no Currency
     /// filter (positive exact match only when provided; no partial/full-text mode). A null
-    /// <paramref name="issuedFromUtc"/> / <paramref name="issuedToUtc"/> means no that IssuedAt bound.
+    /// <paramref name="issuedFromUtc"/> / <paramref name="issuedToUtc"/> means no that IssuedAt bound. A
+    /// null <paramref name="dueFromUtc"/> / <paramref name="dueToUtc"/> means no that DueDate bound.
     /// </summary>
     Task<(IReadOnlyList<Invoice> Items, int TotalCount)> ListPagedAsync(
         FinanceWorkspaceId financeWorkspaceId,
@@ -59,6 +62,8 @@ public interface IInvoiceRepository
         string? currency = null,
         DateTimeOffset? issuedFromUtc = null,
         DateTimeOffset? issuedToUtc = null,
+        DateTimeOffset? dueFromUtc = null,
+        DateTimeOffset? dueToUtc = null,
         CancellationToken cancellationToken = default);
 
     Task AddAsync(

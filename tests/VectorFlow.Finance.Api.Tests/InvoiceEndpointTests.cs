@@ -1706,6 +1706,207 @@ public sealed class InvoiceEndpointTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task List_due_from_only_filters_inclusive_and_excludes_null_due()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("c1000000-0000-0000-0000-0000000000c1"),
+            Guid.Parse("c2000000-0000-0000-0000-0000000000c1"));
+
+        await CreateInvoiceAsync(workspaceId, "INV-NODUE", "cp", "UAH");
+        var earlyId = await CreateInvoiceAsync(workspaceId, "INV-EARLY", "cp", "UAH");
+        var earlyDue = new DateTimeOffset(2026, 7, 20, 10, 0, 0, TimeSpan.Zero);
+        await SetDueDateAsync(workspaceId, earlyId, earlyDue);
+        var lateId = await CreateInvoiceAsync(workspaceId, "INV-LATE", "cp", "UAH");
+        var lateDue = new DateTimeOffset(2026, 7, 25, 10, 0, 0, TimeSpan.Zero);
+        await SetDueDateAsync(workspaceId, lateId, lateDue);
+
+        var from = Uri.EscapeDataString(lateDue.ToString("o"));
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices?page=1&pageSize=10&dueFromUtc={from}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(1, document.RootElement.GetProperty("totalCount").GetInt32());
+        Assert.Equal(
+            lateId,
+            Assert.Single(document.RootElement.GetProperty("items").EnumerateArray()).GetProperty("id").GetGuid());
+    }
+
+    [Fact]
+    public async Task List_due_to_only_filters_inclusive()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("c1000000-0000-0000-0000-0000000000c2"),
+            Guid.Parse("c2000000-0000-0000-0000-0000000000c2"));
+
+        var earlyId = await CreateInvoiceAsync(workspaceId, "INV-EARLY", "cp", "UAH");
+        var earlyDue = new DateTimeOffset(2026, 7, 20, 10, 0, 0, TimeSpan.Zero);
+        await SetDueDateAsync(workspaceId, earlyId, earlyDue);
+        var lateId = await CreateInvoiceAsync(workspaceId, "INV-LATE", "cp", "UAH");
+        var lateDue = new DateTimeOffset(2026, 7, 25, 10, 0, 0, TimeSpan.Zero);
+        await SetDueDateAsync(workspaceId, lateId, lateDue);
+
+        var to = Uri.EscapeDataString(earlyDue.ToString("o"));
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices?page=1&pageSize=10&dueToUtc={to}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(1, document.RootElement.GetProperty("totalCount").GetInt32());
+        var matchedId = Assert.Single(document.RootElement.GetProperty("items").EnumerateArray())
+            .GetProperty("id")
+            .GetGuid();
+        Assert.Equal(earlyId, matchedId);
+        Assert.NotEqual(lateId, matchedId);
+    }
+
+    [Fact]
+    public async Task List_due_both_bounds_filter_closed_range()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("c1000000-0000-0000-0000-0000000000c3"),
+            Guid.Parse("c2000000-0000-0000-0000-0000000000c3"));
+
+        var beforeId = await CreateInvoiceAsync(workspaceId, "INV-BEFORE", "cp", "UAH");
+        await SetDueDateAsync(workspaceId, beforeId, new DateTimeOffset(2026, 7, 10, 0, 0, 0, TimeSpan.Zero));
+        var lowId = await CreateInvoiceAsync(workspaceId, "INV-LOW", "cp", "UAH");
+        var lowDue = new DateTimeOffset(2026, 7, 20, 0, 0, 0, TimeSpan.Zero);
+        await SetDueDateAsync(workspaceId, lowId, lowDue);
+        var highId = await CreateInvoiceAsync(workspaceId, "INV-HIGH", "cp", "UAH");
+        var highDue = new DateTimeOffset(2026, 7, 25, 0, 0, 0, TimeSpan.Zero);
+        await SetDueDateAsync(workspaceId, highId, highDue);
+        var afterId = await CreateInvoiceAsync(workspaceId, "INV-AFTER", "cp", "UAH");
+        await SetDueDateAsync(workspaceId, afterId, new DateTimeOffset(2026, 7, 30, 0, 0, 0, TimeSpan.Zero));
+
+        var from = Uri.EscapeDataString(lowDue.ToString("o"));
+        var to = Uri.EscapeDataString(highDue.ToString("o"));
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices?page=1&pageSize=10&dueFromUtc={from}&dueToUtc={to}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(2, document.RootElement.GetProperty("totalCount").GetInt32());
+        var items = document.RootElement.GetProperty("items").EnumerateArray().ToArray();
+        Assert.Equal(2, items.Length);
+        var ids = items.Select(item => item.GetProperty("id").GetGuid()).ToHashSet();
+        Assert.Contains(lowId, ids);
+        Assert.Contains(highId, ids);
+    }
+
+    [Fact]
+    public async Task List_due_equal_bounds_match_exact_instant()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("c1000000-0000-0000-0000-0000000000c4"),
+            Guid.Parse("c2000000-0000-0000-0000-0000000000c4"));
+
+        var matchId = await CreateInvoiceAsync(workspaceId, "INV-MATCH", "cp", "UAH");
+        var due = new DateTimeOffset(2026, 7, 22, 12, 0, 0, TimeSpan.Zero);
+        await SetDueDateAsync(workspaceId, matchId, due);
+        var otherId = await CreateInvoiceAsync(workspaceId, "INV-OTHER", "cp", "UAH");
+        await SetDueDateAsync(workspaceId, otherId, new DateTimeOffset(2026, 7, 23, 12, 0, 0, TimeSpan.Zero));
+
+        var bound = Uri.EscapeDataString(due.ToString("o"));
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices?page=1&pageSize=10&dueFromUtc={bound}&dueToUtc={bound}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(1, document.RootElement.GetProperty("totalCount").GetInt32());
+        Assert.Equal(
+            matchId,
+            Assert.Single(document.RootElement.GetProperty("items").EnumerateArray()).GetProperty("id").GetGuid());
+    }
+
+    [Fact]
+    public async Task List_due_from_after_to_returns_400()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("c1000000-0000-0000-0000-0000000000c5"),
+            Guid.Parse("c2000000-0000-0000-0000-0000000000c5"));
+
+        var from = Uri.EscapeDataString(new DateTimeOffset(2026, 7, 30, 0, 0, 0, TimeSpan.Zero).ToString("o"));
+        var to = Uri.EscapeDataString(new DateTimeOffset(2026, 7, 10, 0, 0, 0, TimeSpan.Zero).ToString("o"));
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices?page=1&pageSize=10&dueFromUtc={from}&dueToUtc={to}");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        await AssertErrorAsync(response, "ValidationFailed");
+    }
+
+    [Fact]
+    public async Task List_malformed_due_from_returns_400()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("c1000000-0000-0000-0000-0000000000c6"),
+            Guid.Parse("c2000000-0000-0000-0000-0000000000c6"));
+
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices?page=1&pageSize=10&dueFromUtc=not-a-date");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task List_malformed_due_to_returns_400()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("c1000000-0000-0000-0000-0000000000c7"),
+            Guid.Parse("c2000000-0000-0000-0000-0000000000c7"));
+
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices?page=1&pageSize=10&dueToUtc=not-a-date");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task List_due_composes_with_currency_and_status()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("c1000000-0000-0000-0000-0000000000c8"),
+            Guid.Parse("c2000000-0000-0000-0000-0000000000c8"));
+
+        await CreateInvoiceAsync(workspaceId, "INV-NODUE", "cp", "USD");
+        var matchId = await CreateInvoiceAsync(workspaceId, "INV-MATCH", "cp", "USD");
+        var due = new DateTimeOffset(2026, 7, 22, 8, 0, 0, TimeSpan.Zero);
+        await SetDueDateAsync(workspaceId, matchId, due);
+        var eurId = await CreateInvoiceAsync(workspaceId, "INV-EUR", "cp", "EUR");
+        await SetDueDateAsync(workspaceId, eurId, due);
+
+        var bound = Uri.EscapeDataString(due.ToString("o"));
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices?page=1&pageSize=10&status=Draft&currency=USD&dueFromUtc={bound}&dueToUtc={bound}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(1, document.RootElement.GetProperty("totalCount").GetInt32());
+        Assert.Equal(
+            matchId,
+            Assert.Single(document.RootElement.GetProperty("items").EnumerateArray()).GetProperty("id").GetGuid());
+    }
+
+    [Fact]
+    public async Task List_omitted_due_bounds_include_null_due_date()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("c1000000-0000-0000-0000-0000000000c9"),
+            Guid.Parse("c2000000-0000-0000-0000-0000000000c9"));
+
+        await CreateInvoiceAsync(workspaceId, "INV-NODUE", "cp", "UAH");
+        var withDue = await CreateInvoiceAsync(workspaceId, "INV-DUE", "cp", "UAH");
+        await SetDueDateAsync(workspaceId, withDue, FutureDue);
+
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices?page=1&pageSize=10");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(2, document.RootElement.GetProperty("totalCount").GetInt32());
+        Assert.Equal(2, document.RootElement.GetProperty("items").GetArrayLength());
+    }
+
+    [Fact]
     public async Task Get_by_id_still_resolves_after_list_route()
     {
         var workspaceId = await CreateWorkspaceAsync(

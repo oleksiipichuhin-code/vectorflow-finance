@@ -1833,6 +1833,308 @@ public sealed class InvoiceRepositoryTests : IAsyncLifetime
         Assert.Equal(second.Id, Assert.Single(page2).Id);
     }
 
+    private static Invoice CreateWithDueDate(
+        FinanceWorkspaceId workspaceId,
+        string documentNumber,
+        DateTimeOffset createdAt,
+        DateTimeOffset dueDate,
+        string currency = "UAH",
+        string counterparty = "cp")
+    {
+        var invoice = Invoice.Create(
+            InvoiceId.New(),
+            workspaceId,
+            documentNumber,
+            new CounterpartyReference(counterparty),
+            new Currency(currency),
+            createdAt);
+        invoice.SetDueDate(dueDate, createdAt);
+        return invoice;
+    }
+
+    [Fact]
+    public async Task ListPaged_due_from_includes_lower_bound_and_excludes_earlier()
+    {
+        var earlier = CreateWithDueDate(_workspaceA, "INV-EARLY", T0, T0);
+        var onBound = CreateWithDueDate(_workspaceA, "INV-ON", T1, T1);
+        var later = CreateWithDueDate(_workspaceA, "INV-LATE", T2, T2);
+
+        await _repository.AddAsync(earlier);
+        await _repository.AddAsync(onBound);
+        await _repository.AddAsync(later);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var (items, totalCount) = await new InvoiceRepository(readContext)
+            .ListPagedAsync(
+                _workspaceA,
+                page: 1,
+                pageSize: 10,
+                dueFromUtc: T1);
+
+        Assert.Equal(2, totalCount);
+        Assert.Equal(later.Id, items[0].Id);
+        Assert.Equal(onBound.Id, items[1].Id);
+    }
+
+    [Fact]
+    public async Task ListPaged_due_to_includes_upper_bound_and_excludes_later()
+    {
+        var earlier = CreateWithDueDate(_workspaceA, "INV-EARLY", T0, T0);
+        var onBound = CreateWithDueDate(_workspaceA, "INV-ON", T1, T1);
+        var later = CreateWithDueDate(_workspaceA, "INV-LATE", T2, T2);
+
+        await _repository.AddAsync(earlier);
+        await _repository.AddAsync(onBound);
+        await _repository.AddAsync(later);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var (items, totalCount) = await new InvoiceRepository(readContext)
+            .ListPagedAsync(
+                _workspaceA,
+                page: 1,
+                pageSize: 10,
+                dueToUtc: T1);
+
+        Assert.Equal(2, totalCount);
+        Assert.Equal(onBound.Id, items[0].Id);
+        Assert.Equal(earlier.Id, items[1].Id);
+    }
+
+    [Fact]
+    public async Task ListPaged_due_closed_range_is_inclusive()
+    {
+        var before = CreateWithDueDate(_workspaceA, "INV-BEFORE", T0, T0);
+        var low = CreateWithDueDate(_workspaceA, "INV-LOW", T1, T1);
+        var high = CreateWithDueDate(_workspaceA, "INV-HIGH", T2, T2);
+        var after = CreateWithDueDate(
+            _workspaceA,
+            "INV-AFTER",
+            T2,
+            new DateTimeOffset(2026, 7, 19, 15, 0, 0, TimeSpan.Zero));
+
+        await _repository.AddAsync(before);
+        await _repository.AddAsync(low);
+        await _repository.AddAsync(high);
+        await _repository.AddAsync(after);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var (items, totalCount) = await new InvoiceRepository(readContext)
+            .ListPagedAsync(
+                _workspaceA,
+                page: 1,
+                pageSize: 10,
+                dueFromUtc: T1,
+                dueToUtc: T2);
+
+        Assert.Equal(2, totalCount);
+        Assert.Equal(high.Id, items[0].Id);
+        Assert.Equal(low.Id, items[1].Id);
+        Assert.NotNull(before);
+    }
+
+    [Fact]
+    public async Task ListPaged_due_equal_bounds_match_exact_instant()
+    {
+        var match = CreateWithDueDate(_workspaceA, "INV-MATCH", T1, T1);
+        var other = CreateWithDueDate(_workspaceA, "INV-OTHER", T2, T2);
+
+        await _repository.AddAsync(match);
+        await _repository.AddAsync(other);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var (items, totalCount) = await new InvoiceRepository(readContext)
+            .ListPagedAsync(
+                _workspaceA,
+                page: 1,
+                pageSize: 10,
+                dueFromUtc: T1,
+                dueToUtc: T1);
+
+        Assert.Equal(1, totalCount);
+        Assert.Equal(match.Id, Assert.Single(items).Id);
+    }
+
+    [Fact]
+    public async Task ListPaged_due_bound_excludes_null_due_date()
+    {
+        var withoutDue = Invoice.Create(
+            InvoiceId.New(), _workspaceA, "INV-NODUE", new CounterpartyReference("cp"), new Currency("UAH"), T1);
+        var withDue = CreateWithDueDate(_workspaceA, "INV-DUE", T1, T1);
+
+        await _repository.AddAsync(withoutDue);
+        await _repository.AddAsync(withDue);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var (items, totalCount) = await new InvoiceRepository(readContext)
+            .ListPagedAsync(
+                _workspaceA,
+                page: 1,
+                pageSize: 10,
+                dueFromUtc: T0);
+
+        Assert.Equal(1, totalCount);
+        Assert.Equal(withDue.Id, Assert.Single(items).Id);
+    }
+
+    [Fact]
+    public async Task ListPaged_due_to_only_excludes_null_due_date()
+    {
+        var withoutDue = Invoice.Create(
+            InvoiceId.New(), _workspaceA, "INV-NODUE", new CounterpartyReference("cp"), new Currency("UAH"), T1);
+        var withDue = CreateWithDueDate(_workspaceA, "INV-DUE", T1, T1);
+
+        await _repository.AddAsync(withoutDue);
+        await _repository.AddAsync(withDue);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var (items, totalCount) = await new InvoiceRepository(readContext)
+            .ListPagedAsync(
+                _workspaceA,
+                page: 1,
+                pageSize: 10,
+                dueToUtc: T2);
+
+        Assert.Equal(1, totalCount);
+        Assert.Equal(withDue.Id, Assert.Single(items).Id);
+    }
+
+    [Fact]
+    public async Task ListPaged_omitted_due_bounds_include_null_and_set_due_date()
+    {
+        var withoutDue = Invoice.Create(
+            InvoiceId.New(), _workspaceA, "INV-NODUE", new CounterpartyReference("cp"), new Currency("UAH"), T0);
+        var withDue = CreateWithDueDate(_workspaceA, "INV-DUE", T1, T1);
+
+        await _repository.AddAsync(withoutDue);
+        await _repository.AddAsync(withDue);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var (items, totalCount) = await new InvoiceRepository(readContext)
+            .ListPagedAsync(_workspaceA, page: 1, pageSize: 10);
+
+        Assert.Equal(2, totalCount);
+        Assert.Equal(2, items.Count);
+    }
+
+    [Fact]
+    public async Task ListPaged_due_with_status_and_currency_applies_all()
+    {
+        var match = CreateWithDueDate(_workspaceA, "INV-MATCH", T1, T1, currency: "USD");
+        var wrongCurrency = CreateWithDueDate(_workspaceA, "INV-EUR", T1, T1, currency: "EUR");
+        var withoutDueUsd = Invoice.Create(
+            InvoiceId.New(), _workspaceA, "INV-NODUE", new CounterpartyReference("cp"), new Currency("USD"), T1);
+
+        await _repository.AddAsync(match);
+        await _repository.AddAsync(wrongCurrency);
+        await _repository.AddAsync(withoutDueUsd);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var (items, totalCount) = await new InvoiceRepository(readContext)
+            .ListPagedAsync(
+                _workspaceA,
+                page: 1,
+                pageSize: 10,
+                status: InvoiceStatus.Draft,
+                currency: "USD",
+                dueFromUtc: T1,
+                dueToUtc: T1);
+
+        Assert.Equal(1, totalCount);
+        Assert.Equal(match.Id, Assert.Single(items).Id);
+    }
+
+    [Fact]
+    public async Task ListPaged_due_range_is_workspace_scoped()
+    {
+        var inA = CreateWithDueDate(_workspaceA, "INV-A", T1, T1);
+        var inB = CreateWithDueDate(_workspaceB, "INV-B", T1, T1);
+
+        await _repository.AddAsync(inA);
+        await _repository.AddAsync(inB);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var (items, totalCount) = await new InvoiceRepository(readContext)
+            .ListPagedAsync(
+                _workspaceA,
+                page: 1,
+                pageSize: 10,
+                dueFromUtc: T1,
+                dueToUtc: T1);
+
+        Assert.Equal(1, totalCount);
+        Assert.Equal(inA.Id, Assert.Single(items).Id);
+    }
+
+    [Fact]
+    public async Task ListPaged_due_pages_after_filter()
+    {
+        var first = CreateWithDueDate(_workspaceA, "INV-1", T0, T0);
+        var second = CreateWithDueDate(_workspaceA, "INV-2", T1, T1);
+        var third = CreateWithDueDate(_workspaceA, "INV-3", T2, T2);
+        var withoutDue = Invoice.Create(
+            InvoiceId.New(), _workspaceA, "INV-NODUE", new CounterpartyReference("cp"), new Currency("UAH"), T2);
+
+        await _repository.AddAsync(first);
+        await _repository.AddAsync(second);
+        await _repository.AddAsync(third);
+        await _repository.AddAsync(withoutDue);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var repo = new InvoiceRepository(readContext);
+
+        var (page1, total1) = await repo.ListPagedAsync(
+            _workspaceA, page: 1, pageSize: 1, dueFromUtc: T0, dueToUtc: T2);
+        var (page2, total2) = await repo.ListPagedAsync(
+            _workspaceA, page: 2, pageSize: 1, dueFromUtc: T0, dueToUtc: T2);
+
+        Assert.Equal(3, total1);
+        Assert.Equal(3, total2);
+        Assert.Equal(third.Id, Assert.Single(page1).Id);
+        Assert.Equal(second.Id, Assert.Single(page2).Id);
+    }
+
+    [Fact]
+    public async Task ListPaged_due_same_instant_different_offsets_compare_consistently()
+    {
+        var zeroOffset = CreateWithDueDate(
+            _workspaceA,
+            "INV-Z",
+            T1,
+            new DateTimeOffset(2026, 7, 19, 13, 0, 0, TimeSpan.Zero));
+        var plusThree = CreateWithDueDate(
+            _workspaceA,
+            "INV-P3",
+            T1,
+            new DateTimeOffset(2026, 7, 19, 16, 0, 0, TimeSpan.FromHours(3)));
+
+        await _repository.AddAsync(zeroOffset);
+        await _repository.AddAsync(plusThree);
+        await _repository.SaveChangesAsync();
+
+        var bound = new DateTimeOffset(2026, 7, 19, 13, 0, 0, TimeSpan.Zero);
+        await using var readContext = CreateContext();
+        var (items, totalCount) = await new InvoiceRepository(readContext)
+            .ListPagedAsync(
+                _workspaceA,
+                page: 1,
+                pageSize: 10,
+                dueFromUtc: bound,
+                dueToUtc: bound);
+
+        Assert.Equal(2, totalCount);
+        Assert.Equal(2, items.Count);
+    }
+
     [Fact]
     public async Task GetById_after_list_still_round_trips()
     {
