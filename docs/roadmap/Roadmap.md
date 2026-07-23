@@ -96,9 +96,10 @@ F3A–F3F are published. Decimal precision policy for Debit/Credit remains an op
 | F4AC | Invoice Paged DueDate Range Composition | Complete |
 | F4AD | Invoice Paged TotalAmount Range Composition | Complete |
 | F4AE | Accrual Paged Description Composition | Complete |
+| F4AF | Accrual Paged RecognizedAt Range Composition | Complete |
 | F4Q+ | Later invoice and Accrual query enhancements | Planned |
 
-F4A–F4AE are published. F4AE Accrual Paged Description Composition (optional exact Ordinal `description` on paged Accrual listing; missing means no Description filter; when provided, trim + blank/overlength ValidationFailed using Domain Description max 500; positive exact match only — no partial/prefix/case-insensitive/full-text; composes under AND with optional exact `status`, inclusive CreatedAt/RecognitionDate bounds, exact `sourceInvoiceId`, exact `type`, exact `currency`, and inclusive Amount bounds; Description filter applied as SQL predicate with other exact string filters; no Domain, migration, schema, package, Contracts, or DI changes) is published. Remaining invoice query enhancements (other multi-field filters / full-text search), further Accrual text modes, and other deferred Accrual query capabilities remain planned under F4Q+. F4 as a whole remains incomplete.
+F4A–F4AF are published. F4AF Accrual Paged RecognizedAt Range Composition (optional inclusive `recognizedFromUtc` / `recognizedToUtc` on paged Accrual listing filtering lifecycle `RecognizedAt`, not `RecognitionDate`; either bound alone allowed; equal bounds match that exact instant; `recognizedFromUtc > recognizedToUtc` is ValidationFailed; when any RecognizedAt bound is present, null `RecognizedAt` rows are excluded; independent of optional `status` and of RecognitionDate bounds; composes under AND with optional exact `status`, inclusive CreatedAt/RecognitionDate/Amount bounds, exact `sourceInvoiceId`, exact `type`, exact `currency`, and exact `description`; RecognizedAt bounds applied in memory with existing DateTimeOffset filter stage; no Domain, migration, schema, package, Contracts, or DI changes) is published. Remaining invoice query enhancements (other multi-field filters / full-text search), further Accrual text modes, and other deferred Accrual query capabilities remain planned under F4Q+. F4 as a whole remains incomplete.
 
 ## F5 sub-slices
 

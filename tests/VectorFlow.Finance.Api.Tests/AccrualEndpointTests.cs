@@ -7,6 +7,9 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using VectorFlow.Finance.Domain;
+using VectorFlow.Finance.Domain.Accruals;
+using VectorFlow.Finance.Domain.Workspaces;
 using VectorFlow.Finance.Infrastructure.Persistence;
 using Xunit;
 
@@ -14,6 +17,15 @@ namespace VectorFlow.Finance.Api.Tests;
 
 public sealed class AccrualEndpointTests : IAsyncLifetime
 {
+    private static readonly DateTimeOffset T0 =
+        new(2026, 7, 20, 10, 0, 0, TimeSpan.Zero);
+
+    private static readonly DateTimeOffset T1 =
+        new(2026, 7, 20, 11, 0, 0, TimeSpan.Zero);
+
+    private static readonly DateTimeOffset T2 =
+        new(2026, 7, 20, 12, 0, 0, TimeSpan.Zero);
+
     private static readonly DateTimeOffset RecognitionDate =
         new(2026, 7, 31, 0, 0, 0, TimeSpan.Zero);
 
@@ -2105,6 +2117,159 @@ public sealed class AccrualEndpointTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ListPaged_recognized_from_only_filters_inclusive()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("a1000000-0000-0000-0000-0000000000b1"),
+            Guid.Parse("a2000000-0000-0000-0000-0000000000b1"));
+
+        var early = await SeedRecognizedAccrualAsync(
+            workspaceId, "Early", T0, T0);
+        var onBound = await SeedRecognizedAccrualAsync(
+            workspaceId, "On", T1, T1);
+        var late = await SeedRecognizedAccrualAsync(
+            workspaceId, "Late", T2, T2);
+        await CreateAccrualAsync(workspaceId, "Revenue", 40m, "Draft");
+
+        var from = Uri.EscapeDataString("2026-07-20T11:00:00+00:00");
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/accruals/paged?page=1&pageSize=10&recognizedFromUtc={from}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(2, document.RootElement.GetProperty("totalCount").GetInt32());
+        var ids = document.RootElement.GetProperty("items").EnumerateArray()
+            .Select(item => item.GetProperty("id").GetGuid())
+            .ToArray();
+        Assert.Contains(onBound, ids);
+        Assert.Contains(late, ids);
+        Assert.DoesNotContain(early, ids);
+    }
+
+    [Fact]
+    public async Task ListPaged_recognized_both_bounds_filter_closed_range()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("a1000000-0000-0000-0000-0000000000b2"),
+            Guid.Parse("a2000000-0000-0000-0000-0000000000b2"));
+
+        await SeedRecognizedAccrualAsync(workspaceId, "Early", T0, T0);
+        var mid = await SeedRecognizedAccrualAsync(workspaceId, "Mid", T1, T1);
+        await SeedRecognizedAccrualAsync(workspaceId, "Late", T2, T2);
+
+        var from = Uri.EscapeDataString("2026-07-20T11:00:00+00:00");
+        var to = Uri.EscapeDataString("2026-07-20T11:00:00+00:00");
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/accruals/paged?page=1&pageSize=10&recognizedFromUtc={from}&recognizedToUtc={to}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(1, document.RootElement.GetProperty("totalCount").GetInt32());
+        Assert.Equal(
+            mid,
+            Assert.Single(document.RootElement.GetProperty("items").EnumerateArray()).GetProperty("id").GetGuid());
+    }
+
+    [Fact]
+    public async Task ListPaged_recognized_bound_excludes_draft_null_recognized_at()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("a1000000-0000-0000-0000-0000000000b3"),
+            Guid.Parse("a2000000-0000-0000-0000-0000000000b3"));
+
+        await CreateAccrualAsync(workspaceId, "Revenue", 10m, "Draft");
+        var recognized = await SeedRecognizedAccrualAsync(workspaceId, "Recognized", T1, T1);
+
+        var from = Uri.EscapeDataString("2026-07-20T10:00:00+00:00");
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/accruals/paged?page=1&pageSize=10&recognizedFromUtc={from}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(1, document.RootElement.GetProperty("totalCount").GetInt32());
+        Assert.Equal(
+            recognized,
+            Assert.Single(document.RootElement.GetProperty("items").EnumerateArray()).GetProperty("id").GetGuid());
+    }
+
+    [Fact]
+    public async Task ListPaged_recognized_from_after_to_returns_400()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("a1000000-0000-0000-0000-0000000000b4"),
+            Guid.Parse("a2000000-0000-0000-0000-0000000000b4"));
+
+        var from = Uri.EscapeDataString("2026-07-20T12:00:00+00:00");
+        var to = Uri.EscapeDataString("2026-07-20T10:00:00+00:00");
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/accruals/paged?page=1&pageSize=10&recognizedFromUtc={from}&recognizedToUtc={to}");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        await AssertErrorAsync(response, "ValidationFailed");
+    }
+
+    [Fact]
+    public async Task ListPaged_malformed_recognized_from_returns_400()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("a1000000-0000-0000-0000-0000000000b5"),
+            Guid.Parse("a2000000-0000-0000-0000-0000000000b5"));
+
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/accruals/paged?page=1&pageSize=10&recognizedFromUtc=not-a-date");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ListPaged_recognized_composes_with_description()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("a1000000-0000-0000-0000-0000000000b6"),
+            Guid.Parse("a2000000-0000-0000-0000-0000000000b6"));
+
+        var match = await SeedRecognizedAccrualAsync(workspaceId, "Target", T1, T1);
+        await SeedRecognizedAccrualAsync(workspaceId, "Other", T1, T1);
+        await CreateAccrualAsync(workspaceId, "Revenue", 50m, "Target");
+
+        var bound = Uri.EscapeDataString("2026-07-20T11:00:00+00:00");
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/accruals/paged?page=1&pageSize=10&description=Target&recognizedFromUtc={bound}&recognizedToUtc={bound}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(1, document.RootElement.GetProperty("totalCount").GetInt32());
+        Assert.Equal(
+            match,
+            Assert.Single(document.RootElement.GetProperty("items").EnumerateArray()).GetProperty("id").GetGuid());
+    }
+
+    [Fact]
+    public async Task ListPaged_recognized_is_independent_of_recognition_date_param()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("a1000000-0000-0000-0000-0000000000b7"),
+            Guid.Parse("a2000000-0000-0000-0000-0000000000b7"));
+
+        var match = await SeedRecognizedAccrualAsync(
+            workspaceId, "Match", T1, T1, recognitionDate: RecognitionDate);
+        await SeedRecognizedAccrualAsync(
+            workspaceId, "Wrong", T1, T1, recognitionDate: RecognitionDateAlt);
+
+        var recognition = Uri.EscapeDataString("2026-07-31T00:00:00+00:00");
+        var recognized = Uri.EscapeDataString("2026-07-20T11:00:00+00:00");
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/accruals/paged?page=1&pageSize=10&recognitionFromUtc={recognition}&recognitionToUtc={recognition}&recognizedFromUtc={recognized}&recognizedToUtc={recognized}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(1, document.RootElement.GetProperty("totalCount").GetInt32());
+        Assert.Equal(
+            match,
+            Assert.Single(document.RootElement.GetProperty("items").EnumerateArray()).GetProperty("id").GetGuid());
+    }
+
+    [Fact]
     public async Task Get_by_id_still_resolves_after_list_route()
     {
         var workspaceId = await CreateWorkspaceAsync(
@@ -2749,6 +2914,8 @@ public sealed class AccrualEndpointTests : IAsyncLifetime
         Assert.Contains("sourceInvoiceId", json);
         Assert.Contains("recognitionFromUtc", json);
         Assert.Contains("recognitionToUtc", json);
+        Assert.Contains("recognizedFromUtc", json);
+        Assert.Contains("recognizedToUtc", json);
         Assert.Contains("currency", json);
         Assert.Contains("date-time", json);
         Assert.Single(System.Text.RegularExpressions.Regex.Matches(json, "\"ListAccruals\""));
@@ -2804,6 +2971,31 @@ public sealed class AccrualEndpointTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         return document.RootElement.GetProperty("id").GetGuid();
+    }
+
+    private async Task<Guid> SeedRecognizedAccrualAsync(
+        Guid workspaceId,
+        string description,
+        DateTimeOffset createdAt,
+        DateTimeOffset recognizedAt,
+        DateTimeOffset? recognitionDate = null)
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<FinanceDbContext>();
+        var accrual = Accrual.Create(
+            AccrualId.New(),
+            new FinanceWorkspaceId(workspaceId),
+            AccrualType.Revenue,
+            50m,
+            new Currency("UAH"),
+            recognitionDate ?? RecognitionDate,
+            description,
+            sourceInvoiceId: null,
+            createdAt);
+        accrual.Recognize(recognizedAt);
+        db.Accruals.Add(accrual);
+        await db.SaveChangesAsync();
+        return accrual.Id.Value;
     }
 
     private static async Task AssertErrorAsync(HttpResponseMessage response, string error)

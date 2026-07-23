@@ -30,16 +30,18 @@ public interface IAccrualRepository
     /// <paramref name="description"/> (exact Ordinal match after Description trim/normalization) are applied
     /// in the query; inclusive CreatedAt bounds (<paramref name="createdFromUtc"/> / <paramref name="createdToUtc"/>),
     /// inclusive RecognitionDate bounds (<paramref name="recognitionFromUtc"/> /
-    /// <paramref name="recognitionToUtc"/>), and inclusive Amount bounds (<paramref name="amountFrom"/> /
-    /// <paramref name="amountTo"/>) are applied in memory after materialization (SQLite cannot translate
-    /// DateTimeOffset comparisons; Amount bounds stay with the existing in-memory filter stage). All
-    /// filters apply to the page and the total count. A null <paramref name="sourceInvoiceId"/> means no
-    /// SourceInvoiceId filter (positive match only when provided; no IS NULL mode). A null
-    /// <paramref name="type"/> means no Type filter. A null <paramref name="currency"/> means no Currency
-    /// filter (positive exact match only when provided; no partial/full-text mode). A null
-    /// <paramref name="amountFrom"/> / <paramref name="amountTo"/> means no that Amount bound. A null
-    /// <paramref name="description"/> means no Description filter (positive exact match only when provided;
-    /// no partial/prefix/case-insensitive/full-text mode).
+    /// <paramref name="recognitionToUtc"/>), inclusive Amount bounds (<paramref name="amountFrom"/> /
+    /// <paramref name="amountTo"/>), and inclusive RecognizedAt bounds (<paramref name="recognizedFromUtc"/> /
+    /// <paramref name="recognizedToUtc"/>) are applied in memory after materialization (SQLite cannot translate
+    /// DateTimeOffset comparisons; Amount and RecognizedAt bounds stay with the existing in-memory filter stage).
+    /// When any RecognizedAt bound is present, accruals with null RecognizedAt are excluded. All filters apply
+    /// to the page and the total count. A null <paramref name="sourceInvoiceId"/> means no SourceInvoiceId
+    /// filter (positive match only when provided; no IS NULL mode). A null <paramref name="type"/> means no
+    /// Type filter. A null <paramref name="currency"/> means no Currency filter (positive exact match only when
+    /// provided; no partial/full-text mode). A null <paramref name="amountFrom"/> / <paramref name="amountTo"/>
+    /// means no that Amount bound. A null <paramref name="description"/> means no Description filter (positive
+    /// exact match only when provided; no partial/prefix/case-insensitive/full-text mode). A null
+    /// <paramref name="recognizedFromUtc"/> / <paramref name="recognizedToUtc"/> means no that RecognizedAt bound.
     /// </summary>
     Task<(IReadOnlyList<Accrual> Items, int TotalCount)> ListPagedAsync(
         FinanceWorkspaceId financeWorkspaceId,
@@ -56,6 +58,8 @@ public interface IAccrualRepository
         decimal? amountFrom = null,
         decimal? amountTo = null,
         string? description = null,
+        DateTimeOffset? recognizedFromUtc = null,
+        DateTimeOffset? recognizedToUtc = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

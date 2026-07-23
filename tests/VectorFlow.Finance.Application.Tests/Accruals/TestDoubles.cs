@@ -45,6 +45,10 @@ internal sealed class InMemoryAccrualRepository : IAccrualRepository
 
     public string? LastListedPagedDescription { get; private set; }
 
+    public DateTimeOffset? LastListedRecognizedFromUtc { get; private set; }
+
+    public DateTimeOffset? LastListedRecognizedToUtc { get; private set; }
+
     public CancellationToken? LastListPagedCancellationToken { get; private set; }
 
     public InvoiceId? LastListedSourceInvoiceId { get; private set; }
@@ -100,6 +104,8 @@ internal sealed class InMemoryAccrualRepository : IAccrualRepository
         decimal? amountFrom = null,
         decimal? amountTo = null,
         string? description = null,
+        DateTimeOffset? recognizedFromUtc = null,
+        DateTimeOffset? recognizedToUtc = null,
         CancellationToken cancellationToken = default)
     {
         ListPagedCallCount++;
@@ -117,6 +123,8 @@ internal sealed class InMemoryAccrualRepository : IAccrualRepository
         LastListedAmountFrom = amountFrom;
         LastListedAmountTo = amountTo;
         LastListedPagedDescription = description;
+        LastListedRecognizedFromUtc = recognizedFromUtc;
+        LastListedRecognizedToUtc = recognizedToUtc;
         LastListPagedCancellationToken = cancellationToken;
 
         var matched = _byId.Values
@@ -136,6 +144,12 @@ internal sealed class InMemoryAccrualRepository : IAccrualRepository
             .Where(accrual =>
                 description is null ||
                 string.Equals(accrual.Description, description, StringComparison.Ordinal))
+            .Where(accrual =>
+                recognizedFromUtc is null ||
+                (accrual.RecognizedAt is { } recognizedAt && recognizedAt >= recognizedFromUtc.Value))
+            .Where(accrual =>
+                recognizedToUtc is null ||
+                (accrual.RecognizedAt is { } recognizedAt && recognizedAt <= recognizedToUtc.Value))
             .OrderByDescending(accrual => accrual.CreatedAt)
             .ThenByDescending(accrual => accrual.Id.Value)
             .ToList();

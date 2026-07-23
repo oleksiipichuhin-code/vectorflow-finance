@@ -40,6 +40,7 @@ public sealed class GetAccrualsPagedHandler
             currency = ParseCurrencyFilter(query.Currency);
             EnsureAmountRange(query.AmountFrom, query.AmountTo);
             description = ParseDescriptionFilter(query.Description);
+            EnsureRecognizedAtRange(query.RecognizedFromUtc, query.RecognizedToUtc);
         }
         catch (ArgumentException ex)
         {
@@ -61,6 +62,8 @@ public sealed class GetAccrualsPagedHandler
             query.AmountFrom,
             query.AmountTo,
             description,
+            query.RecognizedFromUtc,
+            query.RecognizedToUtc,
             cancellationToken);
 
         var page = new PageResult<AccrualDto>(
@@ -149,6 +152,17 @@ public sealed class GetAccrualsPagedHandler
         {
             throw new ArgumentException(
                 "AmountFrom must not be greater than AmountTo.");
+        }
+    }
+
+    private static void EnsureRecognizedAtRange(
+        DateTimeOffset? recognizedFromUtc,
+        DateTimeOffset? recognizedToUtc)
+    {
+        if (recognizedFromUtc is { } from && recognizedToUtc is { } to && from > to)
+        {
+            throw new ArgumentException(
+                "RecognizedFromUtc must not be later than RecognizedToUtc.");
         }
     }
 
