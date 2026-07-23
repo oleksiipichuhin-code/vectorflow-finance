@@ -25,11 +25,12 @@ public interface IAccrualRepository
     /// <summary>
     /// Returns a workspace-scoped page of accruals ordered by CreatedAt descending, then Id descending,
     /// together with the total matching count. Optional <paramref name="status"/>, optional
-    /// <paramref name="sourceInvoiceId"/>, optional <paramref name="type"/>, and optional
-    /// <paramref name="currency"/> (exact Ordinal match on normalized Currency.Code), and optional
-    /// <paramref name="description"/> (exact Ordinal match after Description trim/normalization) are applied
-    /// in the query; inclusive CreatedAt bounds (<paramref name="createdFromUtc"/> / <paramref name="createdToUtc"/>),
-    /// inclusive RecognitionDate bounds (<paramref name="recognitionFromUtc"/> /
+    /// <paramref name="sourceInvoiceId"/>, optional <paramref name="type"/>, optional
+    /// <paramref name="currency"/> (exact Ordinal match on normalized Currency.Code), optional
+    /// <paramref name="description"/> (exact Ordinal match after Description trim/normalization), and optional
+    /// <paramref name="reversalReason"/> (exact Ordinal match after ReversalReason trim/normalization) are
+    /// applied in the query; inclusive CreatedAt bounds (<paramref name="createdFromUtc"/> /
+    /// <paramref name="createdToUtc"/>), inclusive RecognitionDate bounds (<paramref name="recognitionFromUtc"/> /
     /// <paramref name="recognitionToUtc"/>), inclusive Amount bounds (<paramref name="amountFrom"/> /
     /// <paramref name="amountTo"/>), inclusive RecognizedAt bounds (<paramref name="recognizedFromUtc"/> /
     /// <paramref name="recognizedToUtc"/>), and inclusive ReversedAt bounds (<paramref name="reversedFromUtc"/> /
@@ -46,6 +47,8 @@ public interface IAccrualRepository
     /// no partial/prefix/case-insensitive/full-text mode). A null <paramref name="recognizedFromUtc"/> /
     /// <paramref name="recognizedToUtc"/> means no that RecognizedAt bound. A null
     /// <paramref name="reversedFromUtc"/> / <paramref name="reversedToUtc"/> means no that ReversedAt bound.
+    /// A null <paramref name="reversalReason"/> means no ReversalReason filter (positive exact match only when
+    /// provided; null ReversalReason rows do not match; no partial/prefix/case-insensitive/full-text mode).
     /// </summary>
     Task<(IReadOnlyList<Accrual> Items, int TotalCount)> ListPagedAsync(
         FinanceWorkspaceId financeWorkspaceId,
@@ -66,6 +69,7 @@ public interface IAccrualRepository
         DateTimeOffset? recognizedToUtc = null,
         DateTimeOffset? reversedFromUtc = null,
         DateTimeOffset? reversedToUtc = null,
+        string? reversalReason = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

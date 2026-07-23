@@ -61,6 +61,7 @@ public sealed class AccrualRepository : IAccrualRepository
         DateTimeOffset? recognizedToUtc = null,
         DateTimeOffset? reversedFromUtc = null,
         DateTimeOffset? reversedToUtc = null,
+        string? reversalReason = null,
         CancellationToken cancellationToken = default)
     {
         // SQLite cannot translate DateTimeOffset comparisons; CreatedAt, RecognitionDate, Amount,
@@ -73,7 +74,8 @@ public sealed class AccrualRepository : IAccrualRepository
                 sourceInvoiceId,
                 type,
                 currency,
-                description)
+                description,
+                reversalReason)
             .ToListAsync(cancellationToken);
 
         IEnumerable<Accrual> filtered = accruals;
@@ -153,7 +155,8 @@ public sealed class AccrualRepository : IAccrualRepository
         InvoiceId? sourceInvoiceId,
         AccrualType? type,
         string? currency,
-        string? description)
+        string? description,
+        string? reversalReason)
     {
         var filtered = source.Where(accrual => accrual.FinanceWorkspaceId == financeWorkspaceId);
 
@@ -181,6 +184,11 @@ public sealed class AccrualRepository : IAccrualRepository
         if (description is not null)
         {
             filtered = filtered.Where(accrual => accrual.Description == description);
+        }
+
+        if (reversalReason is not null)
+        {
+            filtered = filtered.Where(accrual => accrual.ReversalReason == reversalReason);
         }
 
         return filtered;

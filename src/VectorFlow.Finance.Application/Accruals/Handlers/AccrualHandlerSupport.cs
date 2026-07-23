@@ -81,4 +81,25 @@ internal static class AccrualHandlerSupport
 
         return normalized;
     }
+
+    /// <summary>
+    /// Mirrors Domain <c>Accrual.NormalizeReversalReason</c> (trim; blank and max-length rejected).
+    /// </summary>
+    public static string NormalizeReversalReason(string? reversalReason)
+    {
+        if (string.IsNullOrWhiteSpace(reversalReason))
+        {
+            throw new ArgumentException("Accrual reversal reason must not be blank.", nameof(reversalReason));
+        }
+
+        var normalized = reversalReason.Trim();
+        if (normalized.Length > Accrual.ReversalReasonMaxLength)
+        {
+            throw new ArgumentException(
+                $"Accrual reversal reason must not exceed {Accrual.ReversalReasonMaxLength} characters.",
+                nameof(reversalReason));
+        }
+
+        return normalized;
+    }
 }

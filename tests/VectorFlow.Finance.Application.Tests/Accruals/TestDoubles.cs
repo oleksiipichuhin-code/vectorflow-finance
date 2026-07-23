@@ -53,6 +53,8 @@ internal sealed class InMemoryAccrualRepository : IAccrualRepository
 
     public DateTimeOffset? LastListedReversedToUtc { get; private set; }
 
+    public string? LastListedPagedReversalReason { get; private set; }
+
     public CancellationToken? LastListPagedCancellationToken { get; private set; }
 
     public InvoiceId? LastListedSourceInvoiceId { get; private set; }
@@ -112,6 +114,7 @@ internal sealed class InMemoryAccrualRepository : IAccrualRepository
         DateTimeOffset? recognizedToUtc = null,
         DateTimeOffset? reversedFromUtc = null,
         DateTimeOffset? reversedToUtc = null,
+        string? reversalReason = null,
         CancellationToken cancellationToken = default)
     {
         ListPagedCallCount++;
@@ -133,6 +136,7 @@ internal sealed class InMemoryAccrualRepository : IAccrualRepository
         LastListedRecognizedToUtc = recognizedToUtc;
         LastListedReversedFromUtc = reversedFromUtc;
         LastListedReversedToUtc = reversedToUtc;
+        LastListedPagedReversalReason = reversalReason;
         LastListPagedCancellationToken = cancellationToken;
 
         var matched = _byId.Values
@@ -164,6 +168,9 @@ internal sealed class InMemoryAccrualRepository : IAccrualRepository
             .Where(accrual =>
                 reversedToUtc is null ||
                 (accrual.ReversedAt is { } reversedAt && reversedAt <= reversedToUtc.Value))
+            .Where(accrual =>
+                reversalReason is null ||
+                string.Equals(accrual.ReversalReason, reversalReason, StringComparison.Ordinal))
             .OrderByDescending(accrual => accrual.CreatedAt)
             .ThenByDescending(accrual => accrual.Id.Value)
             .ToList();

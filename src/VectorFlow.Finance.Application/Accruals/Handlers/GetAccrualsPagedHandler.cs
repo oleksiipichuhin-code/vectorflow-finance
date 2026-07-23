@@ -28,6 +28,7 @@ public sealed class GetAccrualsPagedHandler
         AccrualType? type;
         string? currency;
         string? description;
+        string? reversalReason;
         try
         {
             financeWorkspaceId = new FinanceWorkspaceId(query.FinanceWorkspaceId);
@@ -42,6 +43,7 @@ public sealed class GetAccrualsPagedHandler
             description = ParseDescriptionFilter(query.Description);
             EnsureRecognizedAtRange(query.RecognizedFromUtc, query.RecognizedToUtc);
             EnsureReversedAtRange(query.ReversedFromUtc, query.ReversedToUtc);
+            reversalReason = ParseReversalReasonFilter(query.ReversalReason);
         }
         catch (ArgumentException ex)
         {
@@ -67,6 +69,7 @@ public sealed class GetAccrualsPagedHandler
             query.RecognizedToUtc,
             query.ReversedFromUtc,
             query.ReversedToUtc,
+            reversalReason,
             cancellationToken);
 
         var page = new PageResult<AccrualDto>(
@@ -229,4 +232,12 @@ public sealed class GetAccrualsPagedHandler
     /// </summary>
     private static string? ParseDescriptionFilter(string? description) =>
         description is null ? null : AccrualHandlerSupport.NormalizeDescription(description);
+
+    /// <summary>
+    /// Missing (<c>null</c>) means no ReversalReason filter. When provided, normalize/validate via
+    /// <see cref="AccrualHandlerSupport.NormalizeReversalReason"/>. Positive exact Ordinal match only;
+    /// null ReversalReason rows do not match; no partial/prefix/case-insensitive/full-text mode.
+    /// </summary>
+    private static string? ParseReversalReasonFilter(string? reversalReason) =>
+        reversalReason is null ? null : AccrualHandlerSupport.NormalizeReversalReason(reversalReason);
 }

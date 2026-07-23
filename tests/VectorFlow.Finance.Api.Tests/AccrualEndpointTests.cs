@@ -2419,6 +2419,114 @@ public sealed class AccrualEndpointTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ListPaged_reversal_reason_exact_match_filters()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("a1000000-0000-0000-0000-0000000000d1"),
+            Guid.Parse("a2000000-0000-0000-0000-0000000000d1"));
+
+        var match = await SeedReversedAccrualAsync(
+            workspaceId, "Match", T1, T1, T1, reason: "Exact reason");
+        await SeedReversedAccrualAsync(
+            workspaceId, "Other", T1, T1, T1, reason: "Other reason");
+        await SeedReversedAccrualAsync(
+            workspaceId, "Case", T2, T2, T2, reason: "exact reason");
+        await CreateAccrualAsync(workspaceId, "Revenue", 40m, "Draft");
+
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/accruals/paged?page=1&pageSize=10&reversalReason=Exact%20reason");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(1, document.RootElement.GetProperty("totalCount").GetInt32());
+        Assert.Equal(
+            match,
+            Assert.Single(document.RootElement.GetProperty("items").EnumerateArray()).GetProperty("id").GetGuid());
+    }
+
+    [Fact]
+    public async Task ListPaged_reversal_reason_trims_query_value()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("a1000000-0000-0000-0000-0000000000d2"),
+            Guid.Parse("a2000000-0000-0000-0000-0000000000d2"));
+
+        var match = await SeedReversedAccrualAsync(
+            workspaceId, "Match", T1, T1, T1, reason: "Trimmed");
+        await SeedReversedAccrualAsync(
+            workspaceId, "Other", T1, T1, T1, reason: "Other");
+
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/accruals/paged?page=1&pageSize=10&reversalReason=%20%20Trimmed%20%20");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(1, document.RootElement.GetProperty("totalCount").GetInt32());
+        Assert.Equal(
+            match,
+            Assert.Single(document.RootElement.GetProperty("items").EnumerateArray()).GetProperty("id").GetGuid());
+    }
+
+    [Fact]
+    public async Task ListPaged_blank_reversal_reason_returns_400()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("a1000000-0000-0000-0000-0000000000d3"),
+            Guid.Parse("a2000000-0000-0000-0000-0000000000d3"));
+
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/accruals/paged?page=1&pageSize=10&reversalReason=%20%20");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        await AssertErrorAsync(response, "ValidationFailed");
+    }
+
+    [Fact]
+    public async Task ListPaged_reversal_reason_composes_with_reversed_range()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("a1000000-0000-0000-0000-0000000000d4"),
+            Guid.Parse("a2000000-0000-0000-0000-0000000000d4"));
+
+        var match = await SeedReversedAccrualAsync(
+            workspaceId, "Match", T1, T1, T1, reason: "Target");
+        await SeedReversedAccrualAsync(
+            workspaceId, "Wrong", T1, T1, T1, reason: "Other");
+        await SeedReversedAccrualAsync(
+            workspaceId, "Late", T2, T2, T2, reason: "Target");
+
+        var bound = Uri.EscapeDataString("2026-07-20T11:00:00+00:00");
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/accruals/paged?page=1&pageSize=10&reversalReason=Target&reversedFromUtc={bound}&reversedToUtc={bound}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(1, document.RootElement.GetProperty("totalCount").GetInt32());
+        Assert.Equal(
+            match,
+            Assert.Single(document.RootElement.GetProperty("items").EnumerateArray()).GetProperty("id").GetGuid());
+    }
+
+    [Fact]
+    public async Task ListPaged_omitted_reversal_reason_preserves_all()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("a1000000-0000-0000-0000-0000000000d5"),
+            Guid.Parse("a2000000-0000-0000-0000-0000000000d5"));
+
+        await SeedReversedAccrualAsync(workspaceId, "A", T0, T0, T0, reason: "One");
+        await SeedReversedAccrualAsync(workspaceId, "B", T1, T1, T1, reason: "Two");
+
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/accruals/paged?page=1&pageSize=10");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(2, document.RootElement.GetProperty("totalCount").GetInt32());
+        Assert.Equal(2, document.RootElement.GetProperty("items").GetArrayLength());
+    }
+
+    [Fact]
     public async Task Get_by_id_still_resolves_after_list_route()
     {
         var workspaceId = await CreateWorkspaceAsync(
@@ -3067,6 +3175,7 @@ public sealed class AccrualEndpointTests : IAsyncLifetime
         Assert.Contains("recognizedToUtc", json);
         Assert.Contains("reversedFromUtc", json);
         Assert.Contains("reversedToUtc", json);
+        Assert.Contains("reversalReason", json);
         Assert.Contains("currency", json);
         Assert.Contains("date-time", json);
         Assert.Single(System.Text.RegularExpressions.Regex.Matches(json, "\"ListAccruals\""));
@@ -3155,7 +3264,8 @@ public sealed class AccrualEndpointTests : IAsyncLifetime
         DateTimeOffset createdAt,
         DateTimeOffset recognizedAt,
         DateTimeOffset reversedAt,
-        DateTimeOffset? recognitionDate = null)
+        DateTimeOffset? recognitionDate = null,
+        string reason = "Seed reverse")
     {
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<FinanceDbContext>();
@@ -3170,7 +3280,7 @@ public sealed class AccrualEndpointTests : IAsyncLifetime
             sourceInvoiceId: null,
             createdAt);
         accrual.Recognize(recognizedAt);
-        accrual.Reverse("Seed reverse", reversedAt);
+        accrual.Reverse(reason, reversedAt);
         db.Accruals.Add(accrual);
         await db.SaveChangesAsync();
         return accrual.Id.Value;

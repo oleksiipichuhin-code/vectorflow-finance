@@ -2485,6 +2485,150 @@ public sealed class AccrualApplicationTests
     }
 
     [Fact]
+    public async Task ListPaged_omitted_reversal_reason_passes_null_to_repository()
+    {
+        var (accruals, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "Draft");
+
+        var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
+            new GetAccrualsPagedQuery(workspaceId, Page: 1, PageSize: 10));
+
+        Assert.True(result.IsSuccess);
+        Assert.Null(accruals.LastListedPagedReversalReason);
+        Assert.Equal(1, result.Value!.TotalCount);
+    }
+
+    [Fact]
+    public async Task ListPaged_reversal_reason_passes_normalized_value_to_repository()
+    {
+        var (accruals, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
+            new GetAccrualsPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 10,
+                ReversalReason: "  Exact reason  "));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("Exact reason", accruals.LastListedPagedReversalReason);
+    }
+
+    [Fact]
+    public async Task ListPaged_blank_reversal_reason_returns_ValidationFailed()
+    {
+        var (accruals, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
+            new GetAccrualsPagedQuery(workspaceId, Page: 1, PageSize: 10, ReversalReason: "   "));
+
+        Assert.Equal(ApplicationErrorKind.ValidationFailed, result.ErrorKind);
+        Assert.Equal(0, accruals.ListPagedCallCount);
+    }
+
+    [Fact]
+    public async Task ListPaged_overlength_reversal_reason_returns_ValidationFailed()
+    {
+        var (accruals, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        var overlength = new string('x', Accrual.ReversalReasonMaxLength + 1);
+
+        var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
+            new GetAccrualsPagedQuery(workspaceId, Page: 1, PageSize: 10, ReversalReason: overlength));
+
+        Assert.Equal(ApplicationErrorKind.ValidationFailed, result.ErrorKind);
+        Assert.Equal(0, accruals.ListPagedCallCount);
+    }
+
+    [Fact]
+    public async Task ListPaged_reversal_reason_filters_exact_ordinal_via_repository()
+    {
+        var (accruals, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        clock.UtcNow = T0;
+        var other = await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "A");
+        Assert.True((await new RecognizeAccrualHandler(accruals, clock).HandleAsync(
+            new RecognizeAccrualCommand(workspaceId, other.Id))).IsSuccess);
+        Assert.True((await new ReverseAccrualHandler(accruals, clock).HandleAsync(
+            new ReverseAccrualCommand(workspaceId, other.Id, "Other reason"))).IsSuccess);
+
+        clock.UtcNow = T1;
+        var match = await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "B");
+        Assert.True((await new RecognizeAccrualHandler(accruals, clock).HandleAsync(
+            new RecognizeAccrualCommand(workspaceId, match.Id))).IsSuccess);
+        Assert.True((await new ReverseAccrualHandler(accruals, clock).HandleAsync(
+            new ReverseAccrualCommand(workspaceId, match.Id, "Exact reason"))).IsSuccess);
+
+        clock.UtcNow = T2;
+        var caseVariant = await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "C");
+        Assert.True((await new RecognizeAccrualHandler(accruals, clock).HandleAsync(
+            new RecognizeAccrualCommand(workspaceId, caseVariant.Id))).IsSuccess);
+        Assert.True((await new ReverseAccrualHandler(accruals, clock).HandleAsync(
+            new ReverseAccrualCommand(workspaceId, caseVariant.Id, "exact reason"))).IsSuccess);
+
+        await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "Draft");
+
+        var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
+            new GetAccrualsPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 10,
+                ReversalReason: "Exact reason"));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(1, result.Value!.TotalCount);
+        Assert.Equal(match.Id, Assert.Single(result.Value.Items).Id);
+        Assert.Equal("Exact reason", accruals.LastListedPagedReversalReason);
+    }
+
+    [Fact]
+    public async Task ListPaged_reversal_reason_composes_with_reversed_range()
+    {
+        var (accruals, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        clock.UtcNow = T1;
+        var match = await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "Match");
+        Assert.True((await new RecognizeAccrualHandler(accruals, clock).HandleAsync(
+            new RecognizeAccrualCommand(workspaceId, match.Id))).IsSuccess);
+        Assert.True((await new ReverseAccrualHandler(accruals, clock).HandleAsync(
+            new ReverseAccrualCommand(workspaceId, match.Id, "Target"))).IsSuccess);
+
+        clock.UtcNow = T0;
+        var wrongReason = await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "Wrong");
+        Assert.True((await new RecognizeAccrualHandler(accruals, clock).HandleAsync(
+            new RecognizeAccrualCommand(workspaceId, wrongReason.Id))).IsSuccess);
+        Assert.True((await new ReverseAccrualHandler(accruals, clock).HandleAsync(
+            new ReverseAccrualCommand(workspaceId, wrongReason.Id, "Other"))).IsSuccess);
+
+        clock.UtcNow = T2;
+        var outOfRange = await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "Late");
+        Assert.True((await new RecognizeAccrualHandler(accruals, clock).HandleAsync(
+            new RecognizeAccrualCommand(workspaceId, outOfRange.Id))).IsSuccess);
+        Assert.True((await new ReverseAccrualHandler(accruals, clock).HandleAsync(
+            new ReverseAccrualCommand(workspaceId, outOfRange.Id, "Target"))).IsSuccess);
+
+        var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
+            new GetAccrualsPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 10,
+                ReversedFromUtc: T1,
+                ReversedToUtc: T1,
+                ReversalReason: "Target"));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(1, result.Value!.TotalCount);
+        Assert.Equal(match.Id, Assert.Single(result.Value.Items).Id);
+        Assert.Equal("Target", accruals.LastListedPagedReversalReason);
+        Assert.Equal(T1, accruals.LastListedReversedFromUtc);
+    }
+
+    [Fact]
     public async Task List_equal_created_at_orders_by_id_descending()
     {
         var (accruals, workspaces, clock) = CreateHarness();
