@@ -41,6 +41,7 @@ public sealed class GetAccrualsPagedHandler
             EnsureAmountRange(query.AmountFrom, query.AmountTo);
             description = ParseDescriptionFilter(query.Description);
             EnsureRecognizedAtRange(query.RecognizedFromUtc, query.RecognizedToUtc);
+            EnsureReversedAtRange(query.ReversedFromUtc, query.ReversedToUtc);
         }
         catch (ArgumentException ex)
         {
@@ -64,6 +65,8 @@ public sealed class GetAccrualsPagedHandler
             description,
             query.RecognizedFromUtc,
             query.RecognizedToUtc,
+            query.ReversedFromUtc,
+            query.ReversedToUtc,
             cancellationToken);
 
         var page = new PageResult<AccrualDto>(
@@ -163,6 +166,17 @@ public sealed class GetAccrualsPagedHandler
         {
             throw new ArgumentException(
                 "RecognizedFromUtc must not be later than RecognizedToUtc.");
+        }
+    }
+
+    private static void EnsureReversedAtRange(
+        DateTimeOffset? reversedFromUtc,
+        DateTimeOffset? reversedToUtc)
+    {
+        if (reversedFromUtc is { } from && reversedToUtc is { } to && from > to)
+        {
+            throw new ArgumentException(
+                "ReversedFromUtc must not be later than ReversedToUtc.");
         }
     }
 

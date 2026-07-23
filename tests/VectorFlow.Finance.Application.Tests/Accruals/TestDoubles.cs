@@ -49,6 +49,10 @@ internal sealed class InMemoryAccrualRepository : IAccrualRepository
 
     public DateTimeOffset? LastListedRecognizedToUtc { get; private set; }
 
+    public DateTimeOffset? LastListedReversedFromUtc { get; private set; }
+
+    public DateTimeOffset? LastListedReversedToUtc { get; private set; }
+
     public CancellationToken? LastListPagedCancellationToken { get; private set; }
 
     public InvoiceId? LastListedSourceInvoiceId { get; private set; }
@@ -106,6 +110,8 @@ internal sealed class InMemoryAccrualRepository : IAccrualRepository
         string? description = null,
         DateTimeOffset? recognizedFromUtc = null,
         DateTimeOffset? recognizedToUtc = null,
+        DateTimeOffset? reversedFromUtc = null,
+        DateTimeOffset? reversedToUtc = null,
         CancellationToken cancellationToken = default)
     {
         ListPagedCallCount++;
@@ -125,6 +131,8 @@ internal sealed class InMemoryAccrualRepository : IAccrualRepository
         LastListedPagedDescription = description;
         LastListedRecognizedFromUtc = recognizedFromUtc;
         LastListedRecognizedToUtc = recognizedToUtc;
+        LastListedReversedFromUtc = reversedFromUtc;
+        LastListedReversedToUtc = reversedToUtc;
         LastListPagedCancellationToken = cancellationToken;
 
         var matched = _byId.Values
@@ -150,6 +158,12 @@ internal sealed class InMemoryAccrualRepository : IAccrualRepository
             .Where(accrual =>
                 recognizedToUtc is null ||
                 (accrual.RecognizedAt is { } recognizedAt && recognizedAt <= recognizedToUtc.Value))
+            .Where(accrual =>
+                reversedFromUtc is null ||
+                (accrual.ReversedAt is { } reversedAt && reversedAt >= reversedFromUtc.Value))
+            .Where(accrual =>
+                reversedToUtc is null ||
+                (accrual.ReversedAt is { } reversedAt && reversedAt <= reversedToUtc.Value))
             .OrderByDescending(accrual => accrual.CreatedAt)
             .ThenByDescending(accrual => accrual.Id.Value)
             .ToList();

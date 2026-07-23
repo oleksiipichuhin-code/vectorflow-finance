@@ -2270,6 +2270,155 @@ public sealed class AccrualEndpointTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ListPaged_reversed_from_only_filters_inclusive()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("a1000000-0000-0000-0000-0000000000c1"),
+            Guid.Parse("a2000000-0000-0000-0000-0000000000c1"));
+
+        var early = await SeedReversedAccrualAsync(workspaceId, "Early", T0, T0, T0);
+        var onBound = await SeedReversedAccrualAsync(workspaceId, "On", T1, T1, T1);
+        var late = await SeedReversedAccrualAsync(workspaceId, "Late", T2, T2, T2);
+        await CreateAccrualAsync(workspaceId, "Revenue", 40m, "Draft");
+
+        var from = Uri.EscapeDataString("2026-07-20T11:00:00+00:00");
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/accruals/paged?page=1&pageSize=10&reversedFromUtc={from}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(2, document.RootElement.GetProperty("totalCount").GetInt32());
+        var ids = document.RootElement.GetProperty("items").EnumerateArray()
+            .Select(item => item.GetProperty("id").GetGuid())
+            .ToArray();
+        Assert.Contains(onBound, ids);
+        Assert.Contains(late, ids);
+        Assert.DoesNotContain(early, ids);
+    }
+
+    [Fact]
+    public async Task ListPaged_reversed_both_bounds_filter_closed_range()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("a1000000-0000-0000-0000-0000000000c2"),
+            Guid.Parse("a2000000-0000-0000-0000-0000000000c2"));
+
+        await SeedReversedAccrualAsync(workspaceId, "Early", T0, T0, T0);
+        var mid = await SeedReversedAccrualAsync(workspaceId, "Mid", T1, T1, T1);
+        await SeedReversedAccrualAsync(workspaceId, "Late", T2, T2, T2);
+
+        var bound = Uri.EscapeDataString("2026-07-20T11:00:00+00:00");
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/accruals/paged?page=1&pageSize=10&reversedFromUtc={bound}&reversedToUtc={bound}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(1, document.RootElement.GetProperty("totalCount").GetInt32());
+        Assert.Equal(
+            mid,
+            Assert.Single(document.RootElement.GetProperty("items").EnumerateArray()).GetProperty("id").GetGuid());
+    }
+
+    [Fact]
+    public async Task ListPaged_reversed_bound_excludes_null_reversed_at()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("a1000000-0000-0000-0000-0000000000c3"),
+            Guid.Parse("a2000000-0000-0000-0000-0000000000c3"));
+
+        await CreateAccrualAsync(workspaceId, "Revenue", 10m, "Draft");
+        await SeedRecognizedAccrualAsync(workspaceId, "Recognized", T1, T1);
+        var reversed = await SeedReversedAccrualAsync(workspaceId, "Reversed", T1, T1, T1);
+
+        var from = Uri.EscapeDataString("2026-07-20T10:00:00+00:00");
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/accruals/paged?page=1&pageSize=10&reversedFromUtc={from}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(1, document.RootElement.GetProperty("totalCount").GetInt32());
+        Assert.Equal(
+            reversed,
+            Assert.Single(document.RootElement.GetProperty("items").EnumerateArray()).GetProperty("id").GetGuid());
+    }
+
+    [Fact]
+    public async Task ListPaged_reversed_from_after_to_returns_400()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("a1000000-0000-0000-0000-0000000000c4"),
+            Guid.Parse("a2000000-0000-0000-0000-0000000000c4"));
+
+        var from = Uri.EscapeDataString("2026-07-20T12:00:00+00:00");
+        var to = Uri.EscapeDataString("2026-07-20T10:00:00+00:00");
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/accruals/paged?page=1&pageSize=10&reversedFromUtc={from}&reversedToUtc={to}");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        await AssertErrorAsync(response, "ValidationFailed");
+    }
+
+    [Fact]
+    public async Task ListPaged_malformed_reversed_from_returns_400()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("a1000000-0000-0000-0000-0000000000c5"),
+            Guid.Parse("a2000000-0000-0000-0000-0000000000c5"));
+
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/accruals/paged?page=1&pageSize=10&reversedFromUtc=not-a-date");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ListPaged_reversed_composes_with_description()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("a1000000-0000-0000-0000-0000000000c6"),
+            Guid.Parse("a2000000-0000-0000-0000-0000000000c6"));
+
+        var match = await SeedReversedAccrualAsync(workspaceId, "Target", T1, T1, T1);
+        await SeedReversedAccrualAsync(workspaceId, "Other", T1, T1, T1);
+        await SeedRecognizedAccrualAsync(workspaceId, "Target", T1, T1);
+
+        var bound = Uri.EscapeDataString("2026-07-20T11:00:00+00:00");
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/accruals/paged?page=1&pageSize=10&description=Target&reversedFromUtc={bound}&reversedToUtc={bound}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(1, document.RootElement.GetProperty("totalCount").GetInt32());
+        Assert.Equal(
+            match,
+            Assert.Single(document.RootElement.GetProperty("items").EnumerateArray()).GetProperty("id").GetGuid());
+    }
+
+    [Fact]
+    public async Task ListPaged_reversed_is_independent_of_recognized_at_param()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("a1000000-0000-0000-0000-0000000000c7"),
+            Guid.Parse("a2000000-0000-0000-0000-0000000000c7"));
+
+        var match = await SeedReversedAccrualAsync(workspaceId, "Match", T0, T0, T1);
+        await SeedReversedAccrualAsync(workspaceId, "Wrong recognized", T0, T1, T1);
+        await SeedReversedAccrualAsync(workspaceId, "Wrong reversed", T0, T0, T2);
+
+        var recognized = Uri.EscapeDataString("2026-07-20T10:00:00+00:00");
+        var reversed = Uri.EscapeDataString("2026-07-20T11:00:00+00:00");
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/accruals/paged?page=1&pageSize=10&recognizedFromUtc={recognized}&recognizedToUtc={recognized}&reversedFromUtc={reversed}&reversedToUtc={reversed}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(1, document.RootElement.GetProperty("totalCount").GetInt32());
+        Assert.Equal(
+            match,
+            Assert.Single(document.RootElement.GetProperty("items").EnumerateArray()).GetProperty("id").GetGuid());
+    }
+
+    [Fact]
     public async Task Get_by_id_still_resolves_after_list_route()
     {
         var workspaceId = await CreateWorkspaceAsync(
@@ -2916,6 +3065,8 @@ public sealed class AccrualEndpointTests : IAsyncLifetime
         Assert.Contains("recognitionToUtc", json);
         Assert.Contains("recognizedFromUtc", json);
         Assert.Contains("recognizedToUtc", json);
+        Assert.Contains("reversedFromUtc", json);
+        Assert.Contains("reversedToUtc", json);
         Assert.Contains("currency", json);
         Assert.Contains("date-time", json);
         Assert.Single(System.Text.RegularExpressions.Regex.Matches(json, "\"ListAccruals\""));
@@ -2993,6 +3144,33 @@ public sealed class AccrualEndpointTests : IAsyncLifetime
             sourceInvoiceId: null,
             createdAt);
         accrual.Recognize(recognizedAt);
+        db.Accruals.Add(accrual);
+        await db.SaveChangesAsync();
+        return accrual.Id.Value;
+    }
+
+    private async Task<Guid> SeedReversedAccrualAsync(
+        Guid workspaceId,
+        string description,
+        DateTimeOffset createdAt,
+        DateTimeOffset recognizedAt,
+        DateTimeOffset reversedAt,
+        DateTimeOffset? recognitionDate = null)
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<FinanceDbContext>();
+        var accrual = Accrual.Create(
+            AccrualId.New(),
+            new FinanceWorkspaceId(workspaceId),
+            AccrualType.Revenue,
+            50m,
+            new Currency("UAH"),
+            recognitionDate ?? RecognitionDate,
+            description,
+            sourceInvoiceId: null,
+            createdAt);
+        accrual.Recognize(recognizedAt);
+        accrual.Reverse("Seed reverse", reversedAt);
         db.Accruals.Add(accrual);
         await db.SaveChangesAsync();
         return accrual.Id.Value;

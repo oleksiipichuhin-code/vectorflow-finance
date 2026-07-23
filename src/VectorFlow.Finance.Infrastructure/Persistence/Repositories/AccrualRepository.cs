@@ -59,11 +59,13 @@ public sealed class AccrualRepository : IAccrualRepository
         string? description = null,
         DateTimeOffset? recognizedFromUtc = null,
         DateTimeOffset? recognizedToUtc = null,
+        DateTimeOffset? reversedFromUtc = null,
+        DateTimeOffset? reversedToUtc = null,
         CancellationToken cancellationToken = default)
     {
         // SQLite cannot translate DateTimeOffset comparisons; CreatedAt, RecognitionDate, Amount,
-        // and RecognizedAt bounds are applied in memory (Amount/RecognizedAt stay with the existing
-        // in-memory filter stage).
+        // RecognizedAt, and ReversedAt bounds are applied in memory (Amount/RecognizedAt/ReversedAt
+        // stay with the existing in-memory filter stage).
         var accruals = await ApplySqlPagedFilters(
                 _dbContext.Accruals,
                 financeWorkspaceId,
@@ -116,6 +118,18 @@ public sealed class AccrualRepository : IAccrualRepository
         {
             filtered = filtered.Where(accrual =>
                 accrual.RecognizedAt is { } recognizedAt && recognizedAt <= recognizedToUtc.Value);
+        }
+
+        if (reversedFromUtc is not null)
+        {
+            filtered = filtered.Where(accrual =>
+                accrual.ReversedAt is { } reversedAt && reversedAt >= reversedFromUtc.Value);
+        }
+
+        if (reversedToUtc is not null)
+        {
+            filtered = filtered.Where(accrual =>
+                accrual.ReversedAt is { } reversedAt && reversedAt <= reversedToUtc.Value);
         }
 
         var matched = filtered

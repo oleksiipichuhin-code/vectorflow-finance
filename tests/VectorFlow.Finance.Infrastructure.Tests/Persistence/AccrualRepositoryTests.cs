@@ -2607,6 +2607,279 @@ public sealed class AccrualRepositoryTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ListPaged_reversed_from_includes_lower_bound_and_excludes_earlier()
+    {
+        var early = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 10m, new Currency("UAH"),
+            RecognitionDate, "Early", null, T0);
+        early.Recognize(T0);
+        early.Reverse("Early reverse", T0);
+        var onBound = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 20m, new Currency("UAH"),
+            RecognitionDate, "On", null, T1);
+        onBound.Recognize(T1);
+        onBound.Reverse("On reverse", T1);
+        var late = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Expense, 30m, new Currency("UAH"),
+            RecognitionDate, "Late", null, T2);
+        late.Recognize(T2);
+        late.Reverse("Late reverse", T2);
+        var recognizedOnly = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 40m, new Currency("UAH"),
+            RecognitionDate, "Recognized", null, T2);
+        recognizedOnly.Recognize(T2);
+
+        await _repository.AddAsync(early);
+        await _repository.AddAsync(onBound);
+        await _repository.AddAsync(late);
+        await _repository.AddAsync(recognizedOnly);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var (items, totalCount) = await new AccrualRepository(readContext)
+            .ListPagedAsync(_workspaceA, page: 1, pageSize: 10, reversedFromUtc: T1);
+
+        Assert.Equal(2, totalCount);
+        Assert.Equal(late.Id, items[0].Id);
+        Assert.Equal(onBound.Id, items[1].Id);
+    }
+
+    [Fact]
+    public async Task ListPaged_reversed_closed_range_is_inclusive()
+    {
+        var early = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 10m, new Currency("UAH"),
+            RecognitionDate, "Early", null, T0);
+        early.Recognize(T0);
+        early.Reverse("Early reverse", T0);
+        var mid = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 20m, new Currency("UAH"),
+            RecognitionDate, "Mid", null, T1);
+        mid.Recognize(T1);
+        mid.Reverse("Mid reverse", T1);
+        var late = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Expense, 30m, new Currency("UAH"),
+            RecognitionDate, "Late", null, T2);
+        late.Recognize(T2);
+        late.Reverse("Late reverse", T2);
+
+        await _repository.AddAsync(early);
+        await _repository.AddAsync(mid);
+        await _repository.AddAsync(late);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var (items, totalCount) = await new AccrualRepository(readContext)
+            .ListPagedAsync(
+                _workspaceA,
+                page: 1,
+                pageSize: 10,
+                reversedFromUtc: T1,
+                reversedToUtc: T1);
+
+        Assert.Equal(1, totalCount);
+        Assert.Equal(mid.Id, Assert.Single(items).Id);
+    }
+
+    [Fact]
+    public async Task ListPaged_reversed_bound_excludes_null_reversed_at()
+    {
+        var draft = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 10m, new Currency("UAH"),
+            RecognitionDate, "Draft", null, T0);
+        var recognized = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Expense, 20m, new Currency("UAH"),
+            RecognitionDate, "Recognized", null, T1);
+        recognized.Recognize(T1);
+        var reversed = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 30m, new Currency("UAH"),
+            RecognitionDate, "Reversed", null, T1);
+        reversed.Recognize(T1);
+        reversed.Reverse("Undo", T1);
+
+        await _repository.AddAsync(draft);
+        await _repository.AddAsync(recognized);
+        await _repository.AddAsync(reversed);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var (items, totalCount) = await new AccrualRepository(readContext)
+            .ListPagedAsync(_workspaceA, page: 1, pageSize: 10, reversedFromUtc: T0);
+
+        Assert.Equal(1, totalCount);
+        Assert.Equal(reversed.Id, Assert.Single(items).Id);
+    }
+
+    [Fact]
+    public async Task ListPaged_omitted_reversed_bounds_include_non_reversed()
+    {
+        var draft = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 10m, new Currency("UAH"),
+            RecognitionDate, "Draft", null, T0);
+        var reversed = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Expense, 20m, new Currency("UAH"),
+            RecognitionDate, "Reversed", null, T1);
+        reversed.Recognize(T1);
+        reversed.Reverse("Undo", T1);
+
+        await _repository.AddAsync(draft);
+        await _repository.AddAsync(reversed);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var (items, totalCount) = await new AccrualRepository(readContext)
+            .ListPagedAsync(_workspaceA, page: 1, pageSize: 10);
+
+        Assert.Equal(2, totalCount);
+        Assert.Equal(2, items.Count);
+    }
+
+    [Fact]
+    public async Task ListPaged_reversed_independent_of_recognized_at_bounds()
+    {
+        var match = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 10m, new Currency("UAH"),
+            RecognitionDate, "Match", null, T0);
+        match.Recognize(T0);
+        match.Reverse("Undo", T1);
+        var wrongRecognized = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 20m, new Currency("UAH"),
+            RecognitionDate, "Wrong recognized", null, T0);
+        wrongRecognized.Recognize(T1);
+        wrongRecognized.Reverse("Undo", T1);
+        var wrongReversed = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 30m, new Currency("UAH"),
+            RecognitionDate, "Wrong reversed", null, T0);
+        wrongReversed.Recognize(T0);
+        wrongReversed.Reverse("Undo", T2);
+
+        await _repository.AddAsync(match);
+        await _repository.AddAsync(wrongRecognized);
+        await _repository.AddAsync(wrongReversed);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var (items, totalCount) = await new AccrualRepository(readContext)
+            .ListPagedAsync(
+                _workspaceA,
+                page: 1,
+                pageSize: 10,
+                recognizedFromUtc: T0,
+                recognizedToUtc: T0,
+                reversedFromUtc: T1,
+                reversedToUtc: T1);
+
+        Assert.Equal(1, totalCount);
+        Assert.Equal(match.Id, Assert.Single(items).Id);
+    }
+
+    [Fact]
+    public async Task ListPaged_reversed_with_description_applies_both()
+    {
+        var match = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 10m, new Currency("UAH"),
+            RecognitionDate, "Target", null, T1);
+        match.Recognize(T1);
+        match.Reverse("Undo", T1);
+        var wrongDescription = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 20m, new Currency("UAH"),
+            RecognitionDate, "Other", null, T1);
+        wrongDescription.Recognize(T1);
+        wrongDescription.Reverse("Undo", T1);
+        var recognizedTarget = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 30m, new Currency("UAH"),
+            RecognitionDate, "Target", null, T2);
+        recognizedTarget.Recognize(T2);
+
+        await _repository.AddAsync(match);
+        await _repository.AddAsync(wrongDescription);
+        await _repository.AddAsync(recognizedTarget);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var (items, totalCount) = await new AccrualRepository(readContext)
+            .ListPagedAsync(
+                _workspaceA,
+                page: 1,
+                pageSize: 10,
+                description: "Target",
+                reversedFromUtc: T0,
+                reversedToUtc: T2);
+
+        Assert.Equal(1, totalCount);
+        Assert.Equal(match.Id, Assert.Single(items).Id);
+    }
+
+    [Fact]
+    public async Task ListPaged_reversed_range_is_workspace_scoped()
+    {
+        var inWorkspace = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 10m, new Currency("UAH"),
+            RecognitionDate, "A", null, T1);
+        inWorkspace.Recognize(T1);
+        inWorkspace.Reverse("Undo", T1);
+        var otherWorkspace = Accrual.Create(
+            AccrualId.New(), _workspaceB, AccrualType.Revenue, 20m, new Currency("UAH"),
+            RecognitionDate, "B", null, T1);
+        otherWorkspace.Recognize(T1);
+        otherWorkspace.Reverse("Undo", T1);
+
+        await _repository.AddAsync(inWorkspace);
+        await _repository.AddAsync(otherWorkspace);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var (items, totalCount) = await new AccrualRepository(readContext)
+            .ListPagedAsync(
+                _workspaceA,
+                page: 1,
+                pageSize: 10,
+                reversedFromUtc: T1,
+                reversedToUtc: T1);
+
+        Assert.Equal(1, totalCount);
+        Assert.Equal(inWorkspace.Id, Assert.Single(items).Id);
+    }
+
+    [Fact]
+    public async Task ListPaged_reversed_pages_after_filter()
+    {
+        var first = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 10m, new Currency("UAH"),
+            RecognitionDate, "1", null, T0);
+        first.Recognize(T0);
+        first.Reverse("Undo", T0);
+        var second = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 20m, new Currency("UAH"),
+            RecognitionDate, "2", null, T1);
+        second.Recognize(T1);
+        second.Reverse("Undo", T1);
+        var third = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Expense, 30m, new Currency("UAH"),
+            RecognitionDate, "3", null, T2);
+        third.Recognize(T2);
+        third.Reverse("Undo", T2);
+
+        await _repository.AddAsync(first);
+        await _repository.AddAsync(second);
+        await _repository.AddAsync(third);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var repo = new AccrualRepository(readContext);
+
+        var (page1, total1) = await repo.ListPagedAsync(
+            _workspaceA, page: 1, pageSize: 1, reversedFromUtc: T0, reversedToUtc: T2);
+        var (page2, total2) = await repo.ListPagedAsync(
+            _workspaceA, page: 2, pageSize: 1, reversedFromUtc: T0, reversedToUtc: T2);
+
+        Assert.Equal(3, total1);
+        Assert.Equal(3, total2);
+        Assert.Equal(third.Id, Assert.Single(page1).Id);
+        Assert.Equal(second.Id, Assert.Single(page2).Id);
+    }
+
+    [Fact]
     public async Task ListPaged_created_range_pages_after_filter()
     {
         var first = Accrual.Create(
