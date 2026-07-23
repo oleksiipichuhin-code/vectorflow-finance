@@ -2180,6 +2180,152 @@ public sealed class AccrualRepositoryTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ListPaged_description_exact_match_is_ordinal_and_excludes_others()
+    {
+        var match = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 50m, new Currency("UAH"),
+            RecognitionDate, "Exact match", null, T1);
+        var otherCase = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 50m, new Currency("UAH"),
+            RecognitionDate, "exact match", null, T2);
+        var other = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Expense, 50m, new Currency("UAH"),
+            RecognitionDate, "Other", null, T0);
+
+        await _repository.AddAsync(match);
+        await _repository.AddAsync(otherCase);
+        await _repository.AddAsync(other);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var (items, totalCount) = await new AccrualRepository(readContext)
+            .ListPagedAsync(
+                _workspaceA,
+                page: 1,
+                pageSize: 10,
+                description: "Exact match");
+
+        Assert.Equal(1, totalCount);
+        Assert.Equal(match.Id, Assert.Single(items).Id);
+    }
+
+    [Fact]
+    public async Task ListPaged_description_with_currency_and_status_applies_all()
+    {
+        var match = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 50m, new Currency("USD"),
+            RecognitionDate, "Target", null, T1);
+        var wrongCurrency = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 50m, new Currency("EUR"),
+            RecognitionDate, "Target", null, T1);
+        var wrongDescription = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 50m, new Currency("USD"),
+            RecognitionDate, "Other", null, T1);
+
+        await _repository.AddAsync(match);
+        await _repository.AddAsync(wrongCurrency);
+        await _repository.AddAsync(wrongDescription);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var (items, totalCount) = await new AccrualRepository(readContext)
+            .ListPagedAsync(
+                _workspaceA,
+                page: 1,
+                pageSize: 10,
+                status: AccrualStatus.Draft,
+                currency: "USD",
+                description: "Target");
+
+        Assert.Equal(1, totalCount);
+        Assert.Equal(match.Id, Assert.Single(items).Id);
+    }
+
+    [Fact]
+    public async Task ListPaged_description_range_is_workspace_scoped()
+    {
+        var inA = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 50m, new Currency("UAH"),
+            RecognitionDate, "Shared", null, T1);
+        var inB = Accrual.Create(
+            AccrualId.New(), _workspaceB, AccrualType.Revenue, 50m, new Currency("UAH"),
+            RecognitionDate, "Shared", null, T1);
+
+        await _repository.AddAsync(inA);
+        await _repository.AddAsync(inB);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var (items, totalCount) = await new AccrualRepository(readContext)
+            .ListPagedAsync(
+                _workspaceA,
+                page: 1,
+                pageSize: 10,
+                description: "Shared");
+
+        Assert.Equal(1, totalCount);
+        Assert.Equal(inA.Id, Assert.Single(items).Id);
+    }
+
+    [Fact]
+    public async Task ListPaged_description_pages_after_filter()
+    {
+        var first = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 10m, new Currency("UAH"),
+            RecognitionDate, "Keep", null, T0);
+        var second = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 20m, new Currency("UAH"),
+            RecognitionDate, "Keep", null, T1);
+        var third = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Expense, 30m, new Currency("UAH"),
+            RecognitionDate, "Keep", null, T2);
+        var excluded = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 40m, new Currency("UAH"),
+            RecognitionDate, "Drop", null, T2);
+
+        await _repository.AddAsync(first);
+        await _repository.AddAsync(second);
+        await _repository.AddAsync(third);
+        await _repository.AddAsync(excluded);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var repo = new AccrualRepository(readContext);
+
+        var (page1, total1) = await repo.ListPagedAsync(
+            _workspaceA, page: 1, pageSize: 1, description: "Keep");
+        var (page2, total2) = await repo.ListPagedAsync(
+            _workspaceA, page: 2, pageSize: 1, description: "Keep");
+
+        Assert.Equal(3, total1);
+        Assert.Equal(3, total2);
+        Assert.Equal(third.Id, Assert.Single(page1).Id);
+        Assert.Equal(second.Id, Assert.Single(page2).Id);
+    }
+
+    [Fact]
+    public async Task ListPaged_omitted_description_includes_all_descriptions()
+    {
+        var first = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 10m, new Currency("UAH"),
+            RecognitionDate, "A", null, T0);
+        var second = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 20m, new Currency("UAH"),
+            RecognitionDate, "B", null, T1);
+
+        await _repository.AddAsync(first);
+        await _repository.AddAsync(second);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var (items, totalCount) = await new AccrualRepository(readContext)
+            .ListPagedAsync(_workspaceA, page: 1, pageSize: 10);
+
+        Assert.Equal(2, totalCount);
+        Assert.Equal(2, items.Count);
+    }
+
+    [Fact]
     public async Task ListPaged_created_range_pages_after_filter()
     {
         var first = Accrual.Create(

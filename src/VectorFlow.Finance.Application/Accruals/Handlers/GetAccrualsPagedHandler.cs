@@ -27,6 +27,7 @@ public sealed class GetAccrualsPagedHandler
         InvoiceId? sourceInvoiceId;
         AccrualType? type;
         string? currency;
+        string? description;
         try
         {
             financeWorkspaceId = new FinanceWorkspaceId(query.FinanceWorkspaceId);
@@ -38,6 +39,7 @@ public sealed class GetAccrualsPagedHandler
             EnsureRecognitionDateRange(query.RecognitionFromUtc, query.RecognitionToUtc);
             currency = ParseCurrencyFilter(query.Currency);
             EnsureAmountRange(query.AmountFrom, query.AmountTo);
+            description = ParseDescriptionFilter(query.Description);
         }
         catch (ArgumentException ex)
         {
@@ -58,6 +60,7 @@ public sealed class GetAccrualsPagedHandler
             currency,
             query.AmountFrom,
             query.AmountTo,
+            description,
             cancellationToken);
 
         var page = new PageResult<AccrualDto>(
@@ -190,4 +193,12 @@ public sealed class GetAccrualsPagedHandler
     /// </summary>
     private static string? ParseCurrencyFilter(string? currency) =>
         currency is null ? null : new Currency(currency).Code;
+
+    /// <summary>
+    /// Missing (<c>null</c>) means no Description filter. When provided, normalize/validate via
+    /// <see cref="AccrualHandlerSupport.NormalizeDescription"/>. Positive exact Ordinal match only;
+    /// no partial/prefix/case-insensitive/full-text mode.
+    /// </summary>
+    private static string? ParseDescriptionFilter(string? description) =>
+        description is null ? null : AccrualHandlerSupport.NormalizeDescription(description);
 }

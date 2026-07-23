@@ -43,6 +43,8 @@ internal sealed class InMemoryAccrualRepository : IAccrualRepository
 
     public decimal? LastListedAmountTo { get; private set; }
 
+    public string? LastListedPagedDescription { get; private set; }
+
     public CancellationToken? LastListPagedCancellationToken { get; private set; }
 
     public InvoiceId? LastListedSourceInvoiceId { get; private set; }
@@ -97,6 +99,7 @@ internal sealed class InMemoryAccrualRepository : IAccrualRepository
         string? currency = null,
         decimal? amountFrom = null,
         decimal? amountTo = null,
+        string? description = null,
         CancellationToken cancellationToken = default)
     {
         ListPagedCallCount++;
@@ -113,6 +116,7 @@ internal sealed class InMemoryAccrualRepository : IAccrualRepository
         LastListedPagedCurrency = currency;
         LastListedAmountFrom = amountFrom;
         LastListedAmountTo = amountTo;
+        LastListedPagedDescription = description;
         LastListPagedCancellationToken = cancellationToken;
 
         var matched = _byId.Values
@@ -129,6 +133,9 @@ internal sealed class InMemoryAccrualRepository : IAccrualRepository
                 string.Equals(accrual.Currency.Code, currency, StringComparison.Ordinal))
             .Where(accrual => amountFrom is null || accrual.Amount >= amountFrom.Value)
             .Where(accrual => amountTo is null || accrual.Amount <= amountTo.Value)
+            .Where(accrual =>
+                description is null ||
+                string.Equals(accrual.Description, description, StringComparison.Ordinal))
             .OrderByDescending(accrual => accrual.CreatedAt)
             .ThenByDescending(accrual => accrual.Id.Value)
             .ToList();

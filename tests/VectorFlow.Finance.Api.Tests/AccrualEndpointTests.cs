@@ -2007,6 +2007,104 @@ public sealed class AccrualEndpointTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ListPaged_description_exact_match_filters()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("a1000000-0000-0000-0000-0000000000a1"),
+            Guid.Parse("a2000000-0000-0000-0000-0000000000a1"));
+
+        var match = await CreateAccrualAsync(workspaceId, "Revenue", 50m, "Exact match");
+        await CreateAccrualAsync(workspaceId, "Revenue", 50m, "exact match");
+        await CreateAccrualAsync(workspaceId, "Expense", 50m, "Other");
+
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/accruals/paged?page=1&pageSize=10&description=Exact%20match");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(1, document.RootElement.GetProperty("totalCount").GetInt32());
+        Assert.Equal(
+            match,
+            Assert.Single(document.RootElement.GetProperty("items").EnumerateArray()).GetProperty("id").GetGuid());
+    }
+
+    [Fact]
+    public async Task ListPaged_description_trims_query_value()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("a1000000-0000-0000-0000-0000000000a2"),
+            Guid.Parse("a2000000-0000-0000-0000-0000000000a2"));
+
+        var match = await CreateAccrualAsync(workspaceId, "Revenue", 40m, "Trimmed");
+        await CreateAccrualAsync(workspaceId, "Revenue", 40m, "Other");
+
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/accruals/paged?page=1&pageSize=10&description=%20%20Trimmed%20%20");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(1, document.RootElement.GetProperty("totalCount").GetInt32());
+        Assert.Equal(
+            match,
+            Assert.Single(document.RootElement.GetProperty("items").EnumerateArray()).GetProperty("id").GetGuid());
+    }
+
+    [Fact]
+    public async Task ListPaged_blank_description_returns_400()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("a1000000-0000-0000-0000-0000000000a3"),
+            Guid.Parse("a2000000-0000-0000-0000-0000000000a3"));
+
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/accruals/paged?page=1&pageSize=10&description=%20%20");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        await AssertErrorAsync(response, "ValidationFailed");
+    }
+
+    [Fact]
+    public async Task ListPaged_description_composes_with_currency_and_status()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("a1000000-0000-0000-0000-0000000000a4"),
+            Guid.Parse("a2000000-0000-0000-0000-0000000000a4"));
+
+        var match = await CreateAccrualAsync(workspaceId, "Revenue", 50m, "Target", currency: "USD");
+        await CreateAccrualAsync(workspaceId, "Revenue", 50m, "Target", currency: "EUR");
+        await CreateAccrualAsync(workspaceId, "Revenue", 50m, "Other", currency: "USD");
+
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/accruals/paged?page=1&pageSize=10&status=Draft&currency=USD&description=Target");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(1, document.RootElement.GetProperty("totalCount").GetInt32());
+        Assert.Equal(
+            match,
+            Assert.Single(document.RootElement.GetProperty("items").EnumerateArray()).GetProperty("id").GetGuid());
+    }
+
+    [Fact]
+    public async Task ListPaged_omitted_description_preserves_all()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("a1000000-0000-0000-0000-0000000000a5"),
+            Guid.Parse("a2000000-0000-0000-0000-0000000000a5"));
+
+        await CreateAccrualAsync(workspaceId, "Revenue", 10m, "A");
+        await CreateAccrualAsync(workspaceId, "Expense", 20m, "B");
+
+        var response = await _client.GetAsync(
+            $"/api/finance-workspaces/{workspaceId}/accruals/paged?page=1&pageSize=10");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(2, document.RootElement.GetProperty("totalCount").GetInt32());
+        Assert.Equal(2, document.RootElement.GetProperty("items").GetArrayLength());
+    }
+
+    [Fact]
     public async Task Get_by_id_still_resolves_after_list_route()
     {
         var workspaceId = await CreateWorkspaceAsync(

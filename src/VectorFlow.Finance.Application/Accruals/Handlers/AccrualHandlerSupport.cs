@@ -60,4 +60,25 @@ internal static class AccrualHandlerSupport
 
     public static ApplicationResult<AccrualDto> FromInvalidOperationException(InvalidOperationException ex) =>
         ApplicationResult<AccrualDto>.Conflict(ex.Message);
+
+    /// <summary>
+    /// Mirrors Domain <c>Accrual.NormalizeDescription</c> (trim; blank and max-length rejected).
+    /// </summary>
+    public static string NormalizeDescription(string? description)
+    {
+        if (string.IsNullOrWhiteSpace(description))
+        {
+            throw new ArgumentException("Accrual description must not be blank.", nameof(description));
+        }
+
+        var normalized = description.Trim();
+        if (normalized.Length > Accrual.DescriptionMaxLength)
+        {
+            throw new ArgumentException(
+                $"Accrual description must not exceed {Accrual.DescriptionMaxLength} characters.",
+                nameof(description));
+        }
+
+        return normalized;
+    }
 }

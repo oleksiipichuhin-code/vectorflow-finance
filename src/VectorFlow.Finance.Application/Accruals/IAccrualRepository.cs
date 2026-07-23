@@ -26,8 +26,9 @@ public interface IAccrualRepository
     /// Returns a workspace-scoped page of accruals ordered by CreatedAt descending, then Id descending,
     /// together with the total matching count. Optional <paramref name="status"/>, optional
     /// <paramref name="sourceInvoiceId"/>, optional <paramref name="type"/>, and optional
-    /// <paramref name="currency"/> (exact Ordinal match on normalized Currency.Code) are applied in the
-    /// query; inclusive CreatedAt bounds (<paramref name="createdFromUtc"/> / <paramref name="createdToUtc"/>),
+    /// <paramref name="currency"/> (exact Ordinal match on normalized Currency.Code), and optional
+    /// <paramref name="description"/> (exact Ordinal match after Description trim/normalization) are applied
+    /// in the query; inclusive CreatedAt bounds (<paramref name="createdFromUtc"/> / <paramref name="createdToUtc"/>),
     /// inclusive RecognitionDate bounds (<paramref name="recognitionFromUtc"/> /
     /// <paramref name="recognitionToUtc"/>), and inclusive Amount bounds (<paramref name="amountFrom"/> /
     /// <paramref name="amountTo"/>) are applied in memory after materialization (SQLite cannot translate
@@ -36,7 +37,9 @@ public interface IAccrualRepository
     /// SourceInvoiceId filter (positive match only when provided; no IS NULL mode). A null
     /// <paramref name="type"/> means no Type filter. A null <paramref name="currency"/> means no Currency
     /// filter (positive exact match only when provided; no partial/full-text mode). A null
-    /// <paramref name="amountFrom"/> / <paramref name="amountTo"/> means no that Amount bound.
+    /// <paramref name="amountFrom"/> / <paramref name="amountTo"/> means no that Amount bound. A null
+    /// <paramref name="description"/> means no Description filter (positive exact match only when provided;
+    /// no partial/prefix/case-insensitive/full-text mode).
     /// </summary>
     Task<(IReadOnlyList<Accrual> Items, int TotalCount)> ListPagedAsync(
         FinanceWorkspaceId financeWorkspaceId,
@@ -52,6 +55,7 @@ public interface IAccrualRepository
         string? currency = null,
         decimal? amountFrom = null,
         decimal? amountTo = null,
+        string? description = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

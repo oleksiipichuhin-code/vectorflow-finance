@@ -1949,6 +1949,130 @@ public sealed class AccrualApplicationTests
     }
 
     [Fact]
+    public async Task ListPaged_omitted_description_passes_null_to_repository()
+    {
+        var (accruals, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "Alpha");
+
+        var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
+            new GetAccrualsPagedQuery(workspaceId, Page: 1, PageSize: 10));
+
+        Assert.True(result.IsSuccess);
+        Assert.Null(accruals.LastListedPagedDescription);
+        Assert.Equal(1, result.Value!.TotalCount);
+    }
+
+    [Fact]
+    public async Task ListPaged_description_passes_normalized_value_to_repository()
+    {
+        var (accruals, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
+            new GetAccrualsPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 10,
+                Description: "  Exact match  "));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("Exact match", accruals.LastListedPagedDescription);
+    }
+
+    [Fact]
+    public async Task ListPaged_blank_description_returns_ValidationFailed()
+    {
+        var (accruals, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
+            new GetAccrualsPagedQuery(workspaceId, Page: 1, PageSize: 10, Description: "   "));
+
+        Assert.Equal(ApplicationErrorKind.ValidationFailed, result.ErrorKind);
+        Assert.Equal(0, accruals.ListPagedCallCount);
+    }
+
+    [Fact]
+    public async Task ListPaged_overlength_description_returns_ValidationFailed()
+    {
+        var (accruals, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        var overlength = new string('x', Accrual.DescriptionMaxLength + 1);
+
+        var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
+            new GetAccrualsPagedQuery(workspaceId, Page: 1, PageSize: 10, Description: overlength));
+
+        Assert.Equal(ApplicationErrorKind.ValidationFailed, result.ErrorKind);
+        Assert.Equal(0, accruals.ListPagedCallCount);
+    }
+
+    [Fact]
+    public async Task ListPaged_description_filters_exact_ordinal_via_repository()
+    {
+        var (accruals, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        clock.UtcNow = T0;
+        await CreateAccrualAsync(
+            accruals, workspaces, clock, workspaceId, description: "Other");
+        clock.UtcNow = T1;
+        var match = await CreateAccrualAsync(
+            accruals, workspaces, clock, workspaceId, description: "Exact match");
+        clock.UtcNow = T2;
+        await CreateAccrualAsync(
+            accruals, workspaces, clock, workspaceId, description: "exact match");
+
+        var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
+            new GetAccrualsPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 10,
+                Description: "Exact match"));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(1, result.Value!.TotalCount);
+        Assert.Equal(match.Id, Assert.Single(result.Value.Items).Id);
+        Assert.Equal("Exact match", accruals.LastListedPagedDescription);
+    }
+
+    [Fact]
+    public async Task ListPaged_description_composes_with_currency_and_status()
+    {
+        var (accruals, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        clock.UtcNow = T0;
+        var match = await CreateAccrualAsync(
+            accruals, workspaces, clock, workspaceId,
+            amount: 50m, currency: "USD", description: "Target");
+        clock.UtcNow = T1;
+        await CreateAccrualAsync(
+            accruals, workspaces, clock, workspaceId,
+            amount: 50m, currency: "EUR", description: "Target");
+        clock.UtcNow = T2;
+        await CreateAccrualAsync(
+            accruals, workspaces, clock, workspaceId,
+            amount: 50m, currency: "USD", description: "Other");
+
+        var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
+            new GetAccrualsPagedQuery(
+                workspaceId,
+                Page: 1,
+                PageSize: 10,
+                Status: "Draft",
+                Currency: "USD",
+                Description: "Target"));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(1, result.Value!.TotalCount);
+        Assert.Equal(match.Id, Assert.Single(result.Value.Items).Id);
+        Assert.Equal("USD", accruals.LastListedPagedCurrency);
+        Assert.Equal("Target", accruals.LastListedPagedDescription);
+        Assert.Equal(AccrualStatus.Draft, accruals.LastListedStatus);
+    }
+
+    [Fact]
     public async Task List_equal_created_at_orders_by_id_descending()
     {
         var (accruals, workspaces, clock) = CreateHarness();
