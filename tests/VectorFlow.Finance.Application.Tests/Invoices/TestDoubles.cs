@@ -44,6 +44,10 @@ internal sealed class InMemoryInvoiceRepository : IInvoiceRepository
 
     public DateTimeOffset? LastListedDueToUtc { get; private set; }
 
+    public decimal? LastListedTotalAmountFrom { get; private set; }
+
+    public decimal? LastListedTotalAmountTo { get; private set; }
+
     public CancellationToken? LastListByDocumentNumberCancellationToken { get; private set; }
 
     public CancellationToken? LastListPagedCancellationToken { get; private set; }
@@ -119,6 +123,8 @@ internal sealed class InMemoryInvoiceRepository : IInvoiceRepository
         DateTimeOffset? issuedToUtc = null,
         DateTimeOffset? dueFromUtc = null,
         DateTimeOffset? dueToUtc = null,
+        decimal? totalAmountFrom = null,
+        decimal? totalAmountTo = null,
         CancellationToken cancellationToken = default)
     {
         ListPagedCallCount++;
@@ -135,6 +141,8 @@ internal sealed class InMemoryInvoiceRepository : IInvoiceRepository
         LastListedIssuedToUtc = issuedToUtc;
         LastListedDueFromUtc = dueFromUtc;
         LastListedDueToUtc = dueToUtc;
+        LastListedTotalAmountFrom = totalAmountFrom;
+        LastListedTotalAmountTo = totalAmountTo;
         LastListPagedCancellationToken = cancellationToken;
 
         var matched = _byId.Values
@@ -166,6 +174,10 @@ internal sealed class InMemoryInvoiceRepository : IInvoiceRepository
             .Where(invoice =>
                 dueToUtc is null ||
                 (invoice.DueDate is { } dueDate && dueDate <= dueToUtc.Value))
+            .Where(invoice =>
+                totalAmountFrom is null || invoice.TotalAmount >= totalAmountFrom.Value)
+            .Where(invoice =>
+                totalAmountTo is null || invoice.TotalAmount <= totalAmountTo.Value)
             .OrderByDescending(invoice => invoice.CreatedAt)
             .ThenByDescending(invoice => invoice.Id.Value)
             .ToList();

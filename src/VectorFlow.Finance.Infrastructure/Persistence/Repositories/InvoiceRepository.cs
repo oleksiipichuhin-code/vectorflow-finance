@@ -72,10 +72,13 @@ public sealed class InvoiceRepository : IInvoiceRepository
         DateTimeOffset? issuedToUtc = null,
         DateTimeOffset? dueFromUtc = null,
         DateTimeOffset? dueToUtc = null,
+        decimal? totalAmountFrom = null,
+        decimal? totalAmountTo = null,
         CancellationToken cancellationToken = default)
     {
         // SQLite cannot translate DateTimeOffset comparisons; CreatedAt, IssuedAt, and DueDate bounds
-        // are applied in memory.
+        // are applied in memory. TotalAmount is a computed non-persisted projection, so its bounds
+        // also run in memory after lines are loaded (same in-memory filter stage as Accrual Amount).
         var invoices = await ApplySqlPagedFilters(
                 InvoicesWithLines(),
                 financeWorkspaceId,
@@ -119,6 +122,16 @@ public sealed class InvoiceRepository : IInvoiceRepository
         {
             filtered = filtered.Where(invoice =>
                 invoice.DueDate is { } dueDate && dueDate <= dueToUtc.Value);
+        }
+
+        if (totalAmountFrom is not null)
+        {
+            filtered = filtered.Where(invoice => invoice.TotalAmount >= totalAmountFrom.Value);
+        }
+
+        if (totalAmountTo is not null)
+        {
+            filtered = filtered.Where(invoice => invoice.TotalAmount <= totalAmountTo.Value);
         }
 
         var matched = filtered

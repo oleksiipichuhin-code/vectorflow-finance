@@ -39,16 +39,21 @@ public interface IInvoiceRepository
     /// query; inclusive CreatedAt bounds (<paramref name="createdFromUtc"/> / <paramref name="createdToUtc"/>)
     /// and inclusive IssuedAt bounds (<paramref name="issuedFromUtc"/> / <paramref name="issuedToUtc"/>)
     /// and inclusive DueDate bounds (<paramref name="dueFromUtc"/> / <paramref name="dueToUtc"/>)
-    /// are applied in memory after materialization (SQLite cannot translate DateTimeOffset comparisons).
+    /// and inclusive TotalAmount bounds (<paramref name="totalAmountFrom"/> / <paramref name="totalAmountTo"/>)
+    /// are applied in memory after materialization (SQLite cannot translate DateTimeOffset comparisons;
+    /// TotalAmount is a computed non-persisted projection over loaded lines).
     /// When any IssuedAt bound is present, invoices with null IssuedAt are excluded. When any DueDate
-    /// bound is present, invoices with null DueDate are excluded. All filters apply to the page and the
-    /// total count. A null <paramref name="documentNumber"/> means no DocumentNumber filter (positive
-    /// exact match only when provided; no partial/full-text mode). A null
+    /// bound is present, invoices with null DueDate are excluded. TotalAmount bounds compare the numeric
+    /// magnitude of <c>Invoice.TotalAmount</c> independently of Currency (same posture as Accrual Amount
+    /// range; optional Currency filter remains a separate AND predicate). All filters apply to the page
+    /// and the total count. A null <paramref name="documentNumber"/> means no DocumentNumber filter
+    /// (positive exact match only when provided; no partial/full-text mode). A null
     /// <paramref name="counterpartyReference"/> means no CounterpartyReference filter (positive exact match
     /// only when provided; no partial/full-text mode). A null <paramref name="currency"/> means no Currency
     /// filter (positive exact match only when provided; no partial/full-text mode). A null
     /// <paramref name="issuedFromUtc"/> / <paramref name="issuedToUtc"/> means no that IssuedAt bound. A
-    /// null <paramref name="dueFromUtc"/> / <paramref name="dueToUtc"/> means no that DueDate bound.
+    /// null <paramref name="dueFromUtc"/> / <paramref name="dueToUtc"/> means no that DueDate bound. A null
+    /// <paramref name="totalAmountFrom"/> / <paramref name="totalAmountTo"/> means no that TotalAmount bound.
     /// </summary>
     Task<(IReadOnlyList<Invoice> Items, int TotalCount)> ListPagedAsync(
         FinanceWorkspaceId financeWorkspaceId,
@@ -64,6 +69,8 @@ public interface IInvoiceRepository
         DateTimeOffset? issuedToUtc = null,
         DateTimeOffset? dueFromUtc = null,
         DateTimeOffset? dueToUtc = null,
+        decimal? totalAmountFrom = null,
+        decimal? totalAmountTo = null,
         CancellationToken cancellationToken = default);
 
     Task AddAsync(

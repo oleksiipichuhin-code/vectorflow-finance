@@ -21,7 +21,7 @@ internal static class InvoiceEndpoints
 
         group.MapGet("/", ListPagedAsync)
             .WithName("ListInvoices")
-            .WithSummary("List invoices for a finance workspace (paged, newest first; optional exact status, CreatedAt range, document number, counterparty reference, currency, IssuedAt range, and DueDate range).")
+            .WithSummary("List invoices for a finance workspace (paged, newest first; optional exact status, CreatedAt range, document number, counterparty reference, currency, IssuedAt range, DueDate range, and TotalAmount range).")
             .Produces(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status400BadRequest);
 
@@ -136,6 +136,8 @@ internal static class InvoiceEndpoints
         DateTimeOffset? issuedToUtc,
         DateTimeOffset? dueFromUtc,
         DateTimeOffset? dueToUtc,
+        decimal? totalAmountFrom,
+        decimal? totalAmountTo,
         GetInvoicesPagedHandler handler,
         CancellationToken cancellationToken)
     {
@@ -153,7 +155,9 @@ internal static class InvoiceEndpoints
                 issuedFromUtc,
                 issuedToUtc,
                 dueFromUtc,
-                dueToUtc),
+                dueToUtc,
+                totalAmountFrom,
+                totalAmountTo),
             cancellationToken);
 
         return ApplicationResultHttp.ToHttpResult(result);

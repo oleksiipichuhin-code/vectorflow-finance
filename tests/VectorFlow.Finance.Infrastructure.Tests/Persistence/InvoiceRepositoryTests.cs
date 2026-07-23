@@ -2135,6 +2135,281 @@ public sealed class InvoiceRepositoryTests : IAsyncLifetime
         Assert.Equal(2, items.Count);
     }
 
+    private static Invoice CreateWithTotalAmount(
+        FinanceWorkspaceId workspaceId,
+        string documentNumber,
+        DateTimeOffset createdAt,
+        decimal quantity,
+        decimal unitPrice,
+        string currency = "UAH",
+        string counterparty = "cp")
+    {
+        var invoice = Invoice.Create(
+            InvoiceId.New(),
+            workspaceId,
+            documentNumber,
+            new CounterpartyReference(counterparty),
+            new Currency(currency),
+            createdAt);
+        invoice.AddLine(quantity, unitPrice, "Line", createdAt);
+        return invoice;
+    }
+
+    [Fact]
+    public async Task ListPaged_total_amount_from_includes_lower_bound_and_excludes_lower()
+    {
+        var below = CreateWithTotalAmount(_workspaceA, "INV-BELOW", T0, 1m, 10m);
+        var onBound = CreateWithTotalAmount(_workspaceA, "INV-ON", T1, 1m, 50m);
+        var above = CreateWithTotalAmount(_workspaceA, "INV-ABOVE", T2, 1m, 100m);
+
+        await _repository.AddAsync(below);
+        await _repository.AddAsync(onBound);
+        await _repository.AddAsync(above);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var (items, totalCount) = await new InvoiceRepository(readContext)
+            .ListPagedAsync(
+                _workspaceA,
+                page: 1,
+                pageSize: 10,
+                totalAmountFrom: 50m);
+
+        Assert.Equal(2, totalCount);
+        Assert.Equal(above.Id, items[0].Id);
+        Assert.Equal(onBound.Id, items[1].Id);
+    }
+
+    [Fact]
+    public async Task ListPaged_total_amount_to_includes_upper_bound_and_excludes_higher()
+    {
+        var below = CreateWithTotalAmount(_workspaceA, "INV-BELOW", T0, 1m, 10m);
+        var onBound = CreateWithTotalAmount(_workspaceA, "INV-ON", T1, 1m, 50m);
+        var above = CreateWithTotalAmount(_workspaceA, "INV-ABOVE", T2, 1m, 100m);
+
+        await _repository.AddAsync(below);
+        await _repository.AddAsync(onBound);
+        await _repository.AddAsync(above);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var (items, totalCount) = await new InvoiceRepository(readContext)
+            .ListPagedAsync(
+                _workspaceA,
+                page: 1,
+                pageSize: 10,
+                totalAmountTo: 50m);
+
+        Assert.Equal(2, totalCount);
+        Assert.Equal(onBound.Id, items[0].Id);
+        Assert.Equal(below.Id, items[1].Id);
+    }
+
+    [Fact]
+    public async Task ListPaged_total_amount_closed_range_is_inclusive()
+    {
+        var below = CreateWithTotalAmount(_workspaceA, "INV-BELOW", T0, 1m, 10m);
+        var low = CreateWithTotalAmount(_workspaceA, "INV-LOW", T1, 2m, 20m);
+        var high = CreateWithTotalAmount(_workspaceA, "INV-HIGH", T2, 3m, 20m);
+        var above = CreateWithTotalAmount(_workspaceA, "INV-ABOVE", T2, 1m, 100m);
+
+        await _repository.AddAsync(below);
+        await _repository.AddAsync(low);
+        await _repository.AddAsync(high);
+        await _repository.AddAsync(above);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var (items, totalCount) = await new InvoiceRepository(readContext)
+            .ListPagedAsync(
+                _workspaceA,
+                page: 1,
+                pageSize: 10,
+                totalAmountFrom: 40m,
+                totalAmountTo: 60m);
+
+        Assert.Equal(2, totalCount);
+        Assert.Equal(high.Id, items[0].Id);
+        Assert.Equal(low.Id, items[1].Id);
+        Assert.Equal(40m, low.TotalAmount);
+        Assert.Equal(60m, high.TotalAmount);
+    }
+
+    [Fact]
+    public async Task ListPaged_total_amount_equal_bounds_match_exact_value()
+    {
+        var match = CreateWithTotalAmount(_workspaceA, "INV-MATCH", T1, 2m, 25m);
+        var other = CreateWithTotalAmount(_workspaceA, "INV-OTHER", T2, 1m, 10m);
+
+        await _repository.AddAsync(match);
+        await _repository.AddAsync(other);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var (items, totalCount) = await new InvoiceRepository(readContext)
+            .ListPagedAsync(
+                _workspaceA,
+                page: 1,
+                pageSize: 10,
+                totalAmountFrom: 50m,
+                totalAmountTo: 50m);
+
+        Assert.Equal(1, totalCount);
+        Assert.Equal(match.Id, Assert.Single(items).Id);
+    }
+
+    [Fact]
+    public async Task ListPaged_total_amount_with_currency_applies_both()
+    {
+        var match = CreateWithTotalAmount(_workspaceA, "INV-MATCH", T1, 2m, 25m, currency: "USD");
+        var wrongCurrency = CreateWithTotalAmount(_workspaceA, "INV-EUR", T1, 2m, 25m, currency: "EUR");
+        var lowUsd = CreateWithTotalAmount(_workspaceA, "INV-LOW", T1, 1m, 10m, currency: "USD");
+
+        await _repository.AddAsync(match);
+        await _repository.AddAsync(wrongCurrency);
+        await _repository.AddAsync(lowUsd);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var (items, totalCount) = await new InvoiceRepository(readContext)
+            .ListPagedAsync(
+                _workspaceA,
+                page: 1,
+                pageSize: 10,
+                currency: "USD",
+                totalAmountFrom: 40m,
+                totalAmountTo: 60m);
+
+        Assert.Equal(1, totalCount);
+        Assert.Equal(match.Id, Assert.Single(items).Id);
+    }
+
+    [Fact]
+    public async Task ListPaged_total_amount_without_currency_compares_numeric_magnitude_across_currencies()
+    {
+        var uah = CreateWithTotalAmount(_workspaceA, "INV-UAH", T0, 1m, 50m, currency: "UAH");
+        var usd = CreateWithTotalAmount(_workspaceA, "INV-USD", T1, 1m, 50m, currency: "USD");
+        var low = CreateWithTotalAmount(_workspaceA, "INV-LOW", T2, 1m, 10m, currency: "USD");
+
+        await _repository.AddAsync(uah);
+        await _repository.AddAsync(usd);
+        await _repository.AddAsync(low);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var (items, totalCount) = await new InvoiceRepository(readContext)
+            .ListPagedAsync(
+                _workspaceA,
+                page: 1,
+                pageSize: 10,
+                totalAmountFrom: 50m,
+                totalAmountTo: 50m);
+
+        Assert.Equal(2, totalCount);
+        Assert.Equal(usd.Id, items[0].Id);
+        Assert.Equal(uah.Id, items[1].Id);
+    }
+
+    [Fact]
+    public async Task ListPaged_total_amount_with_status_applies_both()
+    {
+        var draft = CreateWithTotalAmount(_workspaceA, "INV-DRAFT", T1, 2m, 25m);
+        var issued = CreateIssued(_workspaceA, "INV-ISSUED", T1, T1);
+
+        await _repository.AddAsync(draft);
+        await _repository.AddAsync(issued);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var (items, totalCount) = await new InvoiceRepository(readContext)
+            .ListPagedAsync(
+                _workspaceA,
+                page: 1,
+                pageSize: 10,
+                status: InvoiceStatus.Draft,
+                totalAmountFrom: 50m,
+                totalAmountTo: 50m);
+
+        Assert.Equal(1, totalCount);
+        Assert.Equal(draft.Id, Assert.Single(items).Id);
+        Assert.Equal(10m, issued.TotalAmount);
+    }
+
+    [Fact]
+    public async Task ListPaged_total_amount_range_is_workspace_scoped()
+    {
+        var inA = CreateWithTotalAmount(_workspaceA, "INV-A", T1, 1m, 50m);
+        var inB = CreateWithTotalAmount(_workspaceB, "INV-B", T1, 1m, 50m);
+
+        await _repository.AddAsync(inA);
+        await _repository.AddAsync(inB);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var (items, totalCount) = await new InvoiceRepository(readContext)
+            .ListPagedAsync(
+                _workspaceA,
+                page: 1,
+                pageSize: 10,
+                totalAmountFrom: 50m,
+                totalAmountTo: 50m);
+
+        Assert.Equal(1, totalCount);
+        Assert.Equal(inA.Id, Assert.Single(items).Id);
+    }
+
+    [Fact]
+    public async Task ListPaged_total_amount_pages_after_filter()
+    {
+        var first = CreateWithTotalAmount(_workspaceA, "INV-1", T0, 1m, 50m);
+        var second = CreateWithTotalAmount(_workspaceA, "INV-2", T1, 1m, 60m);
+        var third = CreateWithTotalAmount(_workspaceA, "INV-3", T2, 1m, 70m);
+        var excluded = CreateWithTotalAmount(_workspaceA, "INV-X", T2, 1m, 10m);
+
+        await _repository.AddAsync(first);
+        await _repository.AddAsync(second);
+        await _repository.AddAsync(third);
+        await _repository.AddAsync(excluded);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var repo = new InvoiceRepository(readContext);
+
+        var (page1, total1) = await repo.ListPagedAsync(
+            _workspaceA, page: 1, pageSize: 1, totalAmountFrom: 50m, totalAmountTo: 70m);
+        var (page2, total2) = await repo.ListPagedAsync(
+            _workspaceA, page: 2, pageSize: 1, totalAmountFrom: 50m, totalAmountTo: 70m);
+
+        Assert.Equal(3, total1);
+        Assert.Equal(3, total2);
+        Assert.Equal(third.Id, Assert.Single(page1).Id);
+        Assert.Equal(second.Id, Assert.Single(page2).Id);
+    }
+
+    [Fact]
+    public async Task ListPaged_total_amount_preserves_decimal_precision()
+    {
+        var match = CreateWithTotalAmount(_workspaceA, "INV-PREC", T1, 3m, 0.1m);
+        var other = CreateWithTotalAmount(_workspaceA, "INV-OTHER", T2, 1m, 1m);
+
+        await _repository.AddAsync(match);
+        await _repository.AddAsync(other);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var (items, totalCount) = await new InvoiceRepository(readContext)
+            .ListPagedAsync(
+                _workspaceA,
+                page: 1,
+                pageSize: 10,
+                totalAmountFrom: 0.3m,
+                totalAmountTo: 0.3m);
+
+        Assert.Equal(1, totalCount);
+        Assert.Equal(match.Id, Assert.Single(items).Id);
+        Assert.Equal(0.3m, match.TotalAmount);
+    }
+
     [Fact]
     public async Task GetById_after_list_still_round_trips()
     {

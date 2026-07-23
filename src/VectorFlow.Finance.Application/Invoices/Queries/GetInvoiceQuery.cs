@@ -24,4 +24,6 @@ public sealed record GetInvoicesPagedQuery(
     DateTimeOffset? IssuedFromUtc = null,
     DateTimeOffset? IssuedToUtc = null,
     DateTimeOffset? DueFromUtc = null,
-    DateTimeOffset? DueToUtc = null);
+    DateTimeOffset? DueToUtc = null,
+    decimal? TotalAmountFrom = null,
+    decimal? TotalAmountTo = null);

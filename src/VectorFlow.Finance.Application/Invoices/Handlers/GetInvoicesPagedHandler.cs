@@ -37,6 +37,7 @@ public sealed class GetInvoicesPagedHandler
             currency = ParseCurrencyFilter(query.Currency);
             EnsureIssuedAtRange(query.IssuedFromUtc, query.IssuedToUtc);
             EnsureDueDateRange(query.DueFromUtc, query.DueToUtc);
+            EnsureTotalAmountRange(query.TotalAmountFrom, query.TotalAmountTo);
         }
         catch (ArgumentException ex)
         {
@@ -57,6 +58,8 @@ public sealed class GetInvoicesPagedHandler
             query.IssuedToUtc,
             query.DueFromUtc,
             query.DueToUtc,
+            query.TotalAmountFrom,
+            query.TotalAmountTo,
             cancellationToken);
 
         var page = new PageResult<InvoiceDto>(
@@ -138,6 +141,15 @@ public sealed class GetInvoicesPagedHandler
         {
             throw new ArgumentException(
                 "DueFromUtc must not be later than DueToUtc.");
+        }
+    }
+
+    private static void EnsureTotalAmountRange(decimal? totalAmountFrom, decimal? totalAmountTo)
+    {
+        if (totalAmountFrom is { } from && totalAmountTo is { } to && from > to)
+        {
+            throw new ArgumentException(
+                "TotalAmountFrom must not be greater than TotalAmountTo.");
         }
     }
 
