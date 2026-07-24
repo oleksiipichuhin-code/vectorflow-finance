@@ -144,3 +144,66 @@ export function createInvoice(
     body: JSON.stringify(input)
   });
 }
+
+export type Accrual = {
+  id: string;
+  financeWorkspaceId: string;
+  type: string;
+  amount: number;
+  currency: string;
+  recognitionDateUtc: string;
+  description: string;
+  sourceInvoiceId: string | null;
+  status: string;
+  createdAtUtc: string;
+  updatedAtUtc: string;
+  recognizedAtUtc: string | null;
+  reversedAtUtc: string | null;
+  reversalReason: string | null;
+};
+
+export type AccrualPage = {
+  items: Accrual[];
+  page: number;
+  pageSize: number;
+  totalCount: number;
+};
+
+export function listAccrualsPaged(
+  workspaceId: string,
+  page = 1,
+  pageSize = 20
+): Promise<AccrualPage> {
+  const params = new URLSearchParams({
+    page: String(page),
+    pageSize: String(pageSize)
+  });
+
+  return requestJson<AccrualPage>(
+    `/api/finance-workspaces/${workspaceId}/accruals/paged?${params.toString()}`
+  );
+}
+
+export function createAccrual(
+  workspaceId: string,
+  input: {
+    type: string;
+    amount: number;
+    currency: string;
+    recognitionDateUtc: string;
+    description: string;
+    sourceInvoiceId?: string | null;
+  }
+): Promise<Accrual> {
+  return requestJson<Accrual>(`/api/finance-workspaces/${workspaceId}/accruals`, {
+    method: "POST",
+    body: JSON.stringify({
+      type: input.type,
+      amount: input.amount,
+      currency: input.currency,
+      recognitionDateUtc: input.recognitionDateUtc,
+      description: input.description,
+      sourceInvoiceId: input.sourceInvoiceId ?? null
+    })
+  });
+}

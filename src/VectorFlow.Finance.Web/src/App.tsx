@@ -1,15 +1,23 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
+import { AccrualsView } from "./AccrualsView";
 import {
+  createAccrual,
   createFinanceWorkspace,
   createInvoice,
   getConfiguredApiBaseUrl,
   getFinanceWorkspace,
   getHealth,
+  listAccrualsPaged,
   listInvoicesPaged,
+  type Accrual,
   type FinanceWorkspace,
   type HealthStatus,
   type Invoice
 } from "./api";
+import { DashboardView } from "./DashboardView";
+import { InvoicesView } from "./InvoicesView";
+import { APP_VIEWS, type AppView } from "./navigation";
+import { WorkspaceView } from "./WorkspaceView";
 
 const WORKSPACE_STORAGE_KEY = "vectorflow.finance.demo.workspaceId";
 
@@ -17,24 +25,13 @@ function createGuid(): string {
   return crypto.randomUUID();
 }
 
-function formatMoney(amount: number, currency: string): string {
-  return `${amount.toFixed(2)} ${currency}`;
-}
-
-function formatDate(value: string | null): string {
-  if (!value) {
-    return "—";
-  }
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return date.toLocaleString("uk-UA");
+function todayDateInputValue(): string {
+  return new Date().toISOString().slice(0, 10);
 }
 
 export default function App() {
+  const [view, setView] = useState<AppView>("dashboard");
+
   const [apiBaseUrl] = useState(() => {
     try {
       return getConfiguredApiBaseUrl();
@@ -58,12 +55,23 @@ export default function App() {
   const [invoiceTotalCount, setInvoiceTotalCount] = useState(0);
   const [invoicesLoading, setInvoicesLoading] = useState(false);
   const [invoicesError, setInvoicesError] = useState<string | null>(null);
-
   const [documentNumber, setDocumentNumber] = useState("");
   const [counterpartyReference, setCounterpartyReference] = useState("demo-counterparty");
   const [currency, setCurrency] = useState("UAH");
   const [createInvoiceBusy, setCreateInvoiceBusy] = useState(false);
   const [createInvoiceError, setCreateInvoiceError] = useState<string | null>(null);
+
+  const [accruals, setAccruals] = useState<Accrual[]>([]);
+  const [accrualTotalCount, setAccrualTotalCount] = useState(0);
+  const [accrualsLoading, setAccrualsLoading] = useState(false);
+  const [accrualsError, setAccrualsError] = useState<string | null>(null);
+  const [accrualType, setAccrualType] = useState("Revenue");
+  const [accrualAmount, setAccrualAmount] = useState("100.00");
+  const [accrualCurrency, setAccrualCurrency] = useState("UAH");
+  const [accrualRecognitionDate, setAccrualRecognitionDate] = useState(todayDateInputValue);
+  const [accrualDescription, setAccrualDescription] = useState("Демонстраційне нарахування");
+  const [createAccrualBusy, setCreateAccrualBusy] = useState(false);
+  const [createAccrualError, setCreateAccrualError] = useState<string | null>(null);
 
   const refreshHealth = useCallback(async () => {
     setHealthLoading(true);
@@ -97,37 +105,55 @@ export default function App() {
     }
   }, []);
 
-  const loadWorkspace = useCallback(
-    async (workspaceId: string) => {
-      const trimmed = workspaceId.trim();
-      if (!trimmed) {
-        setWorkspaceError("Вкажіть ідентифікатор фінансового робочого простору.");
-        return;
-      }
+  const loadAccruals = useCallback(async (workspaceId: string) => {
+    setAccrualsLoading(true);
+    setAccrualsError(null);
 
-      setWorkspaceBusy(true);
-      setWorkspaceError(null);
-      setCreateInvoiceError(null);
+    try {
+      const page = await listAccrualsPaged(workspaceId, 1, 20);
+      setAccruals(page.items);
+      setAccrualTotalCount(page.totalCount);
+    } catch (error) {
+      setAccruals([]);
+      setAccrualTotalCount(0);
+      setAccrualsError(error instanceof Error ? error.message : "Не вдалося завантажити нарахування.");
+    } finally {
+      setAccrualsLoading(false);
+    }
+  }, []);
 
-      try {
-        const loaded = await getFinanceWorkspace(trimmed);
-        setWorkspace(loaded);
-        setWorkspaceIdInput(loaded.id);
-        localStorage.setItem(WORKSPACE_STORAGE_KEY, loaded.id);
-        await loadInvoices(loaded.id);
-      } catch (error) {
-        setWorkspace(null);
-        setInvoices([]);
-        setInvoiceTotalCount(0);
-        setWorkspaceError(
-          error instanceof Error ? error.message : "Не вдалося завантажити робочий простір."
-        );
-      } finally {
-        setWorkspaceBusy(false);
-      }
-    },
-    [loadInvoices]
-  );
+  const loadWorkspace = useCallback(async (workspaceId: string) => {
+    const trimmed = workspaceId.trim();
+    if (!trimmed) {
+      setWorkspaceError("Вкажіть ідентифікатор фінансового робочого простору.");
+      return;
+    }
+
+    setWorkspaceBusy(true);
+    setWorkspaceError(null);
+    setCreateInvoiceError(null);
+    setCreateAccrualError(null);
+
+    try {
+      const loaded = await getFinanceWorkspace(trimmed);
+      setWorkspace(loaded);
+      setWorkspaceIdInput(loaded.id);
+      localStorage.setItem(WORKSPACE_STORAGE_KEY, loaded.id);
+      setAccrualCurrency(loaded.defaultCurrency);
+      setCurrency(loaded.defaultCurrency);
+    } catch (error) {
+      setWorkspace(null);
+      setInvoices([]);
+      setInvoiceTotalCount(0);
+      setAccruals([]);
+      setAccrualTotalCount(0);
+      setWorkspaceError(
+        error instanceof Error ? error.message : "Не вдалося завантажити робочий простір."
+      );
+    } finally {
+      setWorkspaceBusy(false);
+    }
+  }, []);
 
   useEffect(() => {
     void refreshHealth();
@@ -140,6 +166,27 @@ export default function App() {
     }
   }, [loadWorkspace]);
 
+  useEffect(() => {
+    if (view === "invoices" && workspace) {
+      void loadInvoices(workspace.id);
+    }
+  }, [view, workspace, loadInvoices]);
+
+  useEffect(() => {
+    if (view === "accruals" && workspace) {
+      void loadAccruals(workspace.id);
+    }
+  }, [view, workspace, loadAccruals]);
+
+  function navigate(next: AppView) {
+    if ((next === "invoices" || next === "accruals") && !workspace) {
+      setView("workspace");
+      return;
+    }
+
+    setView(next);
+  }
+
   async function handleLoadWorkspace(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     await loadWorkspace(workspaceIdInput);
@@ -149,6 +196,7 @@ export default function App() {
     setWorkspaceBusy(true);
     setWorkspaceError(null);
     setCreateInvoiceError(null);
+    setCreateAccrualError(null);
 
     try {
       const created = await createFinanceWorkspace({
@@ -162,11 +210,18 @@ export default function App() {
       setWorkspaceIdInput(created.id);
       localStorage.setItem(WORKSPACE_STORAGE_KEY, created.id);
       setDocumentNumber(`INV-${new Date().toISOString().slice(0, 10).replaceAll("-", "")}-001`);
-      await loadInvoices(created.id);
+      setCurrency(created.defaultCurrency);
+      setAccrualCurrency(created.defaultCurrency);
+      setInvoices([]);
+      setInvoiceTotalCount(0);
+      setAccruals([]);
+      setAccrualTotalCount(0);
     } catch (error) {
       setWorkspace(null);
       setInvoices([]);
       setInvoiceTotalCount(0);
+      setAccruals([]);
+      setAccrualTotalCount(0);
       setWorkspaceError(
         error instanceof Error ? error.message : "Не вдалося створити робочий простір."
       );
@@ -202,178 +257,122 @@ export default function App() {
     }
   }
 
+  async function handleCreateAccrual(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!workspace) {
+      setCreateAccrualError("Спочатку завантажте або створіть робочий простір.");
+      return;
+    }
+
+    const amount = Number(accrualAmount.replace(",", "."));
+    if (!Number.isFinite(amount)) {
+      setCreateAccrualError("Сума має бути числовим значенням.");
+      return;
+    }
+
+    setCreateAccrualBusy(true);
+    setCreateAccrualError(null);
+
+    try {
+      await createAccrual(workspace.id, {
+        type: accrualType,
+        amount,
+        currency: accrualCurrency,
+        recognitionDateUtc: new Date(`${accrualRecognitionDate}T00:00:00.000Z`).toISOString(),
+        description: accrualDescription
+      });
+      await loadAccruals(workspace.id);
+    } catch (error) {
+      setCreateAccrualError(
+        error instanceof Error ? error.message : "Не вдалося створити нарахування."
+      );
+    } finally {
+      setCreateAccrualBusy(false);
+    }
+  }
+
   return (
     <main className="shell">
-      <header className="hero">
-        <p className="eyebrow">VectorFlow Finance</p>
-        <h1>Фінанси</h1>
-        <p className="lede">
-          Браузерна оболонка підключена до реального Finance API. Створіть робочий простір і
-          перегляньте рахунки з живої бази.
-        </p>
-      </header>
-
-      <section className="panel" aria-labelledby="api-status-heading">
-        <div className="panel-header">
-          <h2 id="api-status-heading">Стан API</h2>
-          <button type="button" onClick={() => void refreshHealth()} disabled={healthLoading}>
-            Оновити
-          </button>
-        </div>
-        <p className="meta">Базовий URL: {apiBaseUrl}</p>
-        {healthLoading ? <p className="state">Перевірка з&apos;єднання…</p> : null}
-        {healthError ? <p className="state state-error">{healthError}</p> : null}
-        {health ? (
-          <dl className="facts">
-            <div>
-              <dt>Продукт</dt>
-              <dd>{health.product}</dd>
-            </div>
-            <div>
-              <dt>Статус</dt>
-              <dd>{health.status}</dd>
-            </div>
-            <div>
-              <dt>Фаза</dt>
-              <dd>{health.phase}</dd>
-            </div>
-          </dl>
-        ) : null}
-      </section>
-
-      <section className="panel" aria-labelledby="workspace-heading">
-        <div className="panel-header">
-          <h2 id="workspace-heading">Робочий простір</h2>
-          <button type="button" onClick={() => void handleCreateWorkspace()} disabled={workspaceBusy}>
-            Створити новий
-          </button>
-        </div>
-        <form className="row-form" onSubmit={(event) => void handleLoadWorkspace(event)}>
-          <label>
-            Ідентифікатор
-            <input
-              value={workspaceIdInput}
-              onChange={(event) => setWorkspaceIdInput(event.target.value)}
-              placeholder="GUID фінансового робочого простору"
-              autoComplete="off"
-              spellCheck={false}
-            />
-          </label>
-          <button type="submit" disabled={workspaceBusy}>
-            Завантажити
-          </button>
-        </form>
-        {workspaceBusy ? <p className="state">Завантаження робочого простору…</p> : null}
-        {workspaceError ? <p className="state state-error">{workspaceError}</p> : null}
-        {workspace ? (
-          <dl className="facts">
-            <div>
-              <dt>Назва</dt>
-              <dd>{workspace.name}</dd>
-            </div>
-            <div>
-              <dt>Статус</dt>
-              <dd>{workspace.status}</dd>
-            </div>
-            <div>
-              <dt>Валюта</dt>
-              <dd>{workspace.defaultCurrency}</dd>
-            </div>
-            <div>
-              <dt>Id</dt>
-              <dd className="mono">{workspace.id}</dd>
-            </div>
-          </dl>
-        ) : null}
-      </section>
-
-      <section className="panel" aria-labelledby="invoices-heading">
-        <div className="panel-header">
-          <h2 id="invoices-heading">Рахунки</h2>
+      <nav className="app-nav" aria-label="Основна навігація">
+        {APP_VIEWS.map((item) => (
           <button
+            key={item.id}
             type="button"
-            onClick={() => workspace && void loadInvoices(workspace.id)}
-            disabled={!workspace || invoicesLoading}
+            className={view === item.id ? "app-nav-item is-active" : "app-nav-item"}
+            onClick={() => navigate(item.id)}
           >
-            Оновити список
+            {item.label}
           </button>
-        </div>
+        ))}
+      </nav>
 
-        {!workspace ? (
-          <p className="state">Оберіть робочий простір, щоб побачити рахунки з API.</p>
-        ) : null}
+      {view === "dashboard" ? (
+        <DashboardView
+          apiBaseUrl={apiBaseUrl}
+          health={health}
+          healthLoading={healthLoading}
+          healthError={healthError}
+          workspace={workspace}
+          onRefreshHealth={() => void refreshHealth()}
+          onNavigate={navigate}
+        />
+      ) : null}
 
-        {workspace ? (
-          <form className="create-form" onSubmit={(event) => void handleCreateInvoice(event)}>
-            <label>
-              Номер документа
-              <input
-                value={documentNumber}
-                onChange={(event) => setDocumentNumber(event.target.value)}
-                placeholder="INV-20260724-001"
-                required
-              />
-            </label>
-            <label>
-              Контрагент
-              <input
-                value={counterpartyReference}
-                onChange={(event) => setCounterpartyReference(event.target.value)}
-                required
-              />
-            </label>
-            <label>
-              Валюта
-              <input
-                value={currency}
-                onChange={(event) => setCurrency(event.target.value.toUpperCase())}
-                maxLength={3}
-                required
-              />
-            </label>
-            <button type="submit" disabled={createInvoiceBusy}>
-              Створити чернетку
-            </button>
-          </form>
-        ) : null}
+      {view === "workspace" ? (
+        <WorkspaceView
+          workspaceIdInput={workspaceIdInput}
+          workspace={workspace}
+          workspaceBusy={workspaceBusy}
+          workspaceError={workspaceError}
+          onWorkspaceIdChange={setWorkspaceIdInput}
+          onLoadWorkspace={(event) => void handleLoadWorkspace(event)}
+          onCreateWorkspace={() => void handleCreateWorkspace()}
+        />
+      ) : null}
 
-        {createInvoiceError ? <p className="state state-error">{createInvoiceError}</p> : null}
-        {invoicesLoading ? <p className="state">Завантаження рахунків…</p> : null}
-        {invoicesError ? <p className="state state-error">{invoicesError}</p> : null}
-        {!invoicesLoading && !invoicesError && workspace && invoices.length === 0 ? (
-          <p className="state">Рахунків ще немає. Створіть чернетку через форму вище.</p>
-        ) : null}
+      {view === "invoices" ? (
+        <InvoicesView
+          workspace={workspace}
+          invoices={invoices}
+          invoiceTotalCount={invoiceTotalCount}
+          invoicesLoading={invoicesLoading}
+          invoicesError={invoicesError}
+          documentNumber={documentNumber}
+          counterpartyReference={counterpartyReference}
+          currency={currency}
+          createInvoiceBusy={createInvoiceBusy}
+          createInvoiceError={createInvoiceError}
+          onDocumentNumberChange={setDocumentNumber}
+          onCounterpartyChange={setCounterpartyReference}
+          onCurrencyChange={setCurrency}
+          onRefresh={() => workspace && void loadInvoices(workspace.id)}
+          onCreateInvoice={(event) => void handleCreateInvoice(event)}
+        />
+      ) : null}
 
-        {invoices.length > 0 ? (
-          <>
-            <p className="meta">Показано {invoices.length} з {invoiceTotalCount}</p>
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Номер</th>
-                    <th>Статус</th>
-                    <th>Контрагент</th>
-                    <th>Сума</th>
-                    <th>Створено</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {invoices.map((invoice) => (
-                    <tr key={invoice.id}>
-                      <td>{invoice.documentNumber}</td>
-                      <td>{invoice.status}</td>
-                      <td>{invoice.counterpartyReference}</td>
-                      <td>{formatMoney(invoice.totalAmount, invoice.currency)}</td>
-                      <td>{formatDate(invoice.createdAtUtc)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </>
-        ) : null}
-      </section>
+      {view === "accruals" ? (
+        <AccrualsView
+          workspace={workspace}
+          accruals={accruals}
+          accrualTotalCount={accrualTotalCount}
+          accrualsLoading={accrualsLoading}
+          accrualsError={accrualsError}
+          accrualType={accrualType}
+          accrualAmount={accrualAmount}
+          accrualCurrency={accrualCurrency}
+          accrualRecognitionDate={accrualRecognitionDate}
+          accrualDescription={accrualDescription}
+          createAccrualBusy={createAccrualBusy}
+          createAccrualError={createAccrualError}
+          onTypeChange={setAccrualType}
+          onAmountChange={setAccrualAmount}
+          onCurrencyChange={setAccrualCurrency}
+          onRecognitionDateChange={setAccrualRecognitionDate}
+          onDescriptionChange={setAccrualDescription}
+          onRefresh={() => workspace && void loadAccruals(workspace.id)}
+          onCreateAccrual={(event) => void handleCreateAccrual(event)}
+        />
+      ) : null}
     </main>
   );
 }
