@@ -239,6 +239,14 @@ body {
   color: #1f6b3a;
 }
 
+.row-highlight {
+  background: rgba(31, 107, 58, 0.1);
+}
+
+.row-highlight td {
+  border-bottom-color: rgba(31, 107, 58, 0.22);
+}
+
 .state-actions {
   display: flex;
   flex-wrap: wrap;

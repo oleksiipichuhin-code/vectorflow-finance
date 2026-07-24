@@ -50,6 +50,7 @@ export function AccrualsView({ workspace }: AccrualsViewProps) {
   const [createBusy, setCreateBusy] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [createSuccess, setCreateSuccess] = useState<string | null>(null);
+  const [highlightedId, setHighlightedId] = useState<string | null>(null);
 
   const requestSeq = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
@@ -70,6 +71,7 @@ export function AccrualsView({ workspace }: AccrualsViewProps) {
     setError(null);
     setCreateError(null);
     setCreateSuccess(null);
+    setHighlightedId(null);
   }, [workspace?.id]);
 
   const loadPage = useCallback(
@@ -184,8 +186,15 @@ export function AccrualsView({ workspace }: AccrualsViewProps) {
         recognitionDateUtc: new Date(`${accrualRecognitionDate}T00:00:00.000Z`).toISOString(),
         description: accrualDescription
       });
-      setCreateSuccess(`Чернетку нарахування «${created.description}» створено.`);
-      await loadPage(workspace.id, page, appliedFilters);
+      setDraftFilters(emptyFilters);
+      setAppliedFilters(emptyFilters);
+      setFilterValidationError(null);
+      setPage(1);
+      setHighlightedId(created.id);
+      setCreateSuccess(
+        `Чернетку нарахування «${created.description}» створено. Запис показано у списку нижче.`
+      );
+      await loadPage(workspace.id, 1, emptyFilters);
     } catch (createErr) {
       setCreateError(
         createErr instanceof Error ? createErr.message : "Не вдалося створити нарахування."
@@ -194,6 +203,17 @@ export function AccrualsView({ workspace }: AccrualsViewProps) {
       setCreateBusy(false);
     }
   }
+
+  useEffect(() => {
+    if (!highlightedId || accruals.length === 0) {
+      return;
+    }
+
+    const row = document.querySelector(`[data-row-id="${highlightedId}"]`);
+    if (row instanceof HTMLElement) {
+      row.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }, [highlightedId, accruals]);
 
   const pages = totalPages(totalCount, pageSize);
   const canGoPrevious = page > 1 && !loading;
@@ -392,7 +412,11 @@ export function AccrualsView({ workspace }: AccrualsViewProps) {
                 </thead>
                 <tbody>
                   {accruals.map((accrual) => (
-                    <tr key={accrual.id}>
+                    <tr
+                      key={accrual.id}
+                      data-row-id={accrual.id}
+                      className={accrual.id === highlightedId ? "row-highlight" : undefined}
+                    >
                       <td>{accrual.type}</td>
                       <td>{accrual.status}</td>
                       <td className="cell-wrap">{accrual.description}</td>
