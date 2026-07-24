@@ -2,6 +2,7 @@ import { ListLoadState } from "./components/ListLoadState";
 import { Panel, StatusMessage } from "./components/Panel";
 import type { FinanceWorkspace, HealthStatus } from "./api";
 import type { AppView } from "./navigation";
+import { WorkspaceSummary } from "./WorkspaceSummary";
 
 type DashboardViewProps = {
   apiBaseUrl: string;
@@ -69,6 +70,8 @@ export function DashboardView({
         ) : null}
       </Panel>
 
+      {workspace ? <WorkspaceSummary workspace={workspace} onNavigate={onNavigate} /> : null}
+
       <Panel title="Навігація сценарію" headingId="scenario-nav-heading">
         <div className="nav-cards">
           <button type="button" className="nav-card" onClick={() => onNavigate("workspace")}>
@@ -86,7 +89,11 @@ export function DashboardView({
             disabled={!workspace}
           >
             <span className="nav-card-title">Invoices</span>
-            <span className="nav-card-copy">Список рахунків обраного workspace</span>
+            <span className="nav-card-copy">
+              {workspace
+                ? "Перейти до рахунків обраного workspace"
+                : "Список рахунків обраного workspace"}
+            </span>
           </button>
           <button
             type="button"
@@ -95,11 +102,17 @@ export function DashboardView({
             disabled={!workspace}
           >
             <span className="nav-card-title">Accruals</span>
-            <span className="nav-card-copy">Список нарахувань обраного workspace</span>
+            <span className="nav-card-copy">
+              {workspace
+                ? "Перейти до нарахувань обраного workspace"
+                : "Список нарахувань обраного workspace"}
+            </span>
           </button>
         </div>
         {!workspace ? (
-          <StatusMessage>Спочатку відкрийте Workspace, щоб перейти до Invoices і Accruals.</StatusMessage>
+          <StatusMessage>
+            Спочатку відкрийте Workspace, щоб побачити підсумки та перейти до Invoices і Accruals.
+          </StatusMessage>
         ) : null}
       </Panel>
     </>
