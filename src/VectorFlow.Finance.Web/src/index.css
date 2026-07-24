@@ -53,6 +53,42 @@ body {
   color: #f4f7fb;
 }
 
+.workspace-context {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+  padding: 0.85rem 0 0;
+  border-top: 1px solid rgba(27, 36, 48, 0.12);
+}
+
+.workspace-context-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.workspace-context-label {
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #5a6b7d;
+}
+
+.workspace-context-name {
+  font-size: 1.05rem;
+  font-weight: 650;
+}
+
+.workspace-context-meta,
+.workspace-context-pending {
+  margin: 0;
+  color: #5a6b7d;
+  font-size: 0.95rem;
+}
+
 .nav-cards {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));

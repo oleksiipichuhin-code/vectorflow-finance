@@ -11,6 +11,7 @@ import {
 import { DashboardView } from "./DashboardView";
 import { InvoicesView } from "./InvoicesView";
 import { APP_VIEWS, type AppView } from "./navigation";
+import { WorkspaceContextBar } from "./WorkspaceContextBar";
 import { WorkspaceView } from "./WorkspaceView";
 
 const WORKSPACE_STORAGE_KEY = "vectorflow.finance.demo.workspaceId";
@@ -155,6 +156,12 @@ export default function App() {
           </button>
         ))}
       </nav>
+
+      <WorkspaceContextBar
+        workspace={workspace}
+        workspaceBusy={workspaceBusy}
+        onOpenWorkspace={() => navigate("workspace")}
+      />
 
       {view === "dashboard" ? (
         <DashboardView
