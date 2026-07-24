@@ -1,8 +1,9 @@
+import { useCallback, useState } from "react";
 import { ListLoadState } from "./components/ListLoadState";
 import { Panel, StatusMessage } from "./components/Panel";
 import type { FinanceWorkspace, HealthStatus } from "./api";
 import type { AppView } from "./navigation";
-import { WorkspaceSummary } from "./WorkspaceSummary";
+import { WorkspaceSummary, type WorkspaceTotals } from "./WorkspaceSummary";
 
 type DashboardViewProps = {
   apiBaseUrl: string;
@@ -14,6 +15,40 @@ type DashboardViewProps = {
   onNavigate: (view: AppView) => void;
 };
 
+function invoiceCardCopy(workspace: FinanceWorkspace | null, totals: WorkspaceTotals | null): string {
+  if (!workspace) {
+    return "Список рахунків обраного workspace";
+  }
+
+  if (!totals) {
+    return "Підрахунок рахунків…";
+  }
+
+  const count = totals.invoiceCount;
+  if (count === 1) {
+    return "1 рахунок у workspace";
+  }
+
+  return `${count} рахунків у workspace`;
+}
+
+function accrualCardCopy(workspace: FinanceWorkspace | null, totals: WorkspaceTotals | null): string {
+  if (!workspace) {
+    return "Список нарахувань обраного workspace";
+  }
+
+  if (!totals) {
+    return "Підрахунок нарахувань…";
+  }
+
+  const count = totals.accrualCount;
+  if (count === 1) {
+    return "1 нарахування у workspace";
+  }
+
+  return `${count} нарахувань у workspace`;
+}
+
 export function DashboardView({
   apiBaseUrl,
   health,
@@ -23,6 +58,11 @@ export function DashboardView({
   onRefreshHealth,
   onNavigate
 }: DashboardViewProps) {
+  const [totals, setTotals] = useState<WorkspaceTotals | null>(null);
+  const handleTotalsChange = useCallback((next: WorkspaceTotals | null) => {
+    setTotals(next);
+  }, []);
+
   return (
     <>
       <header className="hero">
@@ -70,7 +110,13 @@ export function DashboardView({
         ) : null}
       </Panel>
 
-      {workspace ? <WorkspaceSummary workspace={workspace} onNavigate={onNavigate} /> : null}
+      {workspace ? (
+        <WorkspaceSummary
+          workspace={workspace}
+          onNavigate={onNavigate}
+          onTotalsChange={handleTotalsChange}
+        />
+      ) : null}
 
       <Panel title="Навігація сценарію" headingId="scenario-nav-heading">
         <div className="nav-cards">
@@ -89,11 +135,12 @@ export function DashboardView({
             disabled={!workspace}
           >
             <span className="nav-card-title">Invoices</span>
-            <span className="nav-card-copy">
-              {workspace
-                ? "Перейти до рахунків обраного workspace"
-                : "Список рахунків обраного workspace"}
-            </span>
+            {workspace && totals ? (
+              <span className="nav-card-metric" aria-hidden="true">
+                {totals.invoiceCount}
+              </span>
+            ) : null}
+            <span className="nav-card-copy">{invoiceCardCopy(workspace, workspace ? totals : null)}</span>
           </button>
           <button
             type="button"
@@ -102,11 +149,12 @@ export function DashboardView({
             disabled={!workspace}
           >
             <span className="nav-card-title">Accruals</span>
-            <span className="nav-card-copy">
-              {workspace
-                ? "Перейти до нарахувань обраного workspace"
-                : "Список нарахувань обраного workspace"}
-            </span>
+            {workspace && totals ? (
+              <span className="nav-card-metric" aria-hidden="true">
+                {totals.accrualCount}
+              </span>
+            ) : null}
+            <span className="nav-card-copy">{accrualCardCopy(workspace, workspace ? totals : null)}</span>
           </button>
         </div>
         {!workspace ? (
