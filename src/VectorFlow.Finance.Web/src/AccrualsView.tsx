@@ -49,6 +49,7 @@ export function AccrualsView({ workspace }: AccrualsViewProps) {
   const [accrualDescription, setAccrualDescription] = useState("Демонстраційне нарахування");
   const [createBusy, setCreateBusy] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [createSuccess, setCreateSuccess] = useState<string | null>(null);
 
   const requestSeq = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
@@ -68,6 +69,7 @@ export function AccrualsView({ workspace }: AccrualsViewProps) {
     setTotalCount(0);
     setError(null);
     setCreateError(null);
+    setCreateSuccess(null);
   }, [workspace?.id]);
 
   const loadPage = useCallback(
@@ -172,15 +174,17 @@ export function AccrualsView({ workspace }: AccrualsViewProps) {
 
     setCreateBusy(true);
     setCreateError(null);
+    setCreateSuccess(null);
 
     try {
-      await createAccrual(workspace.id, {
+      const created = await createAccrual(workspace.id, {
         type: accrualType,
         amount,
         currency: accrualCurrency,
         recognitionDateUtc: new Date(`${accrualRecognitionDate}T00:00:00.000Z`).toISOString(),
         description: accrualDescription
       });
+      setCreateSuccess(`Чернетку нарахування «${created.description}» створено.`);
       await loadPage(workspace.id, page, appliedFilters);
     } catch (createErr) {
       setCreateError(
@@ -350,6 +354,7 @@ export function AccrualsView({ workspace }: AccrualsViewProps) {
         )}
 
         {createError ? <StatusMessage tone="error">{createError}</StatusMessage> : null}
+        {createSuccess ? <StatusMessage tone="success">{createSuccess}</StatusMessage> : null}
         {workspace ? (
           <ListLoadState
             loading={loading}

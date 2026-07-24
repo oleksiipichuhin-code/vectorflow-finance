@@ -29,6 +29,11 @@ const emptyFilters: InvoiceListFilters = {
   createdToDate: ""
 };
 
+function buildDemoDocumentNumber(): string {
+  const stamp = new Date().toISOString().replace(/[-:TZ.]/g, "");
+  return `INV-${stamp}`;
+}
+
 export function InvoicesView({ workspace }: InvoicesViewProps) {
   const [draftFilters, setDraftFilters] = useState<InvoiceListFilters>(emptyFilters);
   const [appliedFilters, setAppliedFilters] = useState<InvoiceListFilters>(emptyFilters);
@@ -41,11 +46,12 @@ export function InvoicesView({ workspace }: InvoicesViewProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [documentNumber, setDocumentNumber] = useState("");
+  const [documentNumber, setDocumentNumber] = useState(buildDemoDocumentNumber);
   const [counterpartyReference, setCounterpartyReference] = useState("demo-counterparty");
   const [currency, setCurrency] = useState("UAH");
   const [createBusy, setCreateBusy] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [createSuccess, setCreateSuccess] = useState<string | null>(null);
 
   const requestSeq = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
@@ -65,6 +71,8 @@ export function InvoicesView({ workspace }: InvoicesViewProps) {
     setTotalCount(0);
     setError(null);
     setCreateError(null);
+    setCreateSuccess(null);
+    setDocumentNumber(buildDemoDocumentNumber());
   }, [workspace?.id]);
 
   const loadPage = useCallback(
@@ -163,14 +171,16 @@ export function InvoicesView({ workspace }: InvoicesViewProps) {
 
     setCreateBusy(true);
     setCreateError(null);
+    setCreateSuccess(null);
 
     try {
-      await createInvoice(workspace.id, {
+      const created = await createInvoice(workspace.id, {
         documentNumber,
         counterpartyReference,
         currency
       });
-      setDocumentNumber("");
+      setDocumentNumber(buildDemoDocumentNumber());
+      setCreateSuccess(`Чернетку рахунка «${created.documentNumber}» створено.`);
       await loadPage(workspace.id, page, appliedFilters);
     } catch (createErr) {
       setCreateError(
@@ -314,7 +324,10 @@ export function InvoicesView({ workspace }: InvoicesViewProps) {
                 Номер документа
                 <input
                   value={documentNumber}
-                  onChange={(event) => setDocumentNumber(event.target.value)}
+                  onChange={(event) => {
+                    setDocumentNumber(event.target.value);
+                    setCreateSuccess(null);
+                  }}
                   placeholder="INV-20260724-001"
                   required
                 />
@@ -323,7 +336,10 @@ export function InvoicesView({ workspace }: InvoicesViewProps) {
                 Контрагент
                 <input
                   value={counterpartyReference}
-                  onChange={(event) => setCounterpartyReference(event.target.value)}
+                  onChange={(event) => {
+                    setCounterpartyReference(event.target.value);
+                    setCreateSuccess(null);
+                  }}
                   required
                 />
               </label>
@@ -331,7 +347,10 @@ export function InvoicesView({ workspace }: InvoicesViewProps) {
                 Валюта
                 <input
                   value={currency}
-                  onChange={(event) => setCurrency(event.target.value.toUpperCase())}
+                  onChange={(event) => {
+                    setCurrency(event.target.value.toUpperCase());
+                    setCreateSuccess(null);
+                  }}
                   maxLength={3}
                   required
                 />
@@ -344,6 +363,7 @@ export function InvoicesView({ workspace }: InvoicesViewProps) {
         )}
 
         {createError ? <StatusMessage tone="error">{createError}</StatusMessage> : null}
+        {createSuccess ? <StatusMessage tone="success">{createSuccess}</StatusMessage> : null}
         {workspace ? (
           <ListLoadState
             loading={loading}

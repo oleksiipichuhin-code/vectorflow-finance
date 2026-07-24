@@ -21,9 +21,12 @@ export function Panel({ title, headingId, actions, children }: PanelProps) {
 
 type StatusMessageProps = {
   children: ReactNode;
-  tone?: "default" | "error";
+  tone?: "default" | "error" | "success";
 };
 
 export function StatusMessage({ children, tone = "default" }: StatusMessageProps) {
-  return <p className={tone === "error" ? "state state-error" : "state"}>{children}</p>;
+  const className =
+    tone === "error" ? "state state-error" : tone === "success" ? "state state-success" : "state";
+
+  return <p className={className}>{children}</p>;
 }

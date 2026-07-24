@@ -235,6 +235,10 @@ body {
   color: #8a1f2b;
 }
 
+.state-success {
+  color: #1f6b3a;
+}
+
 .state-actions {
   display: flex;
   flex-wrap: wrap;
