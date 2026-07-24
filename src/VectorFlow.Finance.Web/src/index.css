@@ -89,6 +89,18 @@ body {
   color: #445466;
 }
 
+.demo-start-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.button-secondary {
+  background: rgba(255, 255, 255, 0.72);
+  color: #1b2430;
+  border-color: rgba(27, 36, 48, 0.18);
+}
+
 .metrics {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));

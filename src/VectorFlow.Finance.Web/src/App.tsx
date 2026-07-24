@@ -131,6 +131,16 @@ export default function App() {
     }
   }
 
+  function handleRetryWorkspace() {
+    const trimmed = workspaceIdInput.trim();
+    if (trimmed) {
+      void loadWorkspace(trimmed);
+      return;
+    }
+
+    void handleCreateWorkspace();
+  }
+
   return (
     <main className="shell">
       <nav className="app-nav" aria-label="Основна навігація">
@@ -153,7 +163,11 @@ export default function App() {
           healthLoading={healthLoading}
           healthError={healthError}
           workspace={workspace}
+          workspaceBusy={workspaceBusy}
+          workspaceError={workspaceError}
           onRefreshHealth={() => void refreshHealth()}
+          onCreateWorkspace={() => void handleCreateWorkspace()}
+          onRetryWorkspace={handleRetryWorkspace}
           onNavigate={navigate}
         />
       ) : null}

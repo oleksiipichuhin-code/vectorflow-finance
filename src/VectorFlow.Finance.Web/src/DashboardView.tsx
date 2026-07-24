@@ -11,7 +11,11 @@ type DashboardViewProps = {
   healthLoading: boolean;
   healthError: string | null;
   workspace: FinanceWorkspace | null;
+  workspaceBusy: boolean;
+  workspaceError: string | null;
   onRefreshHealth: () => void;
+  onCreateWorkspace: () => void;
+  onRetryWorkspace: () => void;
   onNavigate: (view: AppView) => void;
 };
 
@@ -55,7 +59,11 @@ export function DashboardView({
   healthLoading,
   healthError,
   workspace,
+  workspaceBusy,
+  workspaceError,
   onRefreshHealth,
+  onCreateWorkspace,
+  onRetryWorkspace,
   onNavigate
 }: DashboardViewProps) {
   const [totals, setTotals] = useState<WorkspaceTotals | null>(null);
@@ -116,7 +124,36 @@ export function DashboardView({
           onNavigate={onNavigate}
           onTotalsChange={handleTotalsChange}
         />
-      ) : null}
+      ) : (
+        <Panel title="Старт демонстрації" headingId="demo-start-heading">
+          <p className="meta">
+            Створіть фінансовий простір одним кроком через реальний API — без ручного введення GUID.
+          </p>
+          <ListLoadState
+            loading={workspaceBusy}
+            loadingMessage="Підготовка робочого простору…"
+            error={workspaceError}
+            onRetry={onRetryWorkspace}
+            retryDisabled={workspaceBusy}
+            empty={!workspaceBusy && !workspaceError}
+            emptyMessage="Після створення стануть доступні підсумки, Invoices і Accruals."
+          />
+          {!workspaceBusy ? (
+            <div className="demo-start-actions">
+              <button type="button" onClick={onCreateWorkspace}>
+                Створити демонстраційний простір
+              </button>
+              <button
+                type="button"
+                className="button-secondary"
+                onClick={() => onNavigate("workspace")}
+              >
+                Завантажити за ідентифікатором
+              </button>
+            </div>
+          ) : null}
+        </Panel>
+      )}
 
       <Panel title="Навігація сценарію" headingId="scenario-nav-heading">
         <div className="nav-cards">
@@ -159,7 +196,7 @@ export function DashboardView({
         </div>
         {!workspace ? (
           <StatusMessage>
-            Спочатку відкрийте Workspace, щоб побачити підсумки та перейти до Invoices і Accruals.
+            Спочатку створіть або відкрийте Workspace у блоці «Старт демонстрації».
           </StatusMessage>
         ) : null}
       </Panel>
