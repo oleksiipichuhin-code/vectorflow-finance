@@ -27,7 +27,9 @@ public interface IAccrualRepository
     /// together with the total matching count. Optional <paramref name="status"/>, optional
     /// <paramref name="sourceInvoiceId"/>, optional <paramref name="type"/>, optional
     /// <paramref name="currency"/> (exact Ordinal match on normalized Currency.Code), optional
-    /// <paramref name="description"/> (exact Ordinal match after Description trim/normalization), and optional
+    /// <paramref name="description"/> (exact Ordinal match after Description trim/normalization), optional
+    /// <paramref name="descriptionPrefix"/> (case-sensitive Ordinal prefix match after Description
+    /// trim/normalization; SQL <c>substr</c> equality, not LIKE/StartsWith), and optional
     /// <paramref name="reversalReason"/> (exact Ordinal match after ReversalReason trim/normalization) are
     /// applied in the query; inclusive CreatedAt bounds (<paramref name="createdFromUtc"/> /
     /// <paramref name="createdToUtc"/>), inclusive RecognitionDate bounds (<paramref name="recognitionFromUtc"/> /
@@ -44,11 +46,15 @@ public interface IAccrualRepository
     /// filter (positive exact match only when provided; no partial/full-text mode). A null
     /// <paramref name="amountFrom"/> / <paramref name="amountTo"/> means no that Amount bound. A null
     /// <paramref name="description"/> means no Description filter (positive exact match only when provided;
-    /// no partial/prefix/case-insensitive/full-text mode). A null <paramref name="recognizedFromUtc"/> /
-    /// <paramref name="recognizedToUtc"/> means no that RecognizedAt bound. A null
-    /// <paramref name="reversedFromUtc"/> / <paramref name="reversedToUtc"/> means no that ReversedAt bound.
-    /// A null <paramref name="reversalReason"/> means no ReversalReason filter (positive exact match only when
-    /// provided; null ReversalReason rows do not match; no partial/prefix/case-insensitive/full-text mode).
+    /// no partial/prefix/case-insensitive/full-text mode). A null <paramref name="descriptionPrefix"/> means
+    /// no Description prefix filter (positive case-sensitive Ordinal prefix match only when provided; no
+    /// contains/case-insensitive/full-text mode; literal treatment of wildcard-like characters). A null
+    /// <paramref name="recognizedFromUtc"/> / <paramref name="recognizedToUtc"/> means no that RecognizedAt
+    /// bound. A null <paramref name="reversedFromUtc"/> / <paramref name="reversedToUtc"/> means no that
+    /// ReversedAt bound. A null <paramref name="reversalReason"/> means no ReversalReason filter (positive
+    /// exact match only when provided; null ReversalReason rows do not match; no partial/prefix/
+    /// case-insensitive/full-text mode). When both <paramref name="description"/> and
+    /// <paramref name="descriptionPrefix"/> are provided, they compose under AND.
     /// </summary>
     Task<(IReadOnlyList<Accrual> Items, int TotalCount)> ListPagedAsync(
         FinanceWorkspaceId financeWorkspaceId,
@@ -65,6 +71,7 @@ public interface IAccrualRepository
         decimal? amountFrom = null,
         decimal? amountTo = null,
         string? description = null,
+        string? descriptionPrefix = null,
         DateTimeOffset? recognizedFromUtc = null,
         DateTimeOffset? recognizedToUtc = null,
         DateTimeOffset? reversedFromUtc = null,

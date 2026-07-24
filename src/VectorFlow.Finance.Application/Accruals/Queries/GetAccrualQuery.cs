@@ -22,6 +22,7 @@ public sealed record GetAccrualsPagedQuery(
     decimal? AmountFrom = null,
     decimal? AmountTo = null,
     string? Description = null,
+    string? DescriptionPrefix = null,
     DateTimeOffset? RecognizedFromUtc = null,
     DateTimeOffset? RecognizedToUtc = null,
     DateTimeOffset? ReversedFromUtc = null,

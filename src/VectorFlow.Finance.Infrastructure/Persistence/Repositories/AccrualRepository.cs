@@ -57,6 +57,7 @@ public sealed class AccrualRepository : IAccrualRepository
         decimal? amountFrom = null,
         decimal? amountTo = null,
         string? description = null,
+        string? descriptionPrefix = null,
         DateTimeOffset? recognizedFromUtc = null,
         DateTimeOffset? recognizedToUtc = null,
         DateTimeOffset? reversedFromUtc = null,
@@ -75,6 +76,7 @@ public sealed class AccrualRepository : IAccrualRepository
                 type,
                 currency,
                 description,
+                descriptionPrefix,
                 reversalReason)
             .ToListAsync(cancellationToken);
 
@@ -156,6 +158,7 @@ public sealed class AccrualRepository : IAccrualRepository
         AccrualType? type,
         string? currency,
         string? description,
+        string? descriptionPrefix,
         string? reversalReason)
     {
         var filtered = source.Where(accrual => accrual.FinanceWorkspaceId == financeWorkspaceId);
@@ -184,6 +187,16 @@ public sealed class AccrualRepository : IAccrualRepository
         if (description is not null)
         {
             filtered = filtered.Where(accrual => accrual.Description == description);
+        }
+
+        if (descriptionPrefix is not null)
+        {
+            // SQLite LIKE/StartsWith is ASCII case-insensitive. Case-sensitive Ordinal prefix uses
+            // substr equality (provider-translated), which treats wildcard-like characters literally.
+            var prefixLength = descriptionPrefix.Length;
+            filtered = filtered.Where(accrual =>
+                accrual.Description.Length >= prefixLength &&
+                accrual.Description.Substring(0, prefixLength) == descriptionPrefix);
         }
 
         if (reversalReason is not null)

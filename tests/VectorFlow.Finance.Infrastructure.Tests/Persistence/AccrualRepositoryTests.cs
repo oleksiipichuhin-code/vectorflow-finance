@@ -3024,6 +3024,350 @@ public sealed class AccrualRepositoryTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ListPaged_description_prefix_match_is_ordinal_and_excludes_others()
+    {
+        var match = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 50m, new Currency("UAH"),
+            RecognitionDate, "Alpha", null, T1);
+        var lower = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 50m, new Currency("UAH"),
+            RecognitionDate, "alpha", null, T2);
+        var other = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Expense, 50m, new Currency("UAH"),
+            RecognitionDate, "Other", null, T0);
+
+        await _repository.AddAsync(match);
+        await _repository.AddAsync(lower);
+        await _repository.AddAsync(other);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var (items, totalCount) = await new AccrualRepository(readContext)
+            .ListPagedAsync(
+                _workspaceA,
+                page: 1,
+                pageSize: 10,
+                descriptionPrefix: "Al");
+
+        Assert.Equal(1, totalCount);
+        Assert.Equal(match.Id, Assert.Single(items).Id);
+    }
+
+    [Fact]
+    public async Task ListPaged_description_prefix_lowercase_matches_lowercase_only()
+    {
+        var upper = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 50m, new Currency("UAH"),
+            RecognitionDate, "Alpha", null, T1);
+        var lower = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 50m, new Currency("UAH"),
+            RecognitionDate, "alpha", null, T2);
+
+        await _repository.AddAsync(upper);
+        await _repository.AddAsync(lower);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var (items, totalCount) = await new AccrualRepository(readContext)
+            .ListPagedAsync(
+                _workspaceA,
+                page: 1,
+                pageSize: 10,
+                descriptionPrefix: "al");
+
+        Assert.Equal(1, totalCount);
+        Assert.Equal(lower.Id, Assert.Single(items).Id);
+    }
+
+    [Fact]
+    public async Task ListPaged_description_prefix_non_match_returns_empty()
+    {
+        var accrual = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 50m, new Currency("UAH"),
+            RecognitionDate, "Alpha", null, T1);
+
+        await _repository.AddAsync(accrual);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var (items, totalCount) = await new AccrualRepository(readContext)
+            .ListPagedAsync(
+                _workspaceA,
+                page: 1,
+                pageSize: 10,
+                descriptionPrefix: "Be");
+
+        Assert.Equal(0, totalCount);
+        Assert.Empty(items);
+    }
+
+    [Fact]
+    public async Task ListPaged_description_exact_unchanged_when_prefix_omitted()
+    {
+        var match = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 50m, new Currency("UAH"),
+            RecognitionDate, "Exact match", null, T1);
+        var otherCase = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 50m, new Currency("UAH"),
+            RecognitionDate, "exact match", null, T2);
+
+        await _repository.AddAsync(match);
+        await _repository.AddAsync(otherCase);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var (items, totalCount) = await new AccrualRepository(readContext)
+            .ListPagedAsync(
+                _workspaceA,
+                page: 1,
+                pageSize: 10,
+                description: "Exact match");
+
+        Assert.Equal(1, totalCount);
+        Assert.Equal(match.Id, Assert.Single(items).Id);
+    }
+
+    [Fact]
+    public async Task ListPaged_description_exact_and_prefix_compose_under_and()
+    {
+        var match = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 50m, new Currency("UAH"),
+            RecognitionDate, "Alpha", null, T1);
+        var prefixOnly = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 50m, new Currency("UAH"),
+            RecognitionDate, "Alphabet", null, T2);
+        var other = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Expense, 50m, new Currency("UAH"),
+            RecognitionDate, "Other", null, T0);
+
+        await _repository.AddAsync(match);
+        await _repository.AddAsync(prefixOnly);
+        await _repository.AddAsync(other);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var (items, totalCount) = await new AccrualRepository(readContext)
+            .ListPagedAsync(
+                _workspaceA,
+                page: 1,
+                pageSize: 10,
+                description: "Alpha",
+                descriptionPrefix: "Al");
+
+        Assert.Equal(1, totalCount);
+        Assert.Equal(match.Id, Assert.Single(items).Id);
+    }
+
+    [Fact]
+    public async Task ListPaged_description_prefix_with_reversal_reason_applies_both()
+    {
+        var match = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 10m, new Currency("UAH"),
+            RecognitionDate, "Alpha", null, T1);
+        match.Recognize(T1);
+        match.Reverse("Target", T1);
+        var wrongReason = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 20m, new Currency("UAH"),
+            RecognitionDate, "Alpine", null, T1);
+        wrongReason.Recognize(T1);
+        wrongReason.Reverse("Other", T1);
+        var wrongPrefix = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Expense, 30m, new Currency("UAH"),
+            RecognitionDate, "Beta", null, T2);
+        wrongPrefix.Recognize(T2);
+        wrongPrefix.Reverse("Target", T2);
+
+        await _repository.AddAsync(match);
+        await _repository.AddAsync(wrongReason);
+        await _repository.AddAsync(wrongPrefix);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var (items, totalCount) = await new AccrualRepository(readContext)
+            .ListPagedAsync(
+                _workspaceA,
+                page: 1,
+                pageSize: 10,
+                descriptionPrefix: "Al",
+                reversalReason: "Target");
+
+        Assert.Equal(1, totalCount);
+        Assert.Equal(match.Id, Assert.Single(items).Id);
+    }
+
+    [Fact]
+    public async Task ListPaged_description_prefix_with_currency_and_status_applies_all()
+    {
+        var match = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 50m, new Currency("USD"),
+            RecognitionDate, "Alpha", null, T1);
+        var wrongCurrency = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 50m, new Currency("EUR"),
+            RecognitionDate, "Alpha", null, T1);
+        var wrongPrefix = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 50m, new Currency("USD"),
+            RecognitionDate, "Beta", null, T1);
+
+        await _repository.AddAsync(match);
+        await _repository.AddAsync(wrongCurrency);
+        await _repository.AddAsync(wrongPrefix);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var (items, totalCount) = await new AccrualRepository(readContext)
+            .ListPagedAsync(
+                _workspaceA,
+                page: 1,
+                pageSize: 10,
+                status: AccrualStatus.Draft,
+                currency: "USD",
+                descriptionPrefix: "Al");
+
+        Assert.Equal(1, totalCount);
+        Assert.Equal(match.Id, Assert.Single(items).Id);
+    }
+
+    [Fact]
+    public async Task ListPaged_description_prefix_wildcard_characters_are_literal()
+    {
+        var percent = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 10m, new Currency("UAH"),
+            RecognitionDate, "Al%ha", null, T0);
+        var underscore = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 20m, new Currency("UAH"),
+            RecognitionDate, "Al_ha", null, T1);
+        var star = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 30m, new Currency("UAH"),
+            RecognitionDate, "Al*ha", null, T1);
+        var question = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 40m, new Currency("UAH"),
+            RecognitionDate, "Al?ha", null, T2);
+        var bracket = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 50m, new Currency("UAH"),
+            RecognitionDate, "Al[ha", null, T2);
+        var plain = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Expense, 60m, new Currency("UAH"),
+            RecognitionDate, "Alpha", null, T2);
+
+        await _repository.AddAsync(percent);
+        await _repository.AddAsync(underscore);
+        await _repository.AddAsync(star);
+        await _repository.AddAsync(question);
+        await _repository.AddAsync(bracket);
+        await _repository.AddAsync(plain);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var repo = new AccrualRepository(readContext);
+
+        var (percentItems, percentTotal) = await repo.ListPagedAsync(
+            _workspaceA, page: 1, pageSize: 10, descriptionPrefix: "Al%");
+        var (underscoreItems, underscoreTotal) = await repo.ListPagedAsync(
+            _workspaceA, page: 1, pageSize: 10, descriptionPrefix: "Al_");
+        var (starItems, starTotal) = await repo.ListPagedAsync(
+            _workspaceA, page: 1, pageSize: 10, descriptionPrefix: "Al*");
+        var (questionItems, questionTotal) = await repo.ListPagedAsync(
+            _workspaceA, page: 1, pageSize: 10, descriptionPrefix: "Al?");
+        var (bracketItems, bracketTotal) = await repo.ListPagedAsync(
+            _workspaceA, page: 1, pageSize: 10, descriptionPrefix: "Al[");
+
+        Assert.Equal(1, percentTotal);
+        Assert.Equal(percent.Id, Assert.Single(percentItems).Id);
+        Assert.Equal(1, underscoreTotal);
+        Assert.Equal(underscore.Id, Assert.Single(underscoreItems).Id);
+        Assert.Equal(1, starTotal);
+        Assert.Equal(star.Id, Assert.Single(starItems).Id);
+        Assert.Equal(1, questionTotal);
+        Assert.Equal(question.Id, Assert.Single(questionItems).Id);
+        Assert.Equal(1, bracketTotal);
+        Assert.Equal(bracket.Id, Assert.Single(bracketItems).Id);
+    }
+
+    [Fact]
+    public async Task ListPaged_description_prefix_is_workspace_scoped()
+    {
+        var inA = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 50m, new Currency("UAH"),
+            RecognitionDate, "Alpha", null, T1);
+        var inB = Accrual.Create(
+            AccrualId.New(), _workspaceB, AccrualType.Revenue, 50m, new Currency("UAH"),
+            RecognitionDate, "Alpha", null, T1);
+
+        await _repository.AddAsync(inA);
+        await _repository.AddAsync(inB);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var (items, totalCount) = await new AccrualRepository(readContext)
+            .ListPagedAsync(
+                _workspaceA,
+                page: 1,
+                pageSize: 10,
+                descriptionPrefix: "Al");
+
+        Assert.Equal(1, totalCount);
+        Assert.Equal(inA.Id, Assert.Single(items).Id);
+    }
+
+    [Fact]
+    public async Task ListPaged_description_prefix_pages_after_filter()
+    {
+        var first = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 10m, new Currency("UAH"),
+            RecognitionDate, "Keep1", null, T0);
+        var second = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 20m, new Currency("UAH"),
+            RecognitionDate, "Keep2", null, T1);
+        var third = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Expense, 30m, new Currency("UAH"),
+            RecognitionDate, "Keep3", null, T2);
+        var excluded = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 40m, new Currency("UAH"),
+            RecognitionDate, "Drop", null, T2);
+
+        await _repository.AddAsync(first);
+        await _repository.AddAsync(second);
+        await _repository.AddAsync(third);
+        await _repository.AddAsync(excluded);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var repo = new AccrualRepository(readContext);
+
+        var (page1, total1) = await repo.ListPagedAsync(
+            _workspaceA, page: 1, pageSize: 1, descriptionPrefix: "Keep");
+        var (page2, total2) = await repo.ListPagedAsync(
+            _workspaceA, page: 2, pageSize: 1, descriptionPrefix: "Keep");
+
+        Assert.Equal(3, total1);
+        Assert.Equal(3, total2);
+        Assert.Equal(third.Id, Assert.Single(page1).Id);
+        Assert.Equal(second.Id, Assert.Single(page2).Id);
+    }
+
+    [Fact]
+    public async Task ListPaged_omitted_description_prefix_includes_all_descriptions()
+    {
+        var first = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 10m, new Currency("UAH"),
+            RecognitionDate, "A", null, T0);
+        var second = Accrual.Create(
+            AccrualId.New(), _workspaceA, AccrualType.Revenue, 20m, new Currency("UAH"),
+            RecognitionDate, "B", null, T1);
+
+        await _repository.AddAsync(first);
+        await _repository.AddAsync(second);
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var (items, totalCount) = await new AccrualRepository(readContext)
+            .ListPagedAsync(_workspaceA, page: 1, pageSize: 10);
+
+        Assert.Equal(2, totalCount);
+        Assert.Equal(2, items.Count);
+    }
+
+    [Fact]
     public async Task ListPaged_created_range_pages_after_filter()
     {
         var first = Accrual.Create(

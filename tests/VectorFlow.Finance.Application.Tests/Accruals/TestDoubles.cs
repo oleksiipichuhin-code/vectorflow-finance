@@ -45,6 +45,8 @@ internal sealed class InMemoryAccrualRepository : IAccrualRepository
 
     public string? LastListedPagedDescription { get; private set; }
 
+    public string? LastListedPagedDescriptionPrefix { get; private set; }
+
     public DateTimeOffset? LastListedRecognizedFromUtc { get; private set; }
 
     public DateTimeOffset? LastListedRecognizedToUtc { get; private set; }
@@ -110,6 +112,7 @@ internal sealed class InMemoryAccrualRepository : IAccrualRepository
         decimal? amountFrom = null,
         decimal? amountTo = null,
         string? description = null,
+        string? descriptionPrefix = null,
         DateTimeOffset? recognizedFromUtc = null,
         DateTimeOffset? recognizedToUtc = null,
         DateTimeOffset? reversedFromUtc = null,
@@ -132,6 +135,7 @@ internal sealed class InMemoryAccrualRepository : IAccrualRepository
         LastListedAmountFrom = amountFrom;
         LastListedAmountTo = amountTo;
         LastListedPagedDescription = description;
+        LastListedPagedDescriptionPrefix = descriptionPrefix;
         LastListedRecognizedFromUtc = recognizedFromUtc;
         LastListedRecognizedToUtc = recognizedToUtc;
         LastListedReversedFromUtc = reversedFromUtc;
@@ -156,6 +160,9 @@ internal sealed class InMemoryAccrualRepository : IAccrualRepository
             .Where(accrual =>
                 description is null ||
                 string.Equals(accrual.Description, description, StringComparison.Ordinal))
+            .Where(accrual =>
+                descriptionPrefix is null ||
+                accrual.Description.StartsWith(descriptionPrefix, StringComparison.Ordinal))
             .Where(accrual =>
                 recognizedFromUtc is null ||
                 (accrual.RecognizedAt is { } recognizedAt && recognizedAt >= recognizedFromUtc.Value))

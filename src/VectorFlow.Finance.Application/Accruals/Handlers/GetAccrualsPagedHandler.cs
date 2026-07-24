@@ -28,6 +28,7 @@ public sealed class GetAccrualsPagedHandler
         AccrualType? type;
         string? currency;
         string? description;
+        string? descriptionPrefix;
         string? reversalReason;
         try
         {
@@ -41,6 +42,7 @@ public sealed class GetAccrualsPagedHandler
             currency = ParseCurrencyFilter(query.Currency);
             EnsureAmountRange(query.AmountFrom, query.AmountTo);
             description = ParseDescriptionFilter(query.Description);
+            descriptionPrefix = ParseDescriptionPrefixFilter(query.DescriptionPrefix);
             EnsureRecognizedAtRange(query.RecognizedFromUtc, query.RecognizedToUtc);
             EnsureReversedAtRange(query.ReversedFromUtc, query.ReversedToUtc);
             reversalReason = ParseReversalReasonFilter(query.ReversalReason);
@@ -65,6 +67,7 @@ public sealed class GetAccrualsPagedHandler
             query.AmountFrom,
             query.AmountTo,
             description,
+            descriptionPrefix,
             query.RecognizedFromUtc,
             query.RecognizedToUtc,
             query.ReversedFromUtc,
@@ -232,6 +235,15 @@ public sealed class GetAccrualsPagedHandler
     /// </summary>
     private static string? ParseDescriptionFilter(string? description) =>
         description is null ? null : AccrualHandlerSupport.NormalizeDescription(description);
+
+    /// <summary>
+    /// Missing (<c>null</c>) means no Description prefix filter. When provided, normalize/validate via
+    /// <see cref="AccrualHandlerSupport.NormalizeDescription"/> (same blank/whitespace/overlength posture
+    /// as exact <c>description</c>). Positive case-sensitive Ordinal prefix match only; no
+    /// contains/case-insensitive/full-text mode.
+    /// </summary>
+    private static string? ParseDescriptionPrefixFilter(string? descriptionPrefix) =>
+        descriptionPrefix is null ? null : AccrualHandlerSupport.NormalizeDescription(descriptionPrefix);
 
     /// <summary>
     /// Missing (<c>null</c>) means no ReversalReason filter. When provided, normalize/validate via
