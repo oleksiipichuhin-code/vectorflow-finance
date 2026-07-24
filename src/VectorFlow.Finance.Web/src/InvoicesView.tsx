@@ -14,6 +14,7 @@ import {
   type InvoiceListFilters,
   type InvoiceStatusFilter
 } from "./invoiceListQuery";
+import { ListLoadState } from "./components/ListLoadState";
 import { Panel, StatusMessage } from "./components/Panel";
 import { formatDate, formatMoney } from "./format";
 
@@ -343,14 +344,20 @@ export function InvoicesView({ workspace }: InvoicesViewProps) {
         )}
 
         {createError ? <StatusMessage tone="error">{createError}</StatusMessage> : null}
-        {loading ? <StatusMessage>Завантаження рахунків…</StatusMessage> : null}
-        {error ? <StatusMessage tone="error">{error}</StatusMessage> : null}
-        {!loading && !error && workspace && invoices.length === 0 ? (
-          <StatusMessage>
-            {filtersActive
-              ? "За поточними фільтрами рахунків немає."
-              : "Рахунків ще немає. Створіть чернетку через форму вище."}
-          </StatusMessage>
+        {workspace ? (
+          <ListLoadState
+            loading={loading}
+            loadingMessage="Завантаження рахунків…"
+            error={error}
+            onRetry={() => void loadPage(workspace.id, page, appliedFilters)}
+            retryDisabled={loading}
+            empty={invoices.length === 0}
+            emptyMessage={
+              filtersActive
+                ? "За поточними фільтрами рахунків немає."
+                : "Рахунків ще немає. Створіть чернетку через форму вище."
+            }
+          />
         ) : null}
 
         {invoices.length > 0 ? (

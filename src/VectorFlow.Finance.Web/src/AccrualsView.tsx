@@ -12,6 +12,7 @@ import {
   totalPages,
   type AccrualListFilters
 } from "./accrualListQuery";
+import { ListLoadState } from "./components/ListLoadState";
 import { Panel, StatusMessage } from "./components/Panel";
 import { formatDate, formatMoney } from "./format";
 
@@ -349,14 +350,20 @@ export function AccrualsView({ workspace }: AccrualsViewProps) {
         )}
 
         {createError ? <StatusMessage tone="error">{createError}</StatusMessage> : null}
-        {loading ? <StatusMessage>Завантаження нарахувань…</StatusMessage> : null}
-        {error ? <StatusMessage tone="error">{error}</StatusMessage> : null}
-        {!loading && !error && workspace && accruals.length === 0 ? (
-          <StatusMessage>
-            {filtersActive
-              ? "За поточними фільтрами нарахувань немає."
-              : "Нарахувань ще немає. Створіть чернетку або натисніть Оновити."}
-          </StatusMessage>
+        {workspace ? (
+          <ListLoadState
+            loading={loading}
+            loadingMessage="Завантаження нарахувань…"
+            error={error}
+            onRetry={() => void loadPage(workspace.id, page, appliedFilters)}
+            retryDisabled={loading}
+            empty={accruals.length === 0}
+            emptyMessage={
+              filtersActive
+                ? "За поточними фільтрами нарахувань немає."
+                : "Нарахувань ще немає. Створіть чернетку або натисніть Оновити."
+            }
+          />
         ) : null}
 
         {accruals.length > 0 ? (

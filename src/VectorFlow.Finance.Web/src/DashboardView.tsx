@@ -1,3 +1,4 @@
+import { ListLoadState } from "./components/ListLoadState";
 import { Panel, StatusMessage } from "./components/Panel";
 import type { FinanceWorkspace, HealthStatus } from "./api";
 import type { AppView } from "./navigation";
@@ -41,9 +42,16 @@ export function DashboardView({
         }
       >
         <p className="meta">Базовий URL: {apiBaseUrl}</p>
-        {healthLoading ? <StatusMessage>Перевірка з&apos;єднання…</StatusMessage> : null}
-        {healthError ? <StatusMessage tone="error">{healthError}</StatusMessage> : null}
-        {health ? (
+        <ListLoadState
+          loading={healthLoading}
+          loadingMessage="Перевірка з'єднання…"
+          error={healthError}
+          onRetry={onRefreshHealth}
+          retryDisabled={healthLoading}
+          empty={!health}
+          emptyMessage="Стан API ще не отримано. Натисніть «Спробувати знову»."
+        />
+        {!healthLoading && !healthError && health ? (
           <dl className="facts">
             <div>
               <dt>Продукт</dt>
