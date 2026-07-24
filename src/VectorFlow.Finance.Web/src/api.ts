@@ -116,18 +116,56 @@ export function createFinanceWorkspace(input: {
   });
 }
 
-export function listInvoicesPaged(
-  workspaceId: string,
-  page = 1,
-  pageSize = 20
-): Promise<InvoicePage> {
+export type InvoiceListQueryOptions = {
+  page?: number;
+  pageSize?: number;
+  documentNumber?: string;
+  status?: string;
+  createdFromUtc?: string;
+  createdToUtc?: string;
+};
+
+export function buildInvoicePagedSearchParams(
+  options: InvoiceListQueryOptions = {}
+): URLSearchParams {
+  const page = options.page ?? 1;
+  const pageSize = options.pageSize ?? 20;
   const params = new URLSearchParams({
     page: String(page),
     pageSize: String(pageSize)
   });
 
+  const documentNumber = options.documentNumber?.trim();
+  if (documentNumber) {
+    params.set("documentNumber", documentNumber);
+  }
+
+  const status = options.status?.trim();
+  if (status) {
+    params.set("status", status);
+  }
+
+  if (options.createdFromUtc) {
+    params.set("createdFromUtc", options.createdFromUtc);
+  }
+
+  if (options.createdToUtc) {
+    params.set("createdToUtc", options.createdToUtc);
+  }
+
+  return params;
+}
+
+export function listInvoicesPaged(
+  workspaceId: string,
+  options: InvoiceListQueryOptions = {},
+  signal?: AbortSignal
+): Promise<InvoicePage> {
+  const params = buildInvoicePagedSearchParams(options);
+
   return requestJson<InvoicePage>(
-    `/api/finance-workspaces/${workspaceId}/invoices?${params.toString()}`
+    `/api/finance-workspaces/${workspaceId}/invoices?${params.toString()}`,
+    signal ? { signal } : undefined
   );
 }
 

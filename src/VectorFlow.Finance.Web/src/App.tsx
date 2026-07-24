@@ -2,14 +2,11 @@ import { FormEvent, useCallback, useEffect, useState } from "react";
 import { AccrualsView } from "./AccrualsView";
 import {
   createFinanceWorkspace,
-  createInvoice,
   getConfiguredApiBaseUrl,
   getFinanceWorkspace,
   getHealth,
-  listInvoicesPaged,
   type FinanceWorkspace,
-  type HealthStatus,
-  type Invoice
+  type HealthStatus
 } from "./api";
 import { DashboardView } from "./DashboardView";
 import { InvoicesView } from "./InvoicesView";
@@ -44,16 +41,6 @@ export default function App() {
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
   const [workspaceBusy, setWorkspaceBusy] = useState(false);
 
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
-  const [invoiceTotalCount, setInvoiceTotalCount] = useState(0);
-  const [invoicesLoading, setInvoicesLoading] = useState(false);
-  const [invoicesError, setInvoicesError] = useState<string | null>(null);
-  const [documentNumber, setDocumentNumber] = useState("");
-  const [counterpartyReference, setCounterpartyReference] = useState("demo-counterparty");
-  const [currency, setCurrency] = useState("UAH");
-  const [createInvoiceBusy, setCreateInvoiceBusy] = useState(false);
-  const [createInvoiceError, setCreateInvoiceError] = useState<string | null>(null);
-
   const refreshHealth = useCallback(async () => {
     setHealthLoading(true);
     setHealthError(null);
@@ -69,23 +56,6 @@ export default function App() {
     }
   }, []);
 
-  const loadInvoices = useCallback(async (workspaceId: string) => {
-    setInvoicesLoading(true);
-    setInvoicesError(null);
-
-    try {
-      const page = await listInvoicesPaged(workspaceId, 1, 20);
-      setInvoices(page.items);
-      setInvoiceTotalCount(page.totalCount);
-    } catch (error) {
-      setInvoices([]);
-      setInvoiceTotalCount(0);
-      setInvoicesError(error instanceof Error ? error.message : "Не вдалося завантажити рахунки.");
-    } finally {
-      setInvoicesLoading(false);
-    }
-  }, []);
-
   const loadWorkspace = useCallback(async (workspaceId: string) => {
     const trimmed = workspaceId.trim();
     if (!trimmed) {
@@ -95,18 +65,14 @@ export default function App() {
 
     setWorkspaceBusy(true);
     setWorkspaceError(null);
-    setCreateInvoiceError(null);
 
     try {
       const loaded = await getFinanceWorkspace(trimmed);
       setWorkspace(loaded);
       setWorkspaceIdInput(loaded.id);
       localStorage.setItem(WORKSPACE_STORAGE_KEY, loaded.id);
-      setCurrency(loaded.defaultCurrency);
     } catch (error) {
       setWorkspace(null);
-      setInvoices([]);
-      setInvoiceTotalCount(0);
       setWorkspaceError(
         error instanceof Error ? error.message : "Не вдалося завантажити робочий простір."
       );
@@ -126,12 +92,6 @@ export default function App() {
     }
   }, [loadWorkspace]);
 
-  useEffect(() => {
-    if (view === "invoices" && workspace) {
-      void loadInvoices(workspace.id);
-    }
-  }, [view, workspace, loadInvoices]);
-
   function navigate(next: AppView) {
     if ((next === "invoices" || next === "accruals") && !workspace) {
       setView("workspace");
@@ -149,7 +109,6 @@ export default function App() {
   async function handleCreateWorkspace() {
     setWorkspaceBusy(true);
     setWorkspaceError(null);
-    setCreateInvoiceError(null);
 
     try {
       const created = await createFinanceWorkspace({
@@ -162,46 +121,13 @@ export default function App() {
       setWorkspace(created);
       setWorkspaceIdInput(created.id);
       localStorage.setItem(WORKSPACE_STORAGE_KEY, created.id);
-      setDocumentNumber(`INV-${new Date().toISOString().slice(0, 10).replaceAll("-", "")}-001`);
-      setCurrency(created.defaultCurrency);
-      setInvoices([]);
-      setInvoiceTotalCount(0);
     } catch (error) {
       setWorkspace(null);
-      setInvoices([]);
-      setInvoiceTotalCount(0);
       setWorkspaceError(
         error instanceof Error ? error.message : "Не вдалося створити робочий простір."
       );
     } finally {
       setWorkspaceBusy(false);
-    }
-  }
-
-  async function handleCreateInvoice(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!workspace) {
-      setCreateInvoiceError("Спочатку завантажте або створіть робочий простір.");
-      return;
-    }
-
-    setCreateInvoiceBusy(true);
-    setCreateInvoiceError(null);
-
-    try {
-      await createInvoice(workspace.id, {
-        documentNumber,
-        counterpartyReference,
-        currency
-      });
-      setDocumentNumber("");
-      await loadInvoices(workspace.id);
-    } catch (error) {
-      setCreateInvoiceError(
-        error instanceof Error ? error.message : "Не вдалося створити рахунок."
-      );
-    } finally {
-      setCreateInvoiceBusy(false);
     }
   }
 
@@ -244,25 +170,7 @@ export default function App() {
         />
       ) : null}
 
-      {view === "invoices" ? (
-        <InvoicesView
-          workspace={workspace}
-          invoices={invoices}
-          invoiceTotalCount={invoiceTotalCount}
-          invoicesLoading={invoicesLoading}
-          invoicesError={invoicesError}
-          documentNumber={documentNumber}
-          counterpartyReference={counterpartyReference}
-          currency={currency}
-          createInvoiceBusy={createInvoiceBusy}
-          createInvoiceError={createInvoiceError}
-          onDocumentNumberChange={setDocumentNumber}
-          onCounterpartyChange={setCounterpartyReference}
-          onCurrencyChange={setCurrency}
-          onRefresh={() => workspace && void loadInvoices(workspace.id)}
-          onCreateInvoice={(event) => void handleCreateInvoice(event)}
-        />
-      ) : null}
+      {view === "invoices" ? <InvoicesView workspace={workspace} /> : null}
 
       {view === "accruals" ? <AccrualsView workspace={workspace} /> : null}
     </main>
