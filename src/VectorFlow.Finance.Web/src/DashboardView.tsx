@@ -17,6 +17,7 @@ type DashboardViewProps = {
   onCreateWorkspace: () => void;
   onRetryWorkspace: () => void;
   onNavigate: (view: AppView) => void;
+  onShowDraftInvoices: () => void;
 };
 
 function invoiceCardCopy(workspace: FinanceWorkspace | null, totals: WorkspaceTotals | null): string {
@@ -64,7 +65,8 @@ export function DashboardView({
   onRefreshHealth,
   onCreateWorkspace,
   onRetryWorkspace,
-  onNavigate
+  onNavigate,
+  onShowDraftInvoices
 }: DashboardViewProps) {
   const [totals, setTotals] = useState<WorkspaceTotals | null>(null);
   const handleTotalsChange = useCallback((next: WorkspaceTotals | null) => {
@@ -194,11 +196,24 @@ export function DashboardView({
             <span className="nav-card-copy">{accrualCardCopy(workspace, workspace ? totals : null)}</span>
           </button>
         </div>
-        {!workspace ? (
+        {workspace ? (
+          <div className="list-shortcuts dashboard-list-shortcuts">
+            <p className="list-shortcuts-label">Швидкий фільтр</p>
+            <div className="list-shortcuts-row">
+              <button type="button" className="list-shortcut" onClick={onShowDraftInvoices}>
+                Чернетки рахунків
+              </button>
+            </div>
+            <p className="meta">
+              Відкриває Invoices з <span className="mono">status=Draft</span> на сторінці 1 і
+              зберігає стан у shareable URL.
+            </p>
+          </div>
+        ) : (
           <StatusMessage>
             Спочатку створіть або відкрийте Workspace у блоці «Старт демонстрації».
           </StatusMessage>
-        ) : null}
+        )}
       </Panel>
     </>
   );

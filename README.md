@@ -70,6 +70,18 @@ Local Development URL: `http://localhost:5173`
 
 The shell navigates Workspace → Dashboard → Invoices → Accruals against the running backend (not mocks). Invoices and Accruals support apply/clear filters and pagination (fixed page size 5). Invoice filters: exact `documentNumber`, exact `status` (`Draft` | `Issued`), inclusive `createdFromUtc` / `createdToUtc`. Accrual filters: `descriptionPrefix`, recognition date range.
 
+Shell state is shareable via the browser URL and **Скопіювати посилання**:
+
+| Query param | Meaning |
+| --- | --- |
+| `view` | `dashboard` (default), `workspace`, `invoices`, `accruals` |
+| `workspaceId` | active finance workspace GUID |
+| `page` | list page (omitted when `1`) |
+| `documentNumber`, `status`, `createdFrom`, `createdTo` | invoice list filters (`created*` are `YYYY-MM-DD` date inputs) |
+| `descriptionPrefix`, `recognitionFrom`, `recognitionTo` | accrual list filters |
+
+**Чернетки** / **Чернетки рахунків** opens Invoices with `status=Draft`, page 1, and other invoice filters cleared. Refresh and shared links restore the same URL state.
+
 ## Documentation
 
 - Product vision and MVP scope: `docs/product/`

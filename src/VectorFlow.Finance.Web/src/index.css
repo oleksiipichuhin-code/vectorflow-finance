@@ -89,6 +89,55 @@ body {
   font-size: 0.95rem;
 }
 
+.workspace-context-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.workspace-context-feedback {
+  flex-basis: 100%;
+  margin: 0;
+  color: #1f6b45;
+  font-size: 0.9rem;
+}
+
+.list-shortcuts {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0 0 0.85rem;
+}
+
+.dashboard-list-shortcuts {
+  margin-top: 0.85rem;
+}
+
+.list-shortcuts-label {
+  margin: 0;
+  font-size: 0.8rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #5a6b7d;
+}
+
+.list-shortcuts-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.list-shortcut {
+  background: rgba(255, 255, 255, 0.72);
+  color: #1b2430;
+  border-color: rgba(27, 36, 48, 0.18);
+}
+
+.list-shortcut--active {
+  background: #1b2430;
+  color: #f4f7fb;
+  border-color: #1b2430;
+}
+
 .nav-cards {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));

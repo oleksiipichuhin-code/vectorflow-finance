@@ -12,30 +12,42 @@ import {
   totalPages,
   type AccrualListFilters
 } from "./accrualListQuery";
+import { EMPTY_ACCRUAL_FILTERS } from "./urlState";
 import { ListLoadState } from "./components/ListLoadState";
 import { Panel, StatusMessage } from "./components/Panel";
 import { formatDate, formatMoney } from "./format";
 
 type AccrualsViewProps = {
   workspace: FinanceWorkspace | null;
+  initialPage?: number;
+  initialFilters?: AccrualListFilters;
+  onDiscoveryChange?: (page: number, filters: AccrualListFilters) => void;
 };
 
-const emptyFilters: AccrualListFilters = {
-  descriptionPrefix: "",
-  recognitionFromDate: "",
-  recognitionToDate: ""
-};
+const emptyFilters: AccrualListFilters = { ...EMPTY_ACCRUAL_FILTERS };
 
 function todayDateInputValue(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-export function AccrualsView({ workspace }: AccrualsViewProps) {
-  const [draftFilters, setDraftFilters] = useState<AccrualListFilters>(emptyFilters);
-  const [appliedFilters, setAppliedFilters] = useState<AccrualListFilters>(emptyFilters);
+export function AccrualsView({
+  workspace,
+  initialPage = 1,
+  initialFilters = emptyFilters,
+  onDiscoveryChange
+}: AccrualsViewProps) {
+  const [draftFilters, setDraftFilters] = useState<AccrualListFilters>(() => ({
+    ...emptyFilters,
+    ...initialFilters
+  }));
+  const [appliedFilters, setAppliedFilters] = useState<AccrualListFilters>(() => ({
+    ...emptyFilters,
+    ...initialFilters
+  }));
   const [filterValidationError, setFilterValidationError] = useState<string | null>(null);
 
-  const [page, setPage] = useState(1);
+  const [page, setPage] = useState(() => (initialPage < 1 ? 1 : Math.floor(initialPage)));
+  const previousWorkspaceId = useRef<string | null>(null);
   const [accruals, setAccruals] = useState<Accrual[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [pageSize, setPageSize] = useState(ACCRUAL_PAGE_SIZE);
@@ -62,17 +74,24 @@ export function AccrualsView({ workspace }: AccrualsViewProps) {
   }, [workspace]);
 
   useEffect(() => {
-    setDraftFilters(emptyFilters);
-    setAppliedFilters(emptyFilters);
-    setFilterValidationError(null);
-    setPage(1);
-    setAccruals([]);
-    setTotalCount(0);
-    setError(null);
-    setCreateError(null);
-    setCreateSuccess(null);
-    setHighlightedId(null);
-  }, [workspace?.id]);
+    const workspaceId = workspace?.id ?? null;
+    const previousId = previousWorkspaceId.current;
+    previousWorkspaceId.current = workspaceId;
+
+    if (previousId !== null && previousId !== workspaceId) {
+      setDraftFilters(emptyFilters);
+      setAppliedFilters(emptyFilters);
+      setFilterValidationError(null);
+      setPage(1);
+      setAccruals([]);
+      setTotalCount(0);
+      setError(null);
+      setCreateError(null);
+      setCreateSuccess(null);
+      setHighlightedId(null);
+      onDiscoveryChange?.(1, emptyFilters);
+    }
+  }, [workspace?.id, onDiscoveryChange]);
 
   const loadPage = useCallback(
     async (workspaceId: string, nextPage: number, filters: AccrualListFilters) => {
@@ -153,6 +172,7 @@ export function AccrualsView({ workspace }: AccrualsViewProps) {
     setFilterValidationError(null);
     setPage(1);
     setAppliedFilters({ ...draftFilters });
+    onDiscoveryChange?.(1, { ...draftFilters });
   }
 
   function clearFilters() {
@@ -160,6 +180,7 @@ export function AccrualsView({ workspace }: AccrualsViewProps) {
     setAppliedFilters(emptyFilters);
     setFilterValidationError(null);
     setPage(1);
+    onDiscoveryChange?.(1, emptyFilters);
   }
 
   async function handleCreateAccrual(event: FormEvent<HTMLFormElement>) {
@@ -194,6 +215,7 @@ export function AccrualsView({ workspace }: AccrualsViewProps) {
       setCreateSuccess(
         `Чернетку нарахування «${created.description}» створено. Запис показано у списку нижче.`
       );
+      onDiscoveryChange?.(1, emptyFilters);
       await loadPage(workspace.id, 1, emptyFilters);
     } catch (createErr) {
       setCreateError(
@@ -438,7 +460,11 @@ export function AccrualsView({ workspace }: AccrualsViewProps) {
               <button
                 type="button"
                 disabled={!canGoPrevious}
-                onClick={() => setPage((current) => Math.max(1, current - 1))}
+                onClick={() => {
+                  const nextPage = Math.max(1, page - 1);
+                  setPage(nextPage);
+                  onDiscoveryChange?.(nextPage, appliedFilters);
+                }}
               >
                 Назад
               </button>
@@ -448,7 +474,11 @@ export function AccrualsView({ workspace }: AccrualsViewProps) {
               <button
                 type="button"
                 disabled={!canGoNext}
-                onClick={() => setPage((current) => current + 1)}
+                onClick={() => {
+                  const nextPage = page + 1;
+                  setPage(nextPage);
+                  onDiscoveryChange?.(nextPage, appliedFilters);
+                }}
               >
                 Далі
               </button>

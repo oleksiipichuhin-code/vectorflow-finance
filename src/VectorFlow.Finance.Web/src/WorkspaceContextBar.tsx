@@ -3,13 +3,19 @@ import type { FinanceWorkspace } from "./api";
 type WorkspaceContextBarProps = {
   workspace: FinanceWorkspace | null;
   workspaceBusy: boolean;
+  copyFeedback?: string | null;
   onOpenWorkspace: () => void;
+  onCopyLink: () => void;
+  onShowDraftInvoices: () => void;
 };
 
 export function WorkspaceContextBar({
   workspace,
   workspaceBusy,
-  onOpenWorkspace
+  copyFeedback,
+  onOpenWorkspace,
+  onCopyLink,
+  onShowDraftInvoices
 }: WorkspaceContextBarProps) {
   return (
     <div className="workspace-context" aria-live="polite">
@@ -22,9 +28,18 @@ export function WorkspaceContextBar({
               {workspace.status} · {workspace.defaultCurrency}
             </span>
           </div>
-          <button type="button" className="button-secondary" onClick={onOpenWorkspace}>
-            Змінити
-          </button>
+          <div className="workspace-context-actions">
+            <button type="button" className="button-secondary" onClick={onShowDraftInvoices}>
+              Чернетки
+            </button>
+            <button type="button" className="button-secondary" onClick={onCopyLink}>
+              Скопіювати посилання
+            </button>
+            <button type="button" className="button-secondary" onClick={onOpenWorkspace}>
+              Змінити
+            </button>
+          </div>
+          {copyFeedback ? <p className="workspace-context-feedback">{copyFeedback}</p> : null}
         </>
       ) : workspaceBusy ? (
         <p className="workspace-context-pending">Завантаження workspace…</p>

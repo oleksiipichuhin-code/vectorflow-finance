@@ -6,6 +6,10 @@ import {
   type Invoice
 } from "./api";
 import {
+  EMPTY_INVOICE_FILTERS,
+  draftInvoicesDiscovery
+} from "./urlState";
+import {
   INVOICE_PAGE_SIZE,
   INVOICE_STATUS_OPTIONS,
   buildInvoiceListQuery,
@@ -20,26 +24,38 @@ import { formatDate, formatMoney } from "./format";
 
 type InvoicesViewProps = {
   workspace: FinanceWorkspace | null;
+  initialPage?: number;
+  initialFilters?: InvoiceListFilters;
+  onDiscoveryChange?: (page: number, filters: InvoiceListFilters) => void;
+  onShowDraftInvoices?: () => void;
 };
 
-const emptyFilters: InvoiceListFilters = {
-  documentNumber: "",
-  status: "",
-  createdFromDate: "",
-  createdToDate: ""
-};
+const emptyFilters: InvoiceListFilters = { ...EMPTY_INVOICE_FILTERS };
 
 function buildDemoDocumentNumber(): string {
   const stamp = new Date().toISOString().replace(/[-:TZ.]/g, "");
   return `INV-${stamp}`;
 }
 
-export function InvoicesView({ workspace }: InvoicesViewProps) {
-  const [draftFilters, setDraftFilters] = useState<InvoiceListFilters>(emptyFilters);
-  const [appliedFilters, setAppliedFilters] = useState<InvoiceListFilters>(emptyFilters);
+export function InvoicesView({
+  workspace,
+  initialPage = 1,
+  initialFilters = emptyFilters,
+  onDiscoveryChange,
+  onShowDraftInvoices
+}: InvoicesViewProps) {
+  const [draftFilters, setDraftFilters] = useState<InvoiceListFilters>(() => ({
+    ...emptyFilters,
+    ...initialFilters
+  }));
+  const [appliedFilters, setAppliedFilters] = useState<InvoiceListFilters>(() => ({
+    ...emptyFilters,
+    ...initialFilters
+  }));
   const [filterValidationError, setFilterValidationError] = useState<string | null>(null);
 
-  const [page, setPage] = useState(1);
+  const [page, setPage] = useState(() => (initialPage < 1 ? 1 : Math.floor(initialPage)));
+  const previousWorkspaceId = useRef<string | null>(null);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [pageSize, setPageSize] = useState(INVOICE_PAGE_SIZE);
@@ -64,18 +80,25 @@ export function InvoicesView({ workspace }: InvoicesViewProps) {
   }, [workspace]);
 
   useEffect(() => {
-    setDraftFilters(emptyFilters);
-    setAppliedFilters(emptyFilters);
-    setFilterValidationError(null);
-    setPage(1);
-    setInvoices([]);
-    setTotalCount(0);
-    setError(null);
-    setCreateError(null);
-    setCreateSuccess(null);
-    setHighlightedId(null);
-    setDocumentNumber(buildDemoDocumentNumber());
-  }, [workspace?.id]);
+    const workspaceId = workspace?.id ?? null;
+    const previousId = previousWorkspaceId.current;
+    previousWorkspaceId.current = workspaceId;
+
+    if (previousId !== null && previousId !== workspaceId) {
+      setDraftFilters(emptyFilters);
+      setAppliedFilters(emptyFilters);
+      setFilterValidationError(null);
+      setPage(1);
+      setInvoices([]);
+      setTotalCount(0);
+      setError(null);
+      setCreateError(null);
+      setCreateSuccess(null);
+      setHighlightedId(null);
+      setDocumentNumber(buildDemoDocumentNumber());
+      onDiscoveryChange?.(1, emptyFilters);
+    }
+  }, [workspace?.id, onDiscoveryChange]);
 
   const loadPage = useCallback(
     async (workspaceId: string, nextPage: number, filters: InvoiceListFilters) => {
@@ -156,6 +179,7 @@ export function InvoicesView({ workspace }: InvoicesViewProps) {
     setFilterValidationError(null);
     setPage(1);
     setAppliedFilters({ ...draftFilters });
+    onDiscoveryChange?.(1, { ...draftFilters });
   }
 
   function clearFilters() {
@@ -163,6 +187,7 @@ export function InvoicesView({ workspace }: InvoicesViewProps) {
     setAppliedFilters(emptyFilters);
     setFilterValidationError(null);
     setPage(1);
+    onDiscoveryChange?.(1, emptyFilters);
   }
 
   async function handleCreateInvoice(event: FormEvent<HTMLFormElement>) {
@@ -190,6 +215,7 @@ export function InvoicesView({ workspace }: InvoicesViewProps) {
       setCreateSuccess(
         `Чернетку рахунка «${created.documentNumber}» створено. Запис показано у списку нижче.`
       );
+      onDiscoveryChange?.(1, emptyFilters);
       await loadPage(workspace.id, 1, emptyFilters);
     } catch (createErr) {
       setCreateError(
@@ -215,6 +241,26 @@ export function InvoicesView({ workspace }: InvoicesViewProps) {
   const canGoPrevious = page > 1 && !loading;
   const canGoNext = page < pages && !loading;
   const filtersActive = hasActiveInvoiceFilters(appliedFilters);
+  const draftFilterActive =
+    appliedFilters.status === "Draft" &&
+    !appliedFilters.documentNumber?.trim() &&
+    !appliedFilters.createdFromDate?.trim() &&
+    !appliedFilters.createdToDate?.trim() &&
+    page === 1;
+
+  function applyDraftInvoicesFilter() {
+    if (onShowDraftInvoices) {
+      onShowDraftInvoices();
+      return;
+    }
+
+    const next = draftInvoicesDiscovery().invoiceFilters;
+    setDraftFilters(next);
+    setAppliedFilters(next);
+    setFilterValidationError(null);
+    setPage(1);
+    onDiscoveryChange?.(1, next);
+  }
 
   return (
     <>
@@ -247,6 +293,34 @@ export function InvoicesView({ workspace }: InvoicesViewProps) {
             <p className="meta">
               Workspace: {workspace.name} · <span className="mono">{workspace.id}</span>
             </p>
+
+            <div
+              className="list-shortcuts"
+              role="group"
+              aria-label="Швидкі фільтри рахунків"
+            >
+              <p className="list-shortcuts-label">Швидкий фільтр</p>
+              <div className="list-shortcuts-row">
+                <button
+                  type="button"
+                  className={
+                    draftFilterActive
+                      ? "list-shortcut list-shortcut--active"
+                      : "list-shortcut"
+                  }
+                  title="status=Draft · page 1 · інші фільтри скинуто"
+                  aria-pressed={draftFilterActive}
+                  disabled={loading}
+                  onClick={applyDraftInvoicesFilter}
+                >
+                  Чернетки
+                </button>
+              </div>
+              <p className="meta">
+                Показує рахунки зі статусом Draft на першій сторінці. Стан зберігається в URL і
+                відновлюється після оновлення сторінки.
+              </p>
+            </div>
 
             <form className="filter-form" onSubmit={applyFilters}>
               <label>
@@ -437,7 +511,11 @@ export function InvoicesView({ workspace }: InvoicesViewProps) {
               <button
                 type="button"
                 disabled={!canGoPrevious}
-                onClick={() => setPage((current) => Math.max(1, current - 1))}
+                onClick={() => {
+                  const nextPage = Math.max(1, page - 1);
+                  setPage(nextPage);
+                  onDiscoveryChange?.(nextPage, appliedFilters);
+                }}
               >
                 Назад
               </button>
@@ -447,7 +525,11 @@ export function InvoicesView({ workspace }: InvoicesViewProps) {
               <button
                 type="button"
                 disabled={!canGoNext}
-                onClick={() => setPage((current) => current + 1)}
+                onClick={() => {
+                  const nextPage = page + 1;
+                  setPage(nextPage);
+                  onDiscoveryChange?.(nextPage, appliedFilters);
+                }}
               >
                 Далі
               </button>
