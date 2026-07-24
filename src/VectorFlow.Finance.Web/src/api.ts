@@ -169,18 +169,50 @@ export type AccrualPage = {
   totalCount: number;
 };
 
-export function listAccrualsPaged(
-  workspaceId: string,
-  page = 1,
-  pageSize = 20
-): Promise<AccrualPage> {
+export type AccrualListQueryOptions = {
+  page?: number;
+  pageSize?: number;
+  descriptionPrefix?: string;
+  recognitionFromUtc?: string;
+  recognitionToUtc?: string;
+};
+
+export function buildAccrualPagedSearchParams(
+  options: AccrualListQueryOptions = {}
+): URLSearchParams {
+  const page = options.page ?? 1;
+  const pageSize = options.pageSize ?? 20;
   const params = new URLSearchParams({
     page: String(page),
     pageSize: String(pageSize)
   });
 
+  const descriptionPrefix = options.descriptionPrefix?.trim();
+  if (descriptionPrefix) {
+    params.set("descriptionPrefix", descriptionPrefix);
+  }
+
+  if (options.recognitionFromUtc) {
+    params.set("recognitionFromUtc", options.recognitionFromUtc);
+  }
+
+  if (options.recognitionToUtc) {
+    params.set("recognitionToUtc", options.recognitionToUtc);
+  }
+
+  return params;
+}
+
+export function listAccrualsPaged(
+  workspaceId: string,
+  options: AccrualListQueryOptions = {},
+  signal?: AbortSignal
+): Promise<AccrualPage> {
+  const params = buildAccrualPagedSearchParams(options);
+
   return requestJson<AccrualPage>(
-    `/api/finance-workspaces/${workspaceId}/accruals/paged?${params.toString()}`
+    `/api/finance-workspaces/${workspaceId}/accruals/paged?${params.toString()}`,
+    signal ? { signal } : undefined
   );
 }
 

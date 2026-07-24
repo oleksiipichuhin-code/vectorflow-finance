@@ -191,6 +191,32 @@ body {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.filter-form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  align-items: end;
+}
+
+.filter-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  grid-column: 1 / -1;
+}
+
+.pagination {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.cell-wrap {
+  max-width: 14rem;
+  white-space: normal;
+  word-break: break-word;
+}
+
 select {
   width: 100%;
   border: 1px solid rgba(27, 36, 48, 0.18);

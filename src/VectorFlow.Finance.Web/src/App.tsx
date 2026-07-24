@@ -1,15 +1,12 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { AccrualsView } from "./AccrualsView";
 import {
-  createAccrual,
   createFinanceWorkspace,
   createInvoice,
   getConfiguredApiBaseUrl,
   getFinanceWorkspace,
   getHealth,
-  listAccrualsPaged,
   listInvoicesPaged,
-  type Accrual,
   type FinanceWorkspace,
   type HealthStatus,
   type Invoice
@@ -23,10 +20,6 @@ const WORKSPACE_STORAGE_KEY = "vectorflow.finance.demo.workspaceId";
 
 function createGuid(): string {
   return crypto.randomUUID();
-}
-
-function todayDateInputValue(): string {
-  return new Date().toISOString().slice(0, 10);
 }
 
 export default function App() {
@@ -61,18 +54,6 @@ export default function App() {
   const [createInvoiceBusy, setCreateInvoiceBusy] = useState(false);
   const [createInvoiceError, setCreateInvoiceError] = useState<string | null>(null);
 
-  const [accruals, setAccruals] = useState<Accrual[]>([]);
-  const [accrualTotalCount, setAccrualTotalCount] = useState(0);
-  const [accrualsLoading, setAccrualsLoading] = useState(false);
-  const [accrualsError, setAccrualsError] = useState<string | null>(null);
-  const [accrualType, setAccrualType] = useState("Revenue");
-  const [accrualAmount, setAccrualAmount] = useState("100.00");
-  const [accrualCurrency, setAccrualCurrency] = useState("UAH");
-  const [accrualRecognitionDate, setAccrualRecognitionDate] = useState(todayDateInputValue);
-  const [accrualDescription, setAccrualDescription] = useState("Демонстраційне нарахування");
-  const [createAccrualBusy, setCreateAccrualBusy] = useState(false);
-  const [createAccrualError, setCreateAccrualError] = useState<string | null>(null);
-
   const refreshHealth = useCallback(async () => {
     setHealthLoading(true);
     setHealthError(null);
@@ -105,23 +86,6 @@ export default function App() {
     }
   }, []);
 
-  const loadAccruals = useCallback(async (workspaceId: string) => {
-    setAccrualsLoading(true);
-    setAccrualsError(null);
-
-    try {
-      const page = await listAccrualsPaged(workspaceId, 1, 20);
-      setAccruals(page.items);
-      setAccrualTotalCount(page.totalCount);
-    } catch (error) {
-      setAccruals([]);
-      setAccrualTotalCount(0);
-      setAccrualsError(error instanceof Error ? error.message : "Не вдалося завантажити нарахування.");
-    } finally {
-      setAccrualsLoading(false);
-    }
-  }, []);
-
   const loadWorkspace = useCallback(async (workspaceId: string) => {
     const trimmed = workspaceId.trim();
     if (!trimmed) {
@@ -132,21 +96,17 @@ export default function App() {
     setWorkspaceBusy(true);
     setWorkspaceError(null);
     setCreateInvoiceError(null);
-    setCreateAccrualError(null);
 
     try {
       const loaded = await getFinanceWorkspace(trimmed);
       setWorkspace(loaded);
       setWorkspaceIdInput(loaded.id);
       localStorage.setItem(WORKSPACE_STORAGE_KEY, loaded.id);
-      setAccrualCurrency(loaded.defaultCurrency);
       setCurrency(loaded.defaultCurrency);
     } catch (error) {
       setWorkspace(null);
       setInvoices([]);
       setInvoiceTotalCount(0);
-      setAccruals([]);
-      setAccrualTotalCount(0);
       setWorkspaceError(
         error instanceof Error ? error.message : "Не вдалося завантажити робочий простір."
       );
@@ -172,12 +132,6 @@ export default function App() {
     }
   }, [view, workspace, loadInvoices]);
 
-  useEffect(() => {
-    if (view === "accruals" && workspace) {
-      void loadAccruals(workspace.id);
-    }
-  }, [view, workspace, loadAccruals]);
-
   function navigate(next: AppView) {
     if ((next === "invoices" || next === "accruals") && !workspace) {
       setView("workspace");
@@ -196,7 +150,6 @@ export default function App() {
     setWorkspaceBusy(true);
     setWorkspaceError(null);
     setCreateInvoiceError(null);
-    setCreateAccrualError(null);
 
     try {
       const created = await createFinanceWorkspace({
@@ -211,17 +164,12 @@ export default function App() {
       localStorage.setItem(WORKSPACE_STORAGE_KEY, created.id);
       setDocumentNumber(`INV-${new Date().toISOString().slice(0, 10).replaceAll("-", "")}-001`);
       setCurrency(created.defaultCurrency);
-      setAccrualCurrency(created.defaultCurrency);
       setInvoices([]);
       setInvoiceTotalCount(0);
-      setAccruals([]);
-      setAccrualTotalCount(0);
     } catch (error) {
       setWorkspace(null);
       setInvoices([]);
       setInvoiceTotalCount(0);
-      setAccruals([]);
-      setAccrualTotalCount(0);
       setWorkspaceError(
         error instanceof Error ? error.message : "Не вдалося створити робочий простір."
       );
@@ -254,40 +202,6 @@ export default function App() {
       );
     } finally {
       setCreateInvoiceBusy(false);
-    }
-  }
-
-  async function handleCreateAccrual(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!workspace) {
-      setCreateAccrualError("Спочатку завантажте або створіть робочий простір.");
-      return;
-    }
-
-    const amount = Number(accrualAmount.replace(",", "."));
-    if (!Number.isFinite(amount)) {
-      setCreateAccrualError("Сума має бути числовим значенням.");
-      return;
-    }
-
-    setCreateAccrualBusy(true);
-    setCreateAccrualError(null);
-
-    try {
-      await createAccrual(workspace.id, {
-        type: accrualType,
-        amount,
-        currency: accrualCurrency,
-        recognitionDateUtc: new Date(`${accrualRecognitionDate}T00:00:00.000Z`).toISOString(),
-        description: accrualDescription
-      });
-      await loadAccruals(workspace.id);
-    } catch (error) {
-      setCreateAccrualError(
-        error instanceof Error ? error.message : "Не вдалося створити нарахування."
-      );
-    } finally {
-      setCreateAccrualBusy(false);
     }
   }
 
@@ -350,29 +264,7 @@ export default function App() {
         />
       ) : null}
 
-      {view === "accruals" ? (
-        <AccrualsView
-          workspace={workspace}
-          accruals={accruals}
-          accrualTotalCount={accrualTotalCount}
-          accrualsLoading={accrualsLoading}
-          accrualsError={accrualsError}
-          accrualType={accrualType}
-          accrualAmount={accrualAmount}
-          accrualCurrency={accrualCurrency}
-          accrualRecognitionDate={accrualRecognitionDate}
-          accrualDescription={accrualDescription}
-          createAccrualBusy={createAccrualBusy}
-          createAccrualError={createAccrualError}
-          onTypeChange={setAccrualType}
-          onAmountChange={setAccrualAmount}
-          onCurrencyChange={setAccrualCurrency}
-          onRecognitionDateChange={setAccrualRecognitionDate}
-          onDescriptionChange={setAccrualDescription}
-          onRefresh={() => workspace && void loadAccruals(workspace.id)}
-          onCreateAccrual={(event) => void handleCreateAccrual(event)}
-        />
-      ) : null}
+      {view === "accruals" ? <AccrualsView workspace={workspace} /> : null}
     </main>
   );
 }
