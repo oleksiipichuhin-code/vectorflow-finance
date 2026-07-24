@@ -18,6 +18,20 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddFinanceInfrastructure();
 builder.Services.AddFinanceApi();
 
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy(
+        "FinanceWebDev",
+        policy =>
+        {
+            policy.WithOrigins(
+                    "http://localhost:5173",
+                    "http://127.0.0.1:5173")
+                .AllowAnyHeader()
+                .AllowAnyMethod();
+        });
+});
+
 var app = builder.Build();
 
 app.UseExceptionHandler(errorApp =>
@@ -56,6 +70,7 @@ using (var scope = app.Services.CreateScope())
 
 if (app.Environment.IsDevelopment())
 {
+    app.UseCors("FinanceWebDev");
     app.UseSwagger();
     app.UseSwaggerUI();
 }

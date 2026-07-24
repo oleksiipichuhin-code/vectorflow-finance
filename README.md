@@ -34,6 +34,10 @@ dotnet test
 dotnet run --project src/VectorFlow.Finance.Api
 ```
 
+Local Development URL: `http://localhost:5080` (see `Properties/launchSettings.json`).
+
+Swagger UI (Development): `http://localhost:5080/swagger`
+
 Health endpoint:
 
 ```text
@@ -50,6 +54,8 @@ Expected payload:
 }
 ```
 
+In Development, the API allows CORS from the Vite web origin (`http://localhost:5173` and `http://127.0.0.1:5173`).
+
 ## Frontend
 
 ```powershell
@@ -58,7 +64,9 @@ npm install
 npm run dev
 ```
 
-Primary UI language is Ukrainian. The F0 shell displays foundation status only and does not expose operational finance workflows.
+Local Development URL: `http://localhost:5173`
+
+`VITE_FINANCE_API_BASE_URL` points the browser shell at the real Finance API (`http://localhost:5080` by default in Development; see `.env.example`). Primary UI language is Ukrainian. The shell shows live API health, finance workspace load/create, and paged invoice listing against the running backend (not mocks).
 
 ## Documentation
 
