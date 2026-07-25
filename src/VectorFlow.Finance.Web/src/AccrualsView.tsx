@@ -2,6 +2,7 @@ import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import {
   createAccrual,
   listAccrualsPaged,
+  recognizeAccrual,
   type Accrual,
   type FinanceWorkspace
 } from "./api";
@@ -12,6 +13,7 @@ import {
   totalPages,
   type AccrualListFilters
 } from "./accrualListQuery";
+import { canRecognizeAccrual } from "./accrualRecognize";
 import { EMPTY_ACCRUAL_FILTERS } from "./urlState";
 import { ListLoadState } from "./components/ListLoadState";
 import { Panel, StatusMessage } from "./components/Panel";
@@ -63,9 +65,15 @@ export function AccrualsView({
   const [createError, setCreateError] = useState<string | null>(null);
   const [createSuccess, setCreateSuccess] = useState<string | null>(null);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
+  const [recognizeError, setRecognizeError] = useState<string | null>(null);
+  const [recognizeSuccess, setRecognizeSuccess] = useState<string | null>(null);
+  const [recognizingIds, setRecognizingIds] = useState<ReadonlySet<string>>(
+    () => new Set()
+  );
 
   const requestSeq = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
+  const recognizingIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (workspace) {
@@ -89,6 +97,10 @@ export function AccrualsView({
       setCreateError(null);
       setCreateSuccess(null);
       setHighlightedId(null);
+      setRecognizeError(null);
+      setRecognizeSuccess(null);
+      recognizingIdsRef.current = new Set();
+      setRecognizingIds(new Set());
       onDiscoveryChange?.(1, emptyFilters);
     }
   }, [workspace?.id, onDiscoveryChange]);
@@ -198,6 +210,8 @@ export function AccrualsView({
     setCreateBusy(true);
     setCreateError(null);
     setCreateSuccess(null);
+    setRecognizeError(null);
+    setRecognizeSuccess(null);
 
     try {
       const created = await createAccrual(workspace.id, {
@@ -223,6 +237,45 @@ export function AccrualsView({
       );
     } finally {
       setCreateBusy(false);
+    }
+  }
+
+  async function handleRecognizeAccrual(accrual: Accrual) {
+    if (!workspace || !canRecognizeAccrual(accrual)) {
+      return;
+    }
+
+    if (recognizingIdsRef.current.has(accrual.id)) {
+      return;
+    }
+
+    recognizingIdsRef.current.add(accrual.id);
+    setRecognizingIds(new Set(recognizingIdsRef.current));
+    setCreateSuccess(null);
+    setRecognizeError(null);
+    setRecognizeSuccess(null);
+
+    try {
+      const recognized = await recognizeAccrual(workspace.id, accrual.id);
+      setHighlightedId(recognized.id);
+      setRecognizeSuccess(
+        `Нарахування «${recognized.description}» визнано. Статус: ${recognized.status}.`
+      );
+      await loadPage(workspace.id, page, appliedFilters);
+    } catch (recognizeErr) {
+      setRecognizeError(
+        recognizeErr instanceof Error
+          ? recognizeErr.message
+          : "Не вдалося визнати нарахування."
+      );
+      try {
+        await loadPage(workspace.id, page, appliedFilters);
+      } catch {
+        // Keep the recognize error; list refresh failure is secondary.
+      }
+    } finally {
+      recognizingIdsRef.current.delete(accrual.id);
+      setRecognizingIds(new Set(recognizingIdsRef.current));
     }
   }
 
@@ -397,6 +450,10 @@ export function AccrualsView({
 
         {createError ? <StatusMessage tone="error">{createError}</StatusMessage> : null}
         {createSuccess ? <StatusMessage tone="success">{createSuccess}</StatusMessage> : null}
+        {recognizeError ? <StatusMessage tone="error">{recognizeError}</StatusMessage> : null}
+        {recognizeSuccess ? (
+          <StatusMessage tone="success">{recognizeSuccess}</StatusMessage>
+        ) : null}
         {workspace ? (
           <ListLoadState
             loading={loading}
@@ -430,10 +487,13 @@ export function AccrualsView({
                     <th>Визнано</th>
                     <th>Сторновано</th>
                     <th>Причина сторно</th>
+                    <th>Дія</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {accruals.map((accrual) => (
+                  {accruals.map((accrual) => {
+                    const rowBusy = recognizingIds.has(accrual.id);
+                    return (
                     <tr
                       key={accrual.id}
                       data-row-id={accrual.id}
@@ -451,8 +511,23 @@ export function AccrualsView({
                           : "—"}
                       </td>
                       <td className="cell-wrap">{accrual.reversalReason ?? "—"}</td>
+                      <td>
+                        {canRecognizeAccrual(accrual) ? (
+                          <button
+                            type="button"
+                            className="button-secondary"
+                            disabled={rowBusy || loading}
+                            onClick={() => void handleRecognizeAccrual(accrual)}
+                          >
+                            {rowBusy ? "Визнання…" : "Визнати"}
+                          </button>
+                        ) : (
+                          <span className="meta">—</span>
+                        )}
+                      </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

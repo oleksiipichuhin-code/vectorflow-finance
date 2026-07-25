@@ -322,3 +322,15 @@ export function createAccrual(
     })
   });
 }
+
+export function recognizeAccrual(
+  workspaceId: string,
+  accrualId: string
+): Promise<Accrual> {
+  return requestJson<Accrual>(
+    `/api/finance-workspaces/${workspaceId}/accruals/${accrualId}/recognize`,
+    {
+      method: "POST"
+    }
+  );
+}
