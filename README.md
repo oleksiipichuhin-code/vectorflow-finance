@@ -68,7 +68,7 @@ Local Development URL: `http://localhost:5173`
 
 `VITE_FINANCE_API_BASE_URL` points the browser shell at the real Finance API (`http://localhost:5080` by default in Development; see `.env.example`). Primary UI language is Ukrainian.
 
-The shell navigates Workspace → Dashboard → Invoices → Accruals against the running backend (not mocks). Invoices and Accruals support apply/clear filters and pagination (fixed page size 5). Invoice filters: exact `documentNumber`, exact `status` (`Draft` | `Issued`), inclusive `createdFromUtc` / `createdToUtc`. Accrual filters: `descriptionPrefix`, recognition date range.
+The shell navigates Workspace → Dashboard → Invoices → Accruals against the running backend (not mocks). Invoices and Accruals support apply/clear filters and pagination (fixed page size 5). Invoice filters: exact `documentNumber`, exact `status` (`Draft` | `Issued`), inclusive `createdFromUtc` / `createdToUtc`. Accrual filters: `descriptionPrefix`, recognition date range. Draft invoices can be issued from the list (`Draft` → `Issued`); when a draft still needs a due date or a positive line, the shell collects those fields and calls the existing set-due-date / add-line / issue API endpoints before refreshing the list.
 
 Shell state is shareable via the browser URL and **Скопіювати посилання**:
 

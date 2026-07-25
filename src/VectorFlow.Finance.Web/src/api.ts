@@ -183,6 +183,51 @@ export function createInvoice(
   });
 }
 
+export function setInvoiceDueDate(
+  workspaceId: string,
+  invoiceId: string,
+  dueDateUtc: string
+): Promise<Invoice> {
+  return requestJson<Invoice>(
+    `/api/finance-workspaces/${workspaceId}/invoices/${invoiceId}/set-due-date`,
+    {
+      method: "POST",
+      body: JSON.stringify({ dueDateUtc })
+    }
+  );
+}
+
+export function addInvoiceLine(
+  workspaceId: string,
+  invoiceId: string,
+  input: {
+    quantity: number;
+    unitPrice: number;
+    description?: string | null;
+  }
+): Promise<Invoice> {
+  return requestJson<Invoice>(
+    `/api/finance-workspaces/${workspaceId}/invoices/${invoiceId}/lines`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        quantity: input.quantity,
+        unitPrice: input.unitPrice,
+        description: input.description ?? null
+      })
+    }
+  );
+}
+
+export function issueInvoice(workspaceId: string, invoiceId: string): Promise<Invoice> {
+  return requestJson<Invoice>(
+    `/api/finance-workspaces/${workspaceId}/invoices/${invoiceId}/issue`,
+    {
+      method: "POST"
+    }
+  );
+}
+
 export type Accrual = {
   id: string;
   financeWorkspaceId: string;

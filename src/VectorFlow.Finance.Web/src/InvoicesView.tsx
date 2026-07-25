@@ -1,7 +1,10 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import {
+  addInvoiceLine,
   createInvoice,
+  issueInvoice,
   listInvoicesPaged,
+  setInvoiceDueDate,
   type FinanceWorkspace,
   type Invoice
 } from "./api";
@@ -18,6 +21,12 @@ import {
   type InvoiceListFilters,
   type InvoiceStatusFilter
 } from "./invoiceListQuery";
+import {
+  defaultDueDateInputValue,
+  getInvoiceIssueReadiness,
+  isDraftInvoice,
+  toDueDateUtcIso
+} from "./invoiceIssue";
 import { ListLoadState } from "./components/ListLoadState";
 import { Panel, StatusMessage } from "./components/Panel";
 import { formatDate, formatMoney } from "./format";
@@ -70,8 +79,18 @@ export function InvoicesView({
   const [createSuccess, setCreateSuccess] = useState<string | null>(null);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
 
+  const [issueTarget, setIssueTarget] = useState<Invoice | null>(null);
+  const [issueDueDate, setIssueDueDate] = useState(defaultDueDateInputValue);
+  const [issueQuantity, setIssueQuantity] = useState("1");
+  const [issueUnitPrice, setIssueUnitPrice] = useState("");
+  const [issueLineDescription, setIssueLineDescription] = useState("");
+  const [issueBusy, setIssueBusy] = useState(false);
+  const [issueError, setIssueError] = useState<string | null>(null);
+  const [issueSuccess, setIssueSuccess] = useState<string | null>(null);
+
   const requestSeq = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
+  const issueBusyRef = useRef(false);
 
   useEffect(() => {
     if (workspace) {
@@ -96,6 +115,9 @@ export function InvoicesView({
       setCreateSuccess(null);
       setHighlightedId(null);
       setDocumentNumber(buildDemoDocumentNumber());
+      setIssueTarget(null);
+      setIssueError(null);
+      setIssueSuccess(null);
       onDiscoveryChange?.(1, emptyFilters);
     }
   }, [workspace?.id, onDiscoveryChange]);
@@ -199,6 +221,8 @@ export function InvoicesView({
     setCreateBusy(true);
     setCreateError(null);
     setCreateSuccess(null);
+    setIssueError(null);
+    setIssueSuccess(null);
 
     try {
       const created = await createInvoice(workspace.id, {
@@ -212,6 +236,7 @@ export function InvoicesView({
       setFilterValidationError(null);
       setPage(1);
       setHighlightedId(created.id);
+      setIssueTarget(null);
       setCreateSuccess(
         `Чернетку рахунка «${created.documentNumber}» створено. Запис показано у списку нижче.`
       );
@@ -224,6 +249,154 @@ export function InvoicesView({
     } finally {
       setCreateBusy(false);
     }
+  }
+
+  function beginIssue(invoice: Invoice) {
+    if (!isDraftInvoice(invoice) || issueBusyRef.current) {
+      return;
+    }
+
+    setCreateSuccess(null);
+    setIssueError(null);
+    setIssueSuccess(null);
+
+    const readiness = getInvoiceIssueReadiness(invoice);
+    if (readiness.ready) {
+      void completeIssue(invoice);
+      return;
+    }
+
+    setIssueTarget(invoice);
+    setIssueDueDate(
+      invoice.dueDateUtc ? invoice.dueDateUtc.slice(0, 10) : defaultDueDateInputValue()
+    );
+    setIssueQuantity("1");
+    setIssueUnitPrice("");
+    setIssueLineDescription(invoice.documentNumber);
+  }
+
+  function cancelIssuePrepare() {
+    if (issueBusyRef.current) {
+      return;
+    }
+
+    setIssueTarget(null);
+    setIssueError(null);
+  }
+
+  async function completeIssue(invoice: Invoice, preparation?: {
+    dueDateUtc?: string;
+    quantity?: number;
+    unitPrice?: number;
+    description?: string | null;
+  }) {
+    if (!workspace || issueBusyRef.current) {
+      return;
+    }
+
+    issueBusyRef.current = true;
+    setIssueBusy(true);
+    setIssueError(null);
+    setIssueSuccess(null);
+    setCreateSuccess(null);
+
+    try {
+      const readiness = getInvoiceIssueReadiness(invoice);
+
+      if (readiness.needsLine) {
+        const quantity = preparation?.quantity;
+        const unitPrice = preparation?.unitPrice;
+        if (
+          quantity === undefined ||
+          unitPrice === undefined ||
+          !Number.isFinite(quantity) ||
+          !Number.isFinite(unitPrice)
+        ) {
+          throw new Error("Вкажіть кількість і ціну рядка перед виставленням.");
+        }
+
+        await addInvoiceLine(workspace.id, invoice.id, {
+          quantity,
+          unitPrice,
+          description: preparation?.description
+        });
+      }
+
+      if (readiness.needsDueDate) {
+        if (!preparation?.dueDateUtc) {
+          throw new Error("Вкажіть дату оплати перед виставленням.");
+        }
+
+        await setInvoiceDueDate(workspace.id, invoice.id, preparation.dueDateUtc);
+      }
+
+      const issued = await issueInvoice(workspace.id, invoice.id);
+      setIssueTarget(null);
+      setHighlightedId(issued.id);
+      setIssueSuccess(
+        `Рахунок «${issued.documentNumber}» виставлено. Статус: ${issued.status}.`
+      );
+      await loadPage(workspace.id, page, appliedFilters);
+    } catch (issueErr) {
+      setIssueError(
+        issueErr instanceof Error ? issueErr.message : "Не вдалося виставити рахунок."
+      );
+      setIssueTarget(null);
+      try {
+        await loadPage(workspace.id, page, appliedFilters);
+      } catch {
+        // Keep the issue error; list refresh failure is secondary.
+      }
+    } finally {
+      issueBusyRef.current = false;
+      setIssueBusy(false);
+    }
+  }
+
+  async function handlePrepareAndIssue(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!issueTarget || issueBusyRef.current) {
+      return;
+    }
+
+    const readiness = getInvoiceIssueReadiness(issueTarget);
+    let dueDateUtc: string | undefined;
+    let quantity: number | undefined;
+    let unitPrice: number | undefined;
+
+    try {
+      if (readiness.needsDueDate) {
+        dueDateUtc = toDueDateUtcIso(issueDueDate);
+      }
+
+      if (readiness.needsLine) {
+        quantity = Number(issueQuantity.replace(",", "."));
+        unitPrice = Number(issueUnitPrice.replace(",", "."));
+        if (!Number.isFinite(quantity) || quantity <= 0) {
+          throw new Error("Кількість має бути додатним числом.");
+        }
+        if (!Number.isFinite(unitPrice) || unitPrice < 0) {
+          throw new Error("Ціна має бути невід’ємним числом.");
+        }
+        if (quantity * unitPrice <= 0) {
+          throw new Error("Сума рядка має бути додатною.");
+        }
+      }
+    } catch (validationErr) {
+      setIssueError(
+        validationErr instanceof Error
+          ? validationErr.message
+          : "Перевірте дані підготовки рахунка."
+      );
+      return;
+    }
+
+    await completeIssue(issueTarget, {
+      dueDateUtc,
+      quantity,
+      unitPrice,
+      description: issueLineDescription.trim() || null
+    });
   }
 
   useEffect(() => {
@@ -458,6 +631,74 @@ export function InvoicesView({
 
         {createError ? <StatusMessage tone="error">{createError}</StatusMessage> : null}
         {createSuccess ? <StatusMessage tone="success">{createSuccess}</StatusMessage> : null}
+        {issueError ? <StatusMessage tone="error">{issueError}</StatusMessage> : null}
+        {issueSuccess ? <StatusMessage tone="success">{issueSuccess}</StatusMessage> : null}
+
+        {workspace && issueTarget ? (
+          <form
+            className="create-form issue-prepare-form"
+            onSubmit={(event) => void handlePrepareAndIssue(event)}
+          >
+            <p className="meta">
+              Підготовка до виставлення: <span className="mono">{issueTarget.documentNumber}</span>
+            </p>
+            {getInvoiceIssueReadiness(issueTarget).needsDueDate ? (
+              <label>
+                Дата оплати
+                <input
+                  type="date"
+                  value={issueDueDate}
+                  onChange={(event) => setIssueDueDate(event.target.value)}
+                  required
+                />
+              </label>
+            ) : null}
+            {getInvoiceIssueReadiness(issueTarget).needsLine ? (
+              <>
+                <label>
+                  Кількість
+                  <input
+                    value={issueQuantity}
+                    onChange={(event) => setIssueQuantity(event.target.value)}
+                    inputMode="decimal"
+                    required
+                  />
+                </label>
+                <label>
+                  Ціна
+                  <input
+                    value={issueUnitPrice}
+                    onChange={(event) => setIssueUnitPrice(event.target.value)}
+                    inputMode="decimal"
+                    required
+                  />
+                </label>
+                <label>
+                  Опис рядка
+                  <input
+                    value={issueLineDescription}
+                    onChange={(event) => setIssueLineDescription(event.target.value)}
+                    placeholder="Послуга або товар"
+                  />
+                </label>
+              </>
+            ) : null}
+            <div className="filter-actions">
+              <button type="submit" disabled={issueBusy}>
+                Підготувати й виставити
+              </button>
+              <button
+                type="button"
+                className="button-secondary"
+                disabled={issueBusy}
+                onClick={cancelIssuePrepare}
+              >
+                Скасувати
+              </button>
+            </div>
+          </form>
+        ) : null}
+
         {workspace ? (
           <ListLoadState
             loading={loading}
@@ -488,6 +729,7 @@ export function InvoicesView({
                     <th>Контрагент</th>
                     <th>Сума</th>
                     <th>Створено</th>
+                    <th>Дія</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -502,6 +744,20 @@ export function InvoicesView({
                       <td className="cell-wrap">{invoice.counterpartyReference}</td>
                       <td>{formatMoney(invoice.totalAmount, invoice.currency)}</td>
                       <td>{formatDate(invoice.createdAtUtc)}</td>
+                      <td>
+                        {isDraftInvoice(invoice) ? (
+                          <button
+                            type="button"
+                            className="button-secondary"
+                            disabled={issueBusy || loading}
+                            onClick={() => beginIssue(invoice)}
+                          >
+                            Виставити
+                          </button>
+                        ) : (
+                          <span className="meta">—</span>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
