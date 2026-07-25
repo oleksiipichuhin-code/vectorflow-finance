@@ -200,8 +200,18 @@ internal sealed class InMemoryInvoiceRepository : IInvoiceRepository
     public Task SaveChangesAsync(CancellationToken cancellationToken = default)
     {
         SaveChangesCallCount++;
+        if (ThrowOnSaveChanges is not null)
+        {
+            throw ThrowOnSaveChanges;
+        }
+
         return Task.CompletedTask;
     }
+
+    /// <summary>
+    /// When set, the next <see cref="SaveChangesAsync"/> throws this exception (simulates concurrency conflict).
+    /// </summary>
+    public Exception? ThrowOnSaveChanges { get; set; }
 
     public Invoice? FindById(Guid id) =>
         _byId.TryGetValue(id, out var invoice) ? invoice : null;

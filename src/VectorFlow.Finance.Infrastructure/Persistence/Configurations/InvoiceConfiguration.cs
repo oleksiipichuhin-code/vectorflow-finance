@@ -53,8 +53,11 @@ public sealed class InvoiceConfiguration : IEntityTypeConfiguration<Invoice>
         builder.Property(invoice => invoice.CreatedAt)
             .IsRequired();
 
+        // Optimistic concurrency: UPDATE ... WHERE UpdatedAt = original token.
+        // No schema/migration change — existing UpdatedAt column is the token.
         builder.Property(invoice => invoice.UpdatedAt)
-            .IsRequired();
+            .IsRequired()
+            .IsConcurrencyToken();
 
         builder.Property(invoice => invoice.IssuedAt);
 

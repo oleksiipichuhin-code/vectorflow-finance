@@ -190,8 +190,18 @@ public sealed class InvoiceRepository : IInvoiceRepository
         await _dbContext.Invoices.AddAsync(invoice, cancellationToken);
     }
 
-    public Task SaveChangesAsync(CancellationToken cancellationToken = default) =>
-        _dbContext.SaveChangesAsync(cancellationToken);
+    public async Task SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            throw new InvalidOperationException(
+                "The invoice was modified by another request. Reload and retry.");
+        }
+    }
 
     private IQueryable<Invoice> InvoicesWithLines() =>
         _dbContext.Invoices

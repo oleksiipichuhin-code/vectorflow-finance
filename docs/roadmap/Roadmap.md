@@ -101,9 +101,10 @@ F3A–F3F are published. Decimal precision policy for Debit/Credit remains an op
 | F4AH | Accrual Paged ReversalReason Composition | Complete |
 | F4AI | Accrual Description Prefix Composition | Complete |
 | F4AJ | Accrual Optimistic Concurrency (UpdatedAt token) | Complete |
+| F4AK | Invoice Optimistic Concurrency (UpdatedAt token) | Complete |
 | F4Q+ | Later invoice and Accrual query enhancements | Planned |
 
-F4A–F4AJ are published. F4AJ Accrual Optimistic Concurrency marks Accrual `UpdatedAt` as an EF Core concurrency token (no schema/migration/API contract change); stale concurrent saves after recognize/reverse/draft mutation race map `DbUpdateConcurrencyException` → Conflict/409 via repository + Application handlers; sequential invalid transitions remain domain Conflict. Remaining invoice query enhancements (other multi-field filters / full-text search), further Accrual text modes (contains/full-text), Invoice existence validation on SourceInvoiceId, and other deferred Accrual capabilities remain planned under F4Q+ or later slices. F4 as a whole remains incomplete.
+F4A–F4AK are published. F4AK Invoice Optimistic Concurrency marks Invoice `UpdatedAt` as an EF Core concurrency token (no schema/migration/API contract change); stale concurrent saves after issue/draft mutation race map `DbUpdateConcurrencyException` → Conflict/409 via repository + Application handlers; sequential invalid transitions remain domain Conflict. Accrual concurrency (F4AJ) and Invoice concurrency (F4AK) now share the same UpdatedAt-token posture. Remaining invoice query enhancements (other multi-field filters / full-text search), further Accrual text modes (contains/full-text), Invoice existence validation on SourceInvoiceId, and other deferred capabilities remain planned under F4Q+ or later slices. F4 as a whole remains incomplete.
 
 ## F5 sub-slices
 

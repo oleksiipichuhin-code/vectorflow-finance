@@ -2825,6 +2825,97 @@ public sealed class InvoiceRepositoryTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Concurrent_draft_mutation_after_issue_throws_InvalidOperation()
+    {
+        var invoice = Invoice.Create(
+            InvoiceId.New(),
+            _workspaceA,
+            "INV-RACE",
+            new CounterpartyReference("cp-race"),
+            new Currency("UAH"),
+            T0);
+        invoice.AddLine(1m, 100m, "Line", T0);
+        invoice.SetDueDate(T2, T0);
+
+        await _repository.AddAsync(invoice);
+        await _repository.SaveChangesAsync();
+
+        await using var issueContext = CreateContext();
+        await using var mutateContext = CreateContext();
+        var issueRepo = new InvoiceRepository(issueContext);
+        var mutateRepo = new InvoiceRepository(mutateContext);
+
+        var forIssue = await issueRepo.GetByIdAsync(_workspaceA, invoice.Id);
+        var forMutate = await mutateRepo.GetByIdAsync(_workspaceA, invoice.Id);
+        Assert.NotNull(forIssue);
+        Assert.NotNull(forMutate);
+
+        forIssue.Issue(T1);
+        await issueRepo.SaveChangesAsync();
+
+        forMutate.ChangeDocumentNumber("INV-RACE-2", T2);
+        var conflict = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => mutateRepo.SaveChangesAsync());
+
+        Assert.Equal(
+            "The invoice was modified by another request. Reload and retry.",
+            conflict.Message);
+
+        await using var readContext = CreateContext();
+        var loaded = await new InvoiceRepository(readContext).GetByIdAsync(_workspaceA, invoice.Id);
+        Assert.NotNull(loaded);
+        Assert.Equal(InvoiceStatus.Issued, loaded.Status);
+        Assert.Equal("INV-RACE", loaded.DocumentNumber);
+        Assert.Equal(T1, loaded.UpdatedAt);
+        Assert.Equal(T1, loaded.IssuedAt);
+    }
+
+    [Fact]
+    public async Task Concurrent_second_issue_throws_InvalidOperation()
+    {
+        var invoice = Invoice.Create(
+            InvoiceId.New(),
+            _workspaceA,
+            "INV-DBL",
+            new CounterpartyReference("cp-dbl"),
+            new Currency("UAH"),
+            T0);
+        invoice.AddLine(2m, 50m, "Line", T0);
+        invoice.SetDueDate(T2, T0);
+
+        await _repository.AddAsync(invoice);
+        await _repository.SaveChangesAsync();
+
+        await using var firstContext = CreateContext();
+        await using var secondContext = CreateContext();
+        var firstRepo = new InvoiceRepository(firstContext);
+        var secondRepo = new InvoiceRepository(secondContext);
+
+        var first = await firstRepo.GetByIdAsync(_workspaceA, invoice.Id);
+        var second = await secondRepo.GetByIdAsync(_workspaceA, invoice.Id);
+        Assert.NotNull(first);
+        Assert.NotNull(second);
+
+        first.Issue(T1);
+        await firstRepo.SaveChangesAsync();
+
+        second.Issue(T2);
+        var conflict = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => secondRepo.SaveChangesAsync());
+
+        Assert.Equal(
+            "The invoice was modified by another request. Reload and retry.",
+            conflict.Message);
+
+        await using var readContext = CreateContext();
+        var loaded = await new InvoiceRepository(readContext).GetByIdAsync(_workspaceA, invoice.Id);
+        Assert.NotNull(loaded);
+        Assert.Equal(InvoiceStatus.Issued, loaded.Status);
+        Assert.Equal(T1, loaded.IssuedAt);
+        Assert.Equal(T1, loaded.UpdatedAt);
+    }
+
+    [Fact]
     public async Task Model_contains_invoice_tables_and_indexes()
     {
         var invoiceEntity = _dbContext.Model.FindEntityType(typeof(Invoice));
@@ -2834,6 +2925,10 @@ public sealed class InvoiceRepositoryTests : IAsyncLifetime
         Assert.Equal("Invoices", invoiceEntity.GetTableName());
         Assert.NotNull(lineEntity);
         Assert.Equal("InvoiceLines", lineEntity.GetTableName());
+
+        var updatedAt = invoiceEntity.FindProperty(nameof(Invoice.UpdatedAt));
+        Assert.NotNull(updatedAt);
+        Assert.True(updatedAt.IsConcurrencyToken);
 
         Assert.Contains(
             invoiceEntity.GetIndexes(),

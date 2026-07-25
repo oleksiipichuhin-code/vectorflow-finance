@@ -65,8 +65,6 @@ public sealed class CreateInvoiceHandler
         }
 
         await _invoiceRepository.AddAsync(invoice, cancellationToken);
-        await _invoiceRepository.SaveChangesAsync(cancellationToken);
-
-        return ApplicationResult<InvoiceDto>.Success(InvoiceMapper.ToDto(invoice));
+        return await InvoiceHandlerSupport.SaveAsync(_invoiceRepository, invoice, cancellationToken);
     }
 }

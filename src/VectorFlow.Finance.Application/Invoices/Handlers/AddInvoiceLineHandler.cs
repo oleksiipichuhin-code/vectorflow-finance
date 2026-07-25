@@ -46,7 +46,6 @@ public sealed class AddInvoiceLineHandler
             return InvoiceHandlerSupport.FromInvalidOperationException(ex);
         }
 
-        await _repository.SaveChangesAsync(cancellationToken);
-        return ApplicationResult<InvoiceDto>.Success(InvoiceMapper.ToDto(load.Value));
+        return await InvoiceHandlerSupport.SaveAsync(_repository, load.Value, cancellationToken);
     }
 }

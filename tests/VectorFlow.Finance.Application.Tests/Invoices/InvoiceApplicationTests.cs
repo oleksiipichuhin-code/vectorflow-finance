@@ -2216,6 +2216,26 @@ public sealed class InvoiceApplicationTests
     }
 
     [Fact]
+    public async Task Issue_save_concurrency_conflict_returns_Conflict()
+    {
+        var (invoices, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        var ready = await CreateIssuableAsync(invoices, workspaces, clock, workspaceId);
+        clock.UtcNow = T2;
+        invoices.ThrowOnSaveChanges = new InvalidOperationException(
+            "The invoice was modified by another request. Reload and retry.");
+
+        var result = await new IssueInvoiceHandler(invoices, clock).HandleAsync(
+            new IssueInvoiceCommand(workspaceId, ready.Id));
+
+        Assert.Equal(ApplicationErrorKind.Conflict, result.ErrorKind);
+        Assert.Equal(
+            "The invoice was modified by another request. Reload and retry.",
+            result.ErrorMessage);
+        Assert.True(invoices.SaveChangesCallCount >= 1);
+    }
+
+    [Fact]
     public async Task Issued_invoice_rejects_mutations_as_Conflict()
     {
         var (invoices, workspaces, clock) = CreateHarness();

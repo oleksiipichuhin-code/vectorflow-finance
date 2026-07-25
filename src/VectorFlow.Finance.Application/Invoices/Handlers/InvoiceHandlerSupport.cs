@@ -42,6 +42,26 @@ internal static class InvoiceHandlerSupport
         ApplicationResult<InvoiceDto>.Conflict(ex.Message);
 
     /// <summary>
+    /// Persists tracked invoice mutations. Maps optimistic concurrency failures
+    /// (<see cref="InvalidOperationException"/> from the repository) to Conflict.
+    /// </summary>
+    public static async Task<ApplicationResult<InvoiceDto>> SaveAsync(
+        IInvoiceRepository repository,
+        Invoice invoice,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await repository.SaveChangesAsync(cancellationToken);
+            return ApplicationResult<InvoiceDto>.Success(InvoiceMapper.ToDto(invoice));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return FromInvalidOperationException(ex);
+        }
+    }
+
+    /// <summary>
     /// Mirrors Domain <c>Invoice.NormalizeDocumentNumber</c> (trim; blank and max-length rejected).
     /// </summary>
     public static string NormalizeDocumentNumber(string? documentNumber)
