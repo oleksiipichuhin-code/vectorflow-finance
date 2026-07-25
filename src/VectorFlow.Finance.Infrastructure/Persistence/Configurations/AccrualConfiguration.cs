@@ -61,8 +61,11 @@ public sealed class AccrualConfiguration : IEntityTypeConfiguration<Accrual>
         builder.Property(accrual => accrual.CreatedAt)
             .IsRequired();
 
+        // Optimistic concurrency: UPDATE ... WHERE UpdatedAt = original token.
+        // No schema/migration change — existing UpdatedAt column is the token.
         builder.Property(accrual => accrual.UpdatedAt)
-            .IsRequired();
+            .IsRequired()
+            .IsConcurrencyToken();
 
         builder.Property(accrual => accrual.RecognizedAt);
 

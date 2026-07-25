@@ -76,8 +76,6 @@ public sealed class CreateAccrualHandler
         }
 
         await _accrualRepository.AddAsync(accrual, cancellationToken);
-        await _accrualRepository.SaveChangesAsync(cancellationToken);
-
-        return ApplicationResult<AccrualDto>.Success(AccrualMapper.ToDto(accrual));
+        return await AccrualHandlerSupport.SaveAsync(_accrualRepository, accrual, cancellationToken);
     }
 }

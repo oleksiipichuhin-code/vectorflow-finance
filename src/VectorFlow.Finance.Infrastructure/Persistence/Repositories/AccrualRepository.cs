@@ -231,6 +231,16 @@ public sealed class AccrualRepository : IAccrualRepository
         await _dbContext.Accruals.AddAsync(accrual, cancellationToken);
     }
 
-    public Task SaveChangesAsync(CancellationToken cancellationToken = default) =>
-        _dbContext.SaveChangesAsync(cancellationToken);
+    public async Task SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            throw new InvalidOperationException(
+                "The accrual was modified by another request. Reload and retry.");
+        }
+    }
 }

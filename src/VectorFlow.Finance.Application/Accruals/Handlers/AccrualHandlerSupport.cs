@@ -62,6 +62,26 @@ internal static class AccrualHandlerSupport
         ApplicationResult<AccrualDto>.Conflict(ex.Message);
 
     /// <summary>
+    /// Persists tracked accrual mutations. Maps optimistic concurrency failures
+    /// (<see cref="InvalidOperationException"/> from the repository) to Conflict.
+    /// </summary>
+    public static async Task<ApplicationResult<AccrualDto>> SaveAsync(
+        IAccrualRepository repository,
+        Accrual accrual,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await repository.SaveChangesAsync(cancellationToken);
+            return ApplicationResult<AccrualDto>.Success(AccrualMapper.ToDto(accrual));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return FromInvalidOperationException(ex);
+        }
+    }
+
+    /// <summary>
     /// Mirrors Domain <c>Accrual.NormalizeDescription</c> (trim; blank and max-length rejected).
     /// </summary>
     public static string NormalizeDescription(string? description)

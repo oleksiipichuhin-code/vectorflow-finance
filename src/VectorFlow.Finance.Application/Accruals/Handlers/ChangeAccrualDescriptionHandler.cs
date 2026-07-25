@@ -42,7 +42,6 @@ public sealed class ChangeAccrualDescriptionHandler
             return AccrualHandlerSupport.FromInvalidOperationException(ex);
         }
 
-        await _repository.SaveChangesAsync(cancellationToken);
-        return ApplicationResult<AccrualDto>.Success(AccrualMapper.ToDto(load.Value));
+        return await AccrualHandlerSupport.SaveAsync(_repository, load.Value, cancellationToken);
     }
 }

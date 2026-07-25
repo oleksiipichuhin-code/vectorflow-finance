@@ -3899,12 +3899,89 @@ public sealed class AccrualRepositoryTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Concurrent_draft_mutation_after_recognize_throws_InvalidOperation()
+    {
+        var accrual = CreateDraft(_workspaceA, AccrualType.Revenue, 100m, "Race");
+        await _repository.AddAsync(accrual);
+        await _repository.SaveChangesAsync();
+
+        await using var recognizeContext = CreateContext();
+        await using var mutateContext = CreateContext();
+        var recognizeRepo = new AccrualRepository(recognizeContext);
+        var mutateRepo = new AccrualRepository(mutateContext);
+
+        var forRecognize = await recognizeRepo.GetByIdAsync(_workspaceA, accrual.Id);
+        var forMutate = await mutateRepo.GetByIdAsync(_workspaceA, accrual.Id);
+        Assert.NotNull(forRecognize);
+        Assert.NotNull(forMutate);
+
+        forRecognize.Recognize(T1);
+        await recognizeRepo.SaveChangesAsync();
+
+        forMutate.ChangeAmount(250m, T2);
+        var conflict = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => mutateRepo.SaveChangesAsync());
+
+        Assert.Equal(
+            "The accrual was modified by another request. Reload and retry.",
+            conflict.Message);
+
+        await using var readContext = CreateContext();
+        var loaded = await new AccrualRepository(readContext).GetByIdAsync(_workspaceA, accrual.Id);
+        Assert.NotNull(loaded);
+        Assert.Equal(AccrualStatus.Recognized, loaded.Status);
+        Assert.Equal(100m, loaded.Amount);
+        Assert.Equal(T1, loaded.UpdatedAt);
+        Assert.Equal(T1, loaded.RecognizedAt);
+    }
+
+    [Fact]
+    public async Task Concurrent_second_recognize_throws_InvalidOperation()
+    {
+        var accrual = CreateDraft(_workspaceA, AccrualType.Expense, 40m, "Double recognize");
+        await _repository.AddAsync(accrual);
+        await _repository.SaveChangesAsync();
+
+        await using var firstContext = CreateContext();
+        await using var secondContext = CreateContext();
+        var firstRepo = new AccrualRepository(firstContext);
+        var secondRepo = new AccrualRepository(secondContext);
+
+        var first = await firstRepo.GetByIdAsync(_workspaceA, accrual.Id);
+        var second = await secondRepo.GetByIdAsync(_workspaceA, accrual.Id);
+        Assert.NotNull(first);
+        Assert.NotNull(second);
+
+        first.Recognize(T1);
+        await firstRepo.SaveChangesAsync();
+
+        second.Recognize(T2);
+        var conflict = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => secondRepo.SaveChangesAsync());
+
+        Assert.Equal(
+            "The accrual was modified by another request. Reload and retry.",
+            conflict.Message);
+
+        await using var readContext = CreateContext();
+        var loaded = await new AccrualRepository(readContext).GetByIdAsync(_workspaceA, accrual.Id);
+        Assert.NotNull(loaded);
+        Assert.Equal(AccrualStatus.Recognized, loaded.Status);
+        Assert.Equal(T1, loaded.RecognizedAt);
+        Assert.Equal(T1, loaded.UpdatedAt);
+    }
+
+    [Fact]
     public async Task Model_contains_accruals_table_index_and_constraints()
     {
         var entity = _dbContext.Model.FindEntityType(typeof(Accrual));
 
         Assert.NotNull(entity);
         Assert.Equal("Accruals", entity.GetTableName());
+
+        var updatedAt = entity.FindProperty(nameof(Accrual.UpdatedAt));
+        Assert.NotNull(updatedAt);
+        Assert.True(updatedAt.IsConcurrencyToken);
 
         Assert.Contains(
             entity.GetIndexes(),

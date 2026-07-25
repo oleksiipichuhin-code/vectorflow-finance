@@ -3359,6 +3359,26 @@ public sealed class AccrualApplicationTests
     }
 
     [Fact]
+    public async Task Recognize_save_concurrency_conflict_returns_Conflict()
+    {
+        var (accruals, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        var created = await CreateAccrualAsync(accruals, workspaces, clock, workspaceId);
+        clock.UtcNow = T1;
+        accruals.ThrowOnSaveChanges = new InvalidOperationException(
+            "The accrual was modified by another request. Reload and retry.");
+
+        var result = await new RecognizeAccrualHandler(accruals, clock).HandleAsync(
+            new RecognizeAccrualCommand(workspaceId, created.Id));
+
+        Assert.Equal(ApplicationErrorKind.Conflict, result.ErrorKind);
+        Assert.Equal(
+            "The accrual was modified by another request. Reload and retry.",
+            result.ErrorMessage);
+        Assert.True(accruals.SaveChangesCallCount >= 1);
+    }
+
+    [Fact]
     public async Task Mutation_after_recognize_returns_Conflict()
     {
         var (accruals, workspaces, clock) = CreateHarness();

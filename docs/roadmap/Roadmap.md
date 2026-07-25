@@ -100,9 +100,10 @@ F3A–F3F are published. Decimal precision policy for Debit/Credit remains an op
 | F4AG | Accrual Paged ReversedAt Range Composition | Complete |
 | F4AH | Accrual Paged ReversalReason Composition | Complete |
 | F4AI | Accrual Description Prefix Composition | Complete |
+| F4AJ | Accrual Optimistic Concurrency (UpdatedAt token) | Complete |
 | F4Q+ | Later invoice and Accrual query enhancements | Planned |
 
-F4A–F4AI are published. F4AI Accrual Description Prefix Composition (optional case-sensitive Ordinal `descriptionPrefix` on paged Accrual listing; missing means no Description prefix filter; when provided, trim + blank/overlength ValidationFailed using Domain Description max 500 — same posture as exact `description`; positive prefix match only via SQL-side `substr` equality, not LIKE/StartsWith; wildcard-like characters are literal; exact `description` remains unchanged and composes under AND with `descriptionPrefix`; composes under AND with optional exact `status`, inclusive CreatedAt/RecognitionDate/Amount/RecognizedAt/ReversedAt bounds, exact `sourceInvoiceId`, exact `type`, exact `currency`, and exact `reversalReason`; Description prefix filter applied as SQL predicate with other string filters before materialization; no Domain, migration, schema, package, Contracts, or DI changes) is published. Remaining invoice query enhancements (other multi-field filters / full-text search), further Accrual text modes (contains/full-text), and other deferred Accrual query capabilities remain planned under F4Q+. F4 as a whole remains incomplete.
+F4A–F4AJ are published. F4AJ Accrual Optimistic Concurrency marks Accrual `UpdatedAt` as an EF Core concurrency token (no schema/migration/API contract change); stale concurrent saves after recognize/reverse/draft mutation race map `DbUpdateConcurrencyException` → Conflict/409 via repository + Application handlers; sequential invalid transitions remain domain Conflict. Remaining invoice query enhancements (other multi-field filters / full-text search), further Accrual text modes (contains/full-text), Invoice existence validation on SourceInvoiceId, and other deferred Accrual capabilities remain planned under F4Q+ or later slices. F4 as a whole remains incomplete.
 
 ## F5 sub-slices
 
