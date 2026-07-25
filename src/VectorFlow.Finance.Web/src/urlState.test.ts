@@ -54,6 +54,7 @@ describe("urlState", () => {
         },
         accrualFilters: {
           descriptionPrefix: "Rent",
+          status: "Recognized",
           recognitionFromDate: "2026-07-01",
           recognitionToDate: "2026-07-24"
         }
@@ -75,8 +76,60 @@ describe("urlState", () => {
     assert.equal(parsed.view, "accruals");
     assert.equal(parsed.discovery.page, 1);
     assert.equal(parsed.discovery.accrualFilters.descriptionPrefix, "Оренда");
+    assert.equal(parsed.discovery.accrualFilters.status, "");
     assert.equal(parsed.discovery.accrualFilters.recognitionFromDate, "2026-07-10");
     assert.equal(parsed.discovery.accrualFilters.recognitionToDate, "");
+  });
+
+  it("round-trips accrual status filter and normalizes unknown values", () => {
+    const workspaceId = "11111111-1111-1111-1111-111111111111";
+    const search = buildUrlSearch({
+      view: "accruals",
+      workspaceId,
+      discovery: {
+        page: 1,
+        invoiceFilters: { ...EMPTY_INVOICE_FILTERS },
+        accrualFilters: {
+          ...EMPTY_ACCRUAL_FILTERS,
+          status: "Recognized"
+        }
+      }
+    });
+
+    assert.equal(
+      search,
+      "?view=accruals&workspaceId=11111111-1111-1111-1111-111111111111&status=Recognized"
+    );
+
+    const parsed = parseUrlSearch(search);
+    assert.equal(parsed.discovery.accrualFilters.status, "Recognized");
+    assert.equal(parsed.discovery.invoiceFilters.status, "");
+
+    const unknown = parseUrlSearch("?view=accruals&status=Issued");
+    assert.equal(unknown.discovery.accrualFilters.status, "");
+    assert.equal(unknown.discovery.invoiceFilters.status, "Issued");
+  });
+
+  it("preserves other accrual filters when serializing status", () => {
+    const search = buildUrlSearch({
+      view: "accruals",
+      workspaceId: null,
+      discovery: {
+        page: 3,
+        invoiceFilters: { ...EMPTY_INVOICE_FILTERS },
+        accrualFilters: {
+          descriptionPrefix: "Rent",
+          status: "Draft",
+          recognitionFromDate: "2026-07-01",
+          recognitionToDate: "2026-07-31"
+        }
+      }
+    });
+
+    assert.equal(
+      search,
+      "?view=accruals&descriptionPrefix=Rent&status=Draft&recognitionFrom=2026-07-01&recognitionTo=2026-07-31&page=3"
+    );
   });
 
   it("rejects invalid workspace ids and unknown views", () => {

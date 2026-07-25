@@ -1,4 +1,4 @@
-import type { AccrualListFilters } from "./accrualListQuery";
+import type { AccrualListFilters, AccrualStatusFilter } from "./accrualListQuery";
 import type { InvoiceListFilters, InvoiceStatusFilter } from "./invoiceListQuery";
 import type { AppView } from "./navigation";
 
@@ -35,6 +35,7 @@ export const EMPTY_INVOICE_FILTERS: InvoiceListFilters = {
 
 export const EMPTY_ACCRUAL_FILTERS: AccrualListFilters = {
   descriptionPrefix: "",
+  status: "",
   recognitionFromDate: "",
   recognitionToDate: ""
 };
@@ -82,6 +83,14 @@ function parseInvoiceStatus(value: string | null): InvoiceStatusFilter {
   return "";
 }
 
+function parseAccrualStatus(value: string | null): AccrualStatusFilter {
+  if (value === "Draft" || value === "Recognized" || value === "Reversed") {
+    return value;
+  }
+
+  return "";
+}
+
 export function createEmptyDiscovery(): ListDiscovery {
   return {
     page: 1,
@@ -112,6 +121,7 @@ export function parseUrlSearch(search: string): AppUrlState {
 
   const accrualFilters: AccrualListFilters = {
     descriptionPrefix: params.get("descriptionPrefix")?.trim() ?? "",
+    status: parseAccrualStatus(params.get("status")),
     recognitionFromDate: parseDateInput(params.get("recognitionFrom")),
     recognitionToDate: parseDateInput(params.get("recognitionTo"))
   };
@@ -168,6 +178,13 @@ export function buildUrlSearch(state: AppUrlState): string {
   if (state.view === "accruals") {
     const filters = state.discovery.accrualFilters;
     setIfPresent(params, "descriptionPrefix", filters.descriptionPrefix);
+    if (
+      filters.status === "Draft" ||
+      filters.status === "Recognized" ||
+      filters.status === "Reversed"
+    ) {
+      params.set("status", filters.status);
+    }
     setIfPresent(params, "recognitionFrom", filters.recognitionFromDate);
     setIfPresent(params, "recognitionTo", filters.recognitionToDate);
     if (page > 1) {

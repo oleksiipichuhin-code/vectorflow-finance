@@ -1,5 +1,8 @@
+export type AccrualStatusFilter = "" | "Draft" | "Recognized" | "Reversed";
+
 export type AccrualListFilters = {
   descriptionPrefix?: string;
+  status?: AccrualStatusFilter;
   recognitionFromDate?: string;
   recognitionToDate?: string;
 };
@@ -8,11 +11,18 @@ export type AccrualListQuery = {
   page: number;
   pageSize: number;
   descriptionPrefix?: string;
+  status?: "Draft" | "Recognized" | "Reversed";
   recognitionFromUtc?: string;
   recognitionToUtc?: string;
 };
 
 export const ACCRUAL_PAGE_SIZE = 5;
+
+export const ACCRUAL_STATUS_OPTIONS: Array<"Draft" | "Recognized" | "Reversed"> = [
+  "Draft",
+  "Recognized",
+  "Reversed"
+];
 
 export function dateInputToUtcStart(dateInput: string): string {
   return `${dateInput}T00:00:00.000Z`;
@@ -43,6 +53,12 @@ export function buildAccrualListQuery(
   filters: AccrualListFilters
 ): { query: AccrualListQuery; validationError: string | null } {
   const descriptionPrefix = filters.descriptionPrefix?.trim() || undefined;
+  const status =
+    filters.status === "Draft" ||
+    filters.status === "Recognized" ||
+    filters.status === "Reversed"
+      ? filters.status
+      : undefined;
   const recognitionFromDate = filters.recognitionFromDate?.trim() || undefined;
   const recognitionToDate = filters.recognitionToDate?.trim() || undefined;
 
@@ -67,6 +83,10 @@ export function buildAccrualListQuery(
     query.descriptionPrefix = descriptionPrefix;
   }
 
+  if (status) {
+    query.status = status;
+  }
+
   if (recognitionFromDate) {
     query.recognitionFromUtc = dateInputToUtcStart(recognitionFromDate);
   }
@@ -81,6 +101,9 @@ export function buildAccrualListQuery(
 export function hasActiveAccrualFilters(filters: AccrualListFilters): boolean {
   return Boolean(
     filters.descriptionPrefix?.trim() ||
+      filters.status === "Draft" ||
+      filters.status === "Recognized" ||
+      filters.status === "Reversed" ||
       filters.recognitionFromDate?.trim() ||
       filters.recognitionToDate?.trim()
   );

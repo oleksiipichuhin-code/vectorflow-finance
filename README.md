@@ -68,7 +68,7 @@ Local Development URL: `http://localhost:5173`
 
 `VITE_FINANCE_API_BASE_URL` points the browser shell at the real Finance API (`http://localhost:5080` by default in Development; see `.env.example`). Primary UI language is Ukrainian.
 
-The shell navigates Workspace → Dashboard → Invoices → Accruals against the running backend (not mocks). Invoices and Accruals support apply/clear filters and pagination (fixed page size 5). Invoice filters: exact `documentNumber`, exact `status` (`Draft` | `Issued`), inclusive `createdFromUtc` / `createdToUtc`. Accrual filters: `descriptionPrefix`, recognition date range. Draft invoices can be issued from the list (`Draft` → `Issued`); when a draft still needs a due date or a positive line, the shell collects those fields and calls the existing set-due-date / add-line / issue API endpoints before refreshing the list. Draft accruals can be recognized from the list (`Draft` → `Recognized`) via the existing recognize API, then the list refreshes. Recognized accruals can be reversed (`Recognized` → `Reversed`) with a required reason via the existing reverse API.
+The shell navigates Workspace → Dashboard → Invoices → Accruals against the running backend (not mocks). Invoices and Accruals support apply/clear filters and pagination (fixed page size 5). Invoice filters: exact `documentNumber`, exact `status` (`Draft` | `Issued`), inclusive `createdFromUtc` / `createdToUtc`. Accrual filters: `descriptionPrefix`, exact `status` (`Draft` | `Recognized` | `Reversed`), recognition date range. Draft invoices can be issued from the list (`Draft` → `Issued`); when a draft still needs a due date or a positive line, the shell collects those fields and calls the existing set-due-date / add-line / issue API endpoints before refreshing the list. Draft accruals can be recognized from the list (`Draft` → `Recognized`) via the existing recognize API, then the list refreshes. Recognized accruals can be reversed (`Recognized` → `Reversed`) with a required reason via the existing reverse API.
 
 Shell state is shareable via the browser URL and **Скопіювати посилання**:
 
@@ -77,8 +77,8 @@ Shell state is shareable via the browser URL and **Скопіювати поси
 | `view` | `dashboard` (default), `workspace`, `invoices`, `accruals` |
 | `workspaceId` | active finance workspace GUID |
 | `page` | list page (omitted when `1`) |
-| `documentNumber`, `status`, `createdFrom`, `createdTo` | invoice list filters (`created*` are `YYYY-MM-DD` date inputs) |
-| `descriptionPrefix`, `recognitionFrom`, `recognitionTo` | accrual list filters |
+| `documentNumber`, `status`, `createdFrom`, `createdTo` | invoice list filters when `view=invoices` (`status`: `Draft` \| `Issued`; `created*` are `YYYY-MM-DD` date inputs) |
+| `descriptionPrefix`, `status`, `recognitionFrom`, `recognitionTo` | accrual list filters when `view=accruals` (`status`: `Draft` \| `Recognized` \| `Reversed`; recognition dates are `YYYY-MM-DD`) |
 
 **Чернетки** / **Чернетки рахунків** opens Invoices with `status=Draft`, page 1, and other invoice filters cleared. Refresh and shared links restore the same URL state.
 

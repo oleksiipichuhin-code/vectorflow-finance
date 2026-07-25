@@ -9,10 +9,12 @@ import {
 } from "./api";
 import {
   ACCRUAL_PAGE_SIZE,
+  ACCRUAL_STATUS_OPTIONS,
   buildAccrualListQuery,
   hasActiveAccrualFilters,
   totalPages,
-  type AccrualListFilters
+  type AccrualListFilters,
+  type AccrualStatusFilter
 } from "./accrualListQuery";
 import { canRecognizeAccrual } from "./accrualRecognize";
 import {
@@ -450,6 +452,25 @@ export function AccrualsView({
                 />
               </label>
               <label>
+                Статус
+                <select
+                  value={draftFilters.status ?? ""}
+                  onChange={(event) =>
+                    setDraftFilters((current) => ({
+                      ...current,
+                      status: event.target.value as AccrualStatusFilter
+                    }))
+                  }
+                >
+                  <option value="">Усі</option>
+                  {ACCRUAL_STATUS_OPTIONS.map((status) => (
+                    <option key={status} value={status}>
+                      {status}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
                 Дата визнання з
                 <input
                   type="date"
@@ -493,6 +514,11 @@ export function AccrualsView({
                 Активні фільтри:
                 {appliedFilters.descriptionPrefix?.trim()
                   ? ` опис «${appliedFilters.descriptionPrefix.trim()}»`
+                  : ""}
+                {appliedFilters.status === "Draft" ||
+                appliedFilters.status === "Recognized" ||
+                appliedFilters.status === "Reversed"
+                  ? ` статус ${appliedFilters.status}`
                   : ""}
                 {appliedFilters.recognitionFromDate
                   ? ` з ${appliedFilters.recognitionFromDate}`

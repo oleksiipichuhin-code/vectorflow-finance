@@ -256,6 +256,7 @@ export type AccrualListQueryOptions = {
   page?: number;
   pageSize?: number;
   descriptionPrefix?: string;
+  status?: string;
   recognitionFromUtc?: string;
   recognitionToUtc?: string;
 };
@@ -273,6 +274,11 @@ export function buildAccrualPagedSearchParams(
   const descriptionPrefix = options.descriptionPrefix?.trim();
   if (descriptionPrefix) {
     params.set("descriptionPrefix", descriptionPrefix);
+  }
+
+  const status = options.status?.trim();
+  if (status) {
+    params.set("status", status);
   }
 
   if (options.recognitionFromUtc) {

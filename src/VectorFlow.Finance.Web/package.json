@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "test": "node --experimental-strip-types --test src/urlState.test.ts src/invoiceIssue.test.ts src/accrualRecognize.test.ts src/accrualReverse.test.ts",
+    "test": "node --experimental-strip-types --test src/urlState.test.ts src/invoiceIssue.test.ts src/accrualRecognize.test.ts src/accrualReverse.test.ts src/accrualListQuery.test.ts",
     "preview": "vite preview"
   },
   "dependencies": {
