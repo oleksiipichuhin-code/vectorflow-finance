@@ -334,3 +334,17 @@ export function recognizeAccrual(
     }
   );
 }
+
+export function reverseAccrual(
+  workspaceId: string,
+  accrualId: string,
+  reason: string
+): Promise<Accrual> {
+  return requestJson<Accrual>(
+    `/api/finance-workspaces/${workspaceId}/accruals/${accrualId}/reverse`,
+    {
+      method: "POST",
+      body: JSON.stringify({ reason })
+    }
+  );
+}

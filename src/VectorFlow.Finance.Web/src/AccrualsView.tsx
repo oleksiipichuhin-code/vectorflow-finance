@@ -3,6 +3,7 @@ import {
   createAccrual,
   listAccrualsPaged,
   recognizeAccrual,
+  reverseAccrual,
   type Accrual,
   type FinanceWorkspace
 } from "./api";
@@ -14,6 +15,11 @@ import {
   type AccrualListFilters
 } from "./accrualListQuery";
 import { canRecognizeAccrual } from "./accrualRecognize";
+import {
+  REVERSAL_REASON_MAX_LENGTH,
+  canReverseAccrual,
+  normalizeReversalReason
+} from "./accrualReverse";
 import { EMPTY_ACCRUAL_FILTERS } from "./urlState";
 import { ListLoadState } from "./components/ListLoadState";
 import { Panel, StatusMessage } from "./components/Panel";
@@ -70,10 +76,18 @@ export function AccrualsView({
   const [recognizingIds, setRecognizingIds] = useState<ReadonlySet<string>>(
     () => new Set()
   );
+  const [reverseTarget, setReverseTarget] = useState<Accrual | null>(null);
+  const [reverseReason, setReverseReason] = useState("");
+  const [reverseError, setReverseError] = useState<string | null>(null);
+  const [reverseSuccess, setReverseSuccess] = useState<string | null>(null);
+  const [reversingIds, setReversingIds] = useState<ReadonlySet<string>>(
+    () => new Set()
+  );
 
   const requestSeq = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
   const recognizingIdsRef = useRef<Set<string>>(new Set());
+  const reversingIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (workspace) {
@@ -101,6 +115,12 @@ export function AccrualsView({
       setRecognizeSuccess(null);
       recognizingIdsRef.current = new Set();
       setRecognizingIds(new Set());
+      setReverseTarget(null);
+      setReverseReason("");
+      setReverseError(null);
+      setReverseSuccess(null);
+      reversingIdsRef.current = new Set();
+      setReversingIds(new Set());
       onDiscoveryChange?.(1, emptyFilters);
     }
   }, [workspace?.id, onDiscoveryChange]);
@@ -212,6 +232,10 @@ export function AccrualsView({
     setCreateSuccess(null);
     setRecognizeError(null);
     setRecognizeSuccess(null);
+    setReverseError(null);
+    setReverseSuccess(null);
+    setReverseTarget(null);
+    setReverseReason("");
 
     try {
       const created = await createAccrual(workspace.id, {
@@ -276,6 +300,89 @@ export function AccrualsView({
     } finally {
       recognizingIdsRef.current.delete(accrual.id);
       setRecognizingIds(new Set(recognizingIdsRef.current));
+    }
+  }
+
+  function beginReverse(accrual: Accrual) {
+    if (!canReverseAccrual(accrual) || reversingIdsRef.current.has(accrual.id)) {
+      return;
+    }
+
+    setCreateSuccess(null);
+    setRecognizeSuccess(null);
+    setRecognizeError(null);
+    setReverseError(null);
+    setReverseSuccess(null);
+    setReverseTarget(accrual);
+    setReverseReason("");
+  }
+
+  function cancelReverse() {
+    if (reverseTarget && reversingIdsRef.current.has(reverseTarget.id)) {
+      return;
+    }
+
+    setReverseTarget(null);
+    setReverseReason("");
+    setReverseError(null);
+  }
+
+  async function handleReverseAccrual(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!workspace || !reverseTarget || !canReverseAccrual(reverseTarget)) {
+      return;
+    }
+
+    if (reversingIdsRef.current.has(reverseTarget.id)) {
+      return;
+    }
+
+    let reason: string;
+    try {
+      reason = normalizeReversalReason(reverseReason);
+    } catch (validationErr) {
+      setReverseError(
+        validationErr instanceof Error
+          ? validationErr.message
+          : "Перевірте причину сторнування."
+      );
+      return;
+    }
+
+    const target = reverseTarget;
+    reversingIdsRef.current.add(target.id);
+    setReversingIds(new Set(reversingIdsRef.current));
+    setCreateSuccess(null);
+    setRecognizeSuccess(null);
+    setRecognizeError(null);
+    setReverseError(null);
+    setReverseSuccess(null);
+
+    try {
+      const reversed = await reverseAccrual(workspace.id, target.id, reason);
+      setReverseTarget(null);
+      setReverseReason("");
+      setHighlightedId(reversed.id);
+      setReverseSuccess(
+        `Нарахування «${reversed.description}» сторновано. Статус: ${reversed.status}.`
+      );
+      await loadPage(workspace.id, page, appliedFilters);
+    } catch (reverseErr) {
+      setReverseError(
+        reverseErr instanceof Error
+          ? reverseErr.message
+          : "Не вдалося сторнувати нарахування."
+      );
+      setReverseTarget(null);
+      setReverseReason("");
+      try {
+        await loadPage(workspace.id, page, appliedFilters);
+      } catch {
+        // Keep the reverse error; list refresh failure is secondary.
+      }
+    } finally {
+      reversingIdsRef.current.delete(target.id);
+      setReversingIds(new Set(reversingIdsRef.current));
     }
   }
 
@@ -454,6 +561,43 @@ export function AccrualsView({
         {recognizeSuccess ? (
           <StatusMessage tone="success">{recognizeSuccess}</StatusMessage>
         ) : null}
+        {reverseError ? <StatusMessage tone="error">{reverseError}</StatusMessage> : null}
+        {reverseSuccess ? <StatusMessage tone="success">{reverseSuccess}</StatusMessage> : null}
+
+        {workspace && reverseTarget ? (
+          <form
+            className="create-form issue-prepare-form"
+            onSubmit={(event) => void handleReverseAccrual(event)}
+          >
+            <p className="meta">
+              Сторнування: <span className="cell-wrap">{reverseTarget.description}</span>
+            </p>
+            <label>
+              Причина сторнування
+              <input
+                value={reverseReason}
+                onChange={(event) => setReverseReason(event.target.value)}
+                maxLength={REVERSAL_REASON_MAX_LENGTH}
+                required
+                disabled={reversingIds.has(reverseTarget.id)}
+                placeholder="Обов’язкова причина"
+              />
+            </label>
+            <div className="filter-actions">
+              <button type="submit" disabled={reversingIds.has(reverseTarget.id) || loading}>
+                {reversingIds.has(reverseTarget.id) ? "Сторнування…" : "Сторнувати"}
+              </button>
+              <button
+                type="button"
+                className="button-secondary"
+                disabled={reversingIds.has(reverseTarget.id)}
+                onClick={cancelReverse}
+              >
+                Скасувати
+              </button>
+            </div>
+          </form>
+        ) : null}
         {workspace ? (
           <ListLoadState
             loading={loading}
@@ -492,7 +636,9 @@ export function AccrualsView({
                 </thead>
                 <tbody>
                   {accruals.map((accrual) => {
-                    const rowBusy = recognizingIds.has(accrual.id);
+                    const recognizeBusy = recognizingIds.has(accrual.id);
+                    const reverseBusy = reversingIds.has(accrual.id);
+                    const rowBusy = recognizeBusy || reverseBusy;
                     return (
                     <tr
                       key={accrual.id}
@@ -519,7 +665,18 @@ export function AccrualsView({
                             disabled={rowBusy || loading}
                             onClick={() => void handleRecognizeAccrual(accrual)}
                           >
-                            {rowBusy ? "Визнання…" : "Визнати"}
+                            {recognizeBusy ? "Визнання…" : "Визнати"}
+                          </button>
+                        ) : canReverseAccrual(accrual) ? (
+                          <button
+                            type="button"
+                            className="button-secondary"
+                            disabled={
+                              rowBusy || loading || reverseTarget?.id === accrual.id
+                            }
+                            onClick={() => beginReverse(accrual)}
+                          >
+                            {reverseBusy ? "Сторнування…" : "Сторнувати"}
                           </button>
                         ) : (
                           <span className="meta">—</span>
