@@ -16,12 +16,19 @@ import { formatMoney } from "./format";
 
 type SourceInvoicePickerProps = {
   workspaceId: string;
+  /** Shown in the picker heading (edit target description or create context). */
   accrualDescription: string;
   baselineInvoiceId: string | null;
   busy: boolean;
   formError: string | null;
   onSave: (sourceInvoiceId: string | null, selected: InvoicePickerSummary | null) => void;
   onCancel: () => void;
+  /** Optional heading prefix; default "Рахунок-джерело". */
+  headingPrefix?: string;
+  /** Confirm button idle label; default "Зберегти". */
+  confirmLabel?: string;
+  /** Confirm button busy label; default "Збереження…". */
+  confirmBusyLabel?: string;
 };
 
 export function SourceInvoicePicker({
@@ -31,7 +38,10 @@ export function SourceInvoicePicker({
   busy,
   formError,
   onSave,
-  onCancel
+  onCancel,
+  headingPrefix = "Рахунок-джерело",
+  confirmLabel = "Зберегти",
+  confirmBusyLabel = "Збереження…"
 }: SourceInvoicePickerProps) {
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(baselineInvoiceId);
   const [selectedDisplay, setSelectedDisplay] = useState<InvoicePickerSummary | null>(null);
@@ -215,7 +225,7 @@ export function SourceInvoicePicker({
   return (
     <div className="create-form issue-prepare-form">
       <p className="meta">
-        Рахунок-джерело: <span className="cell-wrap">{accrualDescription}</span>
+        {headingPrefix}: <span className="cell-wrap">{accrualDescription}</span>
       </p>
       <p className="meta">
         Поточний вибір: <span className="cell-wrap">{selectionLabel}</span>
@@ -350,7 +360,7 @@ export function SourceInvoicePicker({
           disabled={busy || !dirty || currentLookupPending}
           onClick={handleSave}
         >
-          {busy ? "Збереження…" : "Зберегти"}
+          {busy ? confirmBusyLabel : confirmLabel}
         </button>
         <button type="button" className="button-secondary" disabled={busy} onClick={onCancel}>
           Скасувати

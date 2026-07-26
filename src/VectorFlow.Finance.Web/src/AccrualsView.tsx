@@ -37,9 +37,11 @@ import {
 import {
   canChangeAccrualSourceInvoice,
   formatAccrualSourceInvoiceListCell,
+  formatSourceInvoiceSelection,
   interpretAccrualSourceInvoiceEditError,
   type InvoicePickerSummary
 } from "./accrualSourceInvoice";
+import { interpretCreateAccrualError } from "./accrualCreate";
 import {
   applyDraftAccrualEditorChanges,
   canEditDraftAccrualDetails,
@@ -99,6 +101,10 @@ export function AccrualsView({
   const [createBusy, setCreateBusy] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [createSuccess, setCreateSuccess] = useState<string | null>(null);
+  const [createSourceInvoiceId, setCreateSourceInvoiceId] = useState<string | null>(null);
+  const [createSourceInvoiceDisplay, setCreateSourceInvoiceDisplay] =
+    useState<InvoicePickerSummary | null>(null);
+  const [createSourceInvoicePickerOpen, setCreateSourceInvoicePickerOpen] = useState(false);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const [recognizeError, setRecognizeError] = useState<string | null>(null);
   const [recognizeSuccess, setRecognizeSuccess] = useState<string | null>(null);
@@ -166,6 +172,9 @@ export function AccrualsView({
       setError(null);
       setCreateError(null);
       setCreateSuccess(null);
+      setCreateSourceInvoiceId(null);
+      setCreateSourceInvoiceDisplay(null);
+      setCreateSourceInvoicePickerOpen(false);
       setHighlightedId(null);
       setRecognizeError(null);
       setRecognizeSuccess(null);
@@ -321,6 +330,10 @@ export function AccrualsView({
     setDraftDetailsSuccess(null);
     setDraftDetailsTarget(null);
     setDraftDetailsBaseline(null);
+    setCreateSourceInvoicePickerOpen(false);
+
+    const selectedSource = createSourceInvoiceDisplay;
+    const selectedSourceId = createSourceInvoiceId;
 
     try {
       const created = await createAccrual(workspace.id, {
@@ -328,25 +341,88 @@ export function AccrualsView({
         amount,
         currency: accrualCurrency,
         recognitionDateUtc: new Date(`${accrualRecognitionDate}T00:00:00.000Z`).toISOString(),
-        description: accrualDescription
+        description: accrualDescription,
+        sourceInvoiceId: selectedSourceId
       });
-      setDraftFilters(emptyFilters);
-      setAppliedFilters(emptyFilters);
-      setFilterValidationError(null);
-      setPage(1);
       setHighlightedId(created.id);
+      if (created.sourceInvoiceId && selectedSource) {
+        setInvoiceDisplayCache((current) => {
+          const next = new Map(current);
+          next.set(selectedSource.id, selectedSource);
+          return next;
+        });
+      }
+      setCreateSourceInvoiceId(null);
+      setCreateSourceInvoiceDisplay(null);
       setCreateSuccess(
-        `Чернетку нарахування «${created.description}» створено. Запис показано у списку нижче.`
+        created.sourceInvoiceId
+          ? `Чернетку нарахування «${created.description}» створено з рахунком-джерелом.`
+          : `Чернетку нарахування «${created.description}» створено. Запис показано у списку нижче.`
       );
-      onDiscoveryChange?.(1, emptyFilters);
-      await loadPage(workspace.id, 1, emptyFilters);
+      await loadPage(workspace.id, page, appliedFilters);
     } catch (createErr) {
-      setCreateError(
-        createErr instanceof Error ? createErr.message : "Не вдалося створити нарахування."
-      );
+      const failure = interpretCreateAccrualError(createErr);
+      setCreateError(failure.message);
+      if (failure.clearSourceInvoiceSelection) {
+        setCreateSourceInvoiceId(null);
+        setCreateSourceInvoiceDisplay(null);
+      }
     } finally {
       setCreateBusy(false);
     }
+  }
+
+  function beginCreateSourceInvoicePicker() {
+    if (!workspace || createBusy) {
+      return;
+    }
+
+    setCreateError(null);
+    setCreateSuccess(null);
+    setRecognizeError(null);
+    setRecognizeSuccess(null);
+    setReverseError(null);
+    setReverseSuccess(null);
+    setReverseTarget(null);
+    setReverseReason("");
+    setEditAmountError(null);
+    setEditAmountSuccess(null);
+    setEditAmountTarget(null);
+    setEditAmountValue("");
+    setSourceInvoiceError(null);
+    setSourceInvoiceSuccess(null);
+    setSourceInvoiceTarget(null);
+    setDraftDetailsError(null);
+    setDraftDetailsSuccess(null);
+    setDraftDetailsTarget(null);
+    setDraftDetailsBaseline(null);
+    setCreateSourceInvoicePickerOpen(true);
+  }
+
+  function clearCreateSourceInvoiceSelection() {
+    if (createBusy) {
+      return;
+    }
+
+    setCreateSourceInvoiceId(null);
+    setCreateSourceInvoiceDisplay(null);
+  }
+
+  function confirmCreateSourceInvoiceSelection(
+    sourceInvoiceId: string | null,
+    selected: InvoicePickerSummary | null
+  ) {
+    setCreateSourceInvoiceId(sourceInvoiceId);
+    setCreateSourceInvoiceDisplay(selected);
+    setCreateSourceInvoicePickerOpen(false);
+  }
+
+  function cancelCreateSourceInvoicePicker() {
+    if (createBusy) {
+      return;
+    }
+
+    setCreateSourceInvoicePickerOpen(false);
   }
 
   async function handleRecognizeAccrual(accrual: Accrual) {
@@ -424,6 +500,7 @@ export function AccrualsView({
     setDraftDetailsSuccess(null);
     setDraftDetailsTarget(null);
     setDraftDetailsBaseline(null);
+    setCreateSourceInvoicePickerOpen(false);
     setReverseTarget(accrual);
     setReverseReason("");
   }
@@ -457,6 +534,7 @@ export function AccrualsView({
     setDraftDetailsSuccess(null);
     setDraftDetailsTarget(null);
     setDraftDetailsBaseline(null);
+    setCreateSourceInvoicePickerOpen(false);
     setEditAmountError(null);
     setEditAmountSuccess(null);
     setEditAmountTarget(accrual);
@@ -496,6 +574,7 @@ export function AccrualsView({
     setDraftDetailsSuccess(null);
     setDraftDetailsTarget(null);
     setDraftDetailsBaseline(null);
+    setCreateSourceInvoicePickerOpen(false);
     setSourceInvoiceError(null);
     setSourceInvoiceSuccess(null);
     setSourceInvoiceTarget(accrual);
@@ -536,6 +615,7 @@ export function AccrualsView({
     setSourceInvoiceError(null);
     setSourceInvoiceSuccess(null);
     setSourceInvoiceTarget(null);
+    setCreateSourceInvoicePickerOpen(false);
     setDraftDetailsError(null);
     setDraftDetailsSuccess(null);
     setDraftDetailsTarget(accrual);
@@ -990,7 +1070,11 @@ export function AccrualsView({
             <form className="create-form create-form-accrual" onSubmit={(event) => void handleCreateAccrual(event)}>
               <label>
                 Тип
-                <select value={accrualType} onChange={(event) => setAccrualType(event.target.value)}>
+                <select
+                  value={accrualType}
+                  onChange={(event) => setAccrualType(event.target.value)}
+                  disabled={createBusy || createSourceInvoicePickerOpen}
+                >
                   <option value="Revenue">Revenue</option>
                   <option value="Expense">Expense</option>
                 </select>
@@ -1002,6 +1086,7 @@ export function AccrualsView({
                   onChange={(event) => setAccrualAmount(event.target.value)}
                   inputMode="decimal"
                   required
+                  disabled={createBusy || createSourceInvoicePickerOpen}
                 />
               </label>
               <label>
@@ -1011,6 +1096,7 @@ export function AccrualsView({
                   onChange={(event) => setAccrualCurrency(event.target.value.toUpperCase())}
                   maxLength={3}
                   required
+                  disabled={createBusy || createSourceInvoicePickerOpen}
                 />
               </label>
               <label>
@@ -1020,6 +1106,7 @@ export function AccrualsView({
                   value={accrualRecognitionDate}
                   onChange={(event) => setAccrualRecognitionDate(event.target.value)}
                   required
+                  disabled={createBusy || createSourceInvoicePickerOpen}
                 />
               </label>
               <label>
@@ -1028,10 +1115,41 @@ export function AccrualsView({
                   value={accrualDescription}
                   onChange={(event) => setAccrualDescription(event.target.value)}
                   required
+                  disabled={createBusy || createSourceInvoicePickerOpen}
                 />
               </label>
-              <button type="submit" disabled={createBusy}>
-                Створити чернетку
+              <div className="create-source-invoice">
+                <p className="meta">
+                  Рахунок-джерело (необовʼязково):{" "}
+                  <span className="cell-wrap">
+                    {formatSourceInvoiceSelection(createSourceInvoiceDisplay)}
+                  </span>
+                </p>
+                <div className="filter-actions">
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    disabled={createBusy || createSourceInvoicePickerOpen}
+                    onClick={beginCreateSourceInvoicePicker}
+                  >
+                    Вибрати рахунок
+                  </button>
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    disabled={
+                      createBusy ||
+                      createSourceInvoicePickerOpen ||
+                      createSourceInvoiceId === null
+                    }
+                    onClick={clearCreateSourceInvoiceSelection}
+                  >
+                    Очистити вибір
+                  </button>
+                </div>
+              </div>
+              <button type="submit" disabled={createBusy || createSourceInvoicePickerOpen}>
+                {createBusy ? "Створення…" : "Створити чернетку"}
               </button>
             </form>
           </>
@@ -1061,6 +1179,21 @@ export function AccrualsView({
         ) : null}
         {reverseError ? <StatusMessage tone="error">{reverseError}</StatusMessage> : null}
         {reverseSuccess ? <StatusMessage tone="success">{reverseSuccess}</StatusMessage> : null}
+
+        {workspace && createSourceInvoicePickerOpen ? (
+          <SourceInvoicePicker
+            workspaceId={workspace.id}
+            accrualDescription={accrualDescription.trim() || "Нове нарахування"}
+            baselineInvoiceId={createSourceInvoiceId}
+            busy={createBusy}
+            formError={null}
+            headingPrefix="Вибір рахунку-джерела"
+            confirmLabel="Підтвердити вибір"
+            confirmBusyLabel="Підтвердження…"
+            onSave={confirmCreateSourceInvoiceSelection}
+            onCancel={cancelCreateSourceInvoicePicker}
+          />
+        ) : null}
 
         {workspace && editAmountTarget ? (
           <form
