@@ -2,6 +2,7 @@ import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import {
   addInvoiceLine,
   createInvoice,
+  getInvoice,
   issueInvoice,
   listInvoicesPaged,
   setInvoiceDueDate,
@@ -22,20 +23,34 @@ import {
   type InvoiceStatusFilter
 } from "./invoiceListQuery";
 import {
+  canViewInvoiceDetails,
+  interpretInvoiceDetailLoadError
+} from "./invoiceDetail";
+import {
   defaultDueDateInputValue,
   getInvoiceIssueReadiness,
   isDraftInvoice,
   toDueDateUtcIso
 } from "./invoiceIssue";
+import { InvoiceDetailPanel } from "./components/InvoiceDetailPanel";
 import { ListLoadState } from "./components/ListLoadState";
 import { Panel, StatusMessage } from "./components/Panel";
 import { formatDate, formatMoney } from "./format";
+
+type InvoiceIdChangeOptions = {
+  replace?: boolean;
+};
 
 type InvoicesViewProps = {
   workspace: FinanceWorkspace | null;
   initialPage?: number;
   initialFilters?: InvoiceListFilters;
+  selectedInvoiceId?: string | null;
   onDiscoveryChange?: (page: number, filters: InvoiceListFilters) => void;
+  onSelectedInvoiceIdChange?: (
+    invoiceId: string | null,
+    options?: InvoiceIdChangeOptions
+  ) => void;
   onShowDraftInvoices?: () => void;
 };
 
@@ -50,7 +65,9 @@ export function InvoicesView({
   workspace,
   initialPage = 1,
   initialFilters = emptyFilters,
+  selectedInvoiceId = null,
   onDiscoveryChange,
+  onSelectedInvoiceIdChange,
   onShowDraftInvoices
 }: InvoicesViewProps) {
   const [draftFilters, setDraftFilters] = useState<InvoiceListFilters>(() => ({
@@ -87,9 +104,16 @@ export function InvoicesView({
   const [issueBusy, setIssueBusy] = useState(false);
   const [issueError, setIssueError] = useState<string | null>(null);
   const [issueSuccess, setIssueSuccess] = useState<string | null>(null);
+  const [detailTargetId, setDetailTargetId] = useState<string | null>(null);
+  const [detailInvoice, setDetailInvoice] = useState<Invoice | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const [detailErrorRetryable, setDetailErrorRetryable] = useState(false);
 
   const requestSeq = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
+  const detailAbortRef = useRef<AbortController | null>(null);
+  const detailRequestSeq = useRef(0);
   const issueBusyRef = useRef(false);
 
   useEffect(() => {
@@ -118,9 +142,10 @@ export function InvoicesView({
       setIssueTarget(null);
       setIssueError(null);
       setIssueSuccess(null);
+      dismissDetailFromUrl({ replace: true });
       onDiscoveryChange?.(1, emptyFilters);
     }
-  }, [workspace?.id, onDiscoveryChange]);
+  }, [workspace?.id, onDiscoveryChange, onSelectedInvoiceIdChange, selectedInvoiceId]);
 
   const loadPage = useCallback(
     async (workspaceId: string, nextPage: number, filters: InvoiceListFilters) => {
@@ -223,6 +248,7 @@ export function InvoicesView({
     setCreateSuccess(null);
     setIssueError(null);
     setIssueSuccess(null);
+    dismissDetailFromUrl();
 
     try {
       const created = await createInvoice(workspace.id, {
@@ -259,6 +285,7 @@ export function InvoicesView({
     setCreateSuccess(null);
     setIssueError(null);
     setIssueSuccess(null);
+    dismissDetailFromUrl();
 
     const readiness = getInvoiceIssueReadiness(invoice);
     if (readiness.ready) {
@@ -282,6 +309,141 @@ export function InvoicesView({
 
     setIssueTarget(null);
     setIssueError(null);
+  }
+
+  function clearDetailPanel() {
+    detailAbortRef.current?.abort();
+    setDetailTargetId(null);
+    setDetailInvoice(null);
+    setDetailLoading(false);
+    setDetailError(null);
+    setDetailErrorRetryable(false);
+  }
+
+  function dismissDetailFromUrl(options: InvoiceIdChangeOptions = {}) {
+    clearDetailPanel();
+    if (selectedInvoiceId) {
+      onSelectedInvoiceIdChange?.(null, options);
+    }
+  }
+
+  function isDetailRelatedPending(): boolean {
+    return Boolean(detailTargetId && issueBusyRef.current && issueTarget?.id === detailTargetId);
+  }
+
+  function closeDetailPanel() {
+    if (isDetailRelatedPending()) {
+      return;
+    }
+
+    if (issueTarget) {
+      setIssueTarget(null);
+      setIssueError(null);
+    }
+    dismissDetailFromUrl();
+  }
+
+  async function loadInvoiceDetail(workspaceId: string, invoiceId: string) {
+    detailAbortRef.current?.abort();
+    const controller = new AbortController();
+    detailAbortRef.current = controller;
+    const seq = ++detailRequestSeq.current;
+
+    setDetailTargetId(invoiceId);
+    setDetailInvoice(null);
+    setDetailLoading(true);
+    setDetailError(null);
+    setDetailErrorRetryable(false);
+
+    try {
+      const invoice = await getInvoice(workspaceId, invoiceId, controller.signal);
+      if (seq !== detailRequestSeq.current) {
+        return;
+      }
+
+      setDetailInvoice(invoice);
+      setDetailLoading(false);
+      setDetailError(null);
+      setDetailErrorRetryable(false);
+    } catch (loadError) {
+      if (seq !== detailRequestSeq.current) {
+        return;
+      }
+
+      if (loadError instanceof DOMException && loadError.name === "AbortError") {
+        return;
+      }
+
+      const failure = interpretInvoiceDetailLoadError(loadError);
+      if (failure.clearInvoiceData) {
+        setDetailInvoice(null);
+      }
+
+      setDetailLoading(false);
+      setDetailError(failure.message);
+      setDetailErrorRetryable(failure.kind === "retryable");
+
+      if (failure.refreshList) {
+        await loadPage(workspaceId, page, appliedFilters);
+      }
+    }
+  }
+
+  /**
+   * URL is the navigation source for which invoice detail is open.
+   * getInvoice remains authoritative for panel data.
+   */
+  useEffect(() => {
+    if (!workspace) {
+      return;
+    }
+
+    if (!selectedInvoiceId) {
+      if (detailTargetId !== null && !isDetailRelatedPending()) {
+        if (issueTarget) {
+          setIssueTarget(null);
+          setIssueError(null);
+        }
+        clearDetailPanel();
+      }
+      return;
+    }
+
+    if (detailTargetId === selectedInvoiceId) {
+      return;
+    }
+
+    setCreateSuccess(null);
+    setIssueSuccess(null);
+    setIssueError(null);
+    setIssueTarget(null);
+
+    void loadInvoiceDetail(workspace.id, selectedInvoiceId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on selection + workspace
+  }, [workspace?.id, selectedInvoiceId]);
+
+  function beginViewInvoiceDetails(invoice: Invoice) {
+    if (!workspace || !canViewInvoiceDetails(invoice)) {
+      return;
+    }
+
+    if (selectedInvoiceId === invoice.id && detailTargetId === invoice.id) {
+      return;
+    }
+
+    setCreateSuccess(null);
+    setIssueSuccess(null);
+    setIssueError(null);
+    setIssueTarget(null);
+    onSelectedInvoiceIdChange?.(invoice.id);
+  }
+
+  function retryInvoiceDetail() {
+    if (!workspace || !detailTargetId || !detailErrorRetryable) {
+      return;
+    }
+
+    void loadInvoiceDetail(workspace.id, detailTargetId);
   }
 
   async function completeIssue(invoice: Invoice, preparation?: {
@@ -699,6 +861,18 @@ export function InvoicesView({
           </form>
         ) : null}
 
+        {workspace && detailTargetId ? (
+          <InvoiceDetailPanel
+            invoice={detailInvoice}
+            loading={detailLoading}
+            error={detailError}
+            errorRetryable={detailErrorRetryable}
+            closeDisabled={detailLoading || isDetailRelatedPending()}
+            onClose={closeDetailPanel}
+            onRetry={retryInvoiceDetail}
+          />
+        ) : null}
+
         {workspace ? (
           <ListLoadState
             loading={loading}
@@ -745,18 +919,33 @@ export function InvoicesView({
                       <td>{formatMoney(invoice.totalAmount, invoice.currency)}</td>
                       <td>{formatDate(invoice.createdAtUtc)}</td>
                       <td>
-                        {isDraftInvoice(invoice) ? (
-                          <button
-                            type="button"
-                            className="button-secondary"
-                            disabled={issueBusy || loading}
-                            onClick={() => beginIssue(invoice)}
-                          >
-                            Виставити
-                          </button>
-                        ) : (
-                          <span className="meta">—</span>
-                        )}
+                        <div className="filter-actions">
+                          {canViewInvoiceDetails(invoice) ? (
+                            <button
+                              type="button"
+                              className="button-secondary"
+                              disabled={loading || detailLoading}
+                              onClick={() => beginViewInvoiceDetails(invoice)}
+                            >
+                              {detailLoading && detailTargetId === invoice.id
+                                ? "Завантаження…"
+                                : "Деталі"}
+                            </button>
+                          ) : null}
+                          {isDraftInvoice(invoice) ? (
+                            <button
+                              type="button"
+                              className="button-secondary"
+                              disabled={issueBusy || loading}
+                              onClick={() => beginIssue(invoice)}
+                            >
+                              Виставити
+                            </button>
+                          ) : null}
+                          {!canViewInvoiceDetails(invoice) && !isDraftInvoice(invoice) ? (
+                            <span className="meta">—</span>
+                          ) : null}
+                        </div>
                       </td>
                     </tr>
                   ))}

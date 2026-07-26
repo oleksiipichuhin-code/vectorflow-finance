@@ -25,6 +25,8 @@ export type AppUrlState = {
   workspaceId: string | null;
   /** Accruals detail deep-link; omitted outside accruals view. */
   accrualId: string | null;
+  /** Invoices detail deep-link; omitted outside invoices view. */
+  invoiceId: string | null;
   discovery: ListDiscovery;
 };
 
@@ -61,6 +63,11 @@ export function isAccrualId(value: string | null | undefined): value is string {
   return isWorkspaceId(value);
 }
 
+/** Same GUID shape; invalid values never become invoice detail targets. */
+export function isInvoiceId(value: string | null | undefined): value is string {
+  return isWorkspaceId(value);
+}
+
 /**
  * Parse accrualId query value.
  * Missing/blank/invalid → null (no API call; normalize strips the param).
@@ -78,7 +85,24 @@ export function parseAccrualIdParam(value: string | null | undefined): string | 
   return isAccrualId(trimmed) ? trimmed : null;
 }
 
-/** Open detail: set accrualId while preserving all other AppUrlState fields. */
+/**
+ * Parse invoiceId query value.
+ * Missing/blank/invalid → null (no API call; normalize strips the param).
+ */
+export function parseInvoiceIdParam(value: string | null | undefined): string | null {
+  if (value == null) {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  return isInvoiceId(trimmed) ? trimmed : null;
+}
+
+/** Open accrual detail: set accrualId while preserving all other AppUrlState fields. */
 export function withAccrualId(state: AppUrlState, accrualId: string | null): AppUrlState {
   return {
     ...state,
@@ -86,11 +110,27 @@ export function withAccrualId(state: AppUrlState, accrualId: string | null): App
   };
 }
 
-/** Close detail: clear only accrualId. */
+/** Close accrual detail: clear only accrualId. */
 export function withoutAccrualId(state: AppUrlState): AppUrlState {
   return {
     ...state,
     accrualId: null
+  };
+}
+
+/** Open invoice detail: set invoiceId while preserving all other AppUrlState fields. */
+export function withInvoiceId(state: AppUrlState, invoiceId: string | null): AppUrlState {
+  return {
+    ...state,
+    invoiceId: invoiceId && isInvoiceId(invoiceId) ? invoiceId : null
+  };
+}
+
+/** Close invoice detail: clear only invoiceId. */
+export function withoutInvoiceId(state: AppUrlState): AppUrlState {
+  return {
+    ...state,
+    invoiceId: null
   };
 }
 
@@ -150,6 +190,7 @@ export function parseUrlSearch(search: string): AppUrlState {
   const workspaceRaw = params.get("workspaceId")?.trim() ?? "";
   const workspaceId = isWorkspaceId(workspaceRaw) ? workspaceRaw : null;
   const accrualId = parseAccrualIdParam(params.get("accrualId"));
+  const invoiceId = parseInvoiceIdParam(params.get("invoiceId"));
 
   const page = parsePage(params.get("page"));
 
@@ -171,6 +212,7 @@ export function parseUrlSearch(search: string): AppUrlState {
     view,
     workspaceId,
     accrualId: view === "accruals" ? accrualId : null,
+    invoiceId: view === "invoices" ? invoiceId : null,
     discovery: {
       page,
       invoiceFilters,
@@ -214,6 +256,9 @@ export function buildUrlSearch(state: AppUrlState): string {
     setIfPresent(params, "createdTo", filters.createdToDate);
     if (page > 1) {
       params.set("page", String(page));
+    }
+    if (state.invoiceId && isInvoiceId(state.invoiceId)) {
+      params.set("invoiceId", state.invoiceId);
     }
   }
 

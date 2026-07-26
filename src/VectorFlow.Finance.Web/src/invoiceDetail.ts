@@ -1,0 +1,147 @@
+import type { Invoice, InvoiceLine } from "./api.ts";
+import { formatDate, formatMoney } from "./format.ts";
+
+const VIEWABLE_STATUSES = new Set(["Draft", "Issued"]);
+
+export function canViewInvoiceDetails(invoice: Pick<Invoice, "status">): boolean {
+  return VIEWABLE_STATUSES.has(invoice.status);
+}
+
+export type InvoiceDetailLoadFailure = {
+  kind: "not_found" | "retryable";
+  message: string;
+  refreshList: boolean;
+  clearInvoiceData: boolean;
+};
+
+type ApiFailureShape = {
+  status: number;
+  errorKind: string | null;
+  message: string;
+};
+
+function asApiFailure(error: unknown): ApiFailureShape | null {
+  if (!(error instanceof Error)) {
+    return null;
+  }
+
+  const candidate = error as Error & {
+    status?: unknown;
+    errorKind?: unknown;
+  };
+
+  if (typeof candidate.status !== "number") {
+    return null;
+  }
+
+  return {
+    status: candidate.status,
+    errorKind: typeof candidate.errorKind === "string" ? candidate.errorKind : null,
+    message: candidate.message
+  };
+}
+
+const INVOICE_NOT_FOUND_MESSAGE =
+  "Рахунок більше недоступний. Список оновлено з сервера.";
+
+const INVOICE_LOAD_FAILED_MESSAGE = "Не вдалося завантажити рахунок.";
+
+/**
+ * Map Invoice GET-by-id failures for the read-only detail panel.
+ * 404 clears stale invoice data and refreshes the list.
+ * Network / 5xx keep the panel open for retry without mutation.
+ */
+export function interpretInvoiceDetailLoadError(error: unknown): InvoiceDetailLoadFailure {
+  const apiFailure = asApiFailure(error);
+  if (apiFailure) {
+    if (apiFailure.status === 404 || apiFailure.errorKind === "NotFound") {
+      return {
+        kind: "not_found",
+        message: INVOICE_NOT_FOUND_MESSAGE,
+        refreshList: true,
+        clearInvoiceData: true
+      };
+    }
+
+    return {
+      kind: "retryable",
+      message: apiFailure.message || INVOICE_LOAD_FAILED_MESSAGE,
+      refreshList: false,
+      clearInvoiceData: true
+    };
+  }
+
+  if (error instanceof Error) {
+    return {
+      kind: "retryable",
+      message: error.message || INVOICE_LOAD_FAILED_MESSAGE,
+      refreshList: false,
+      clearInvoiceData: true
+    };
+  }
+
+  return {
+    kind: "retryable",
+    message: INVOICE_LOAD_FAILED_MESSAGE,
+    refreshList: false,
+    clearInvoiceData: true
+  };
+}
+
+export type InvoiceDetailLineView = {
+  sequence: number;
+  descriptionDisplay: string;
+  quantityDisplay: string;
+  unitPriceDisplay: string;
+  lineAmountDisplay: string;
+};
+
+export type InvoiceDetailFieldView = {
+  documentNumber: string;
+  status: string;
+  counterpartyReference: string;
+  amountDisplay: string;
+  currency: string;
+  dueDateDisplay: string;
+  issuedAtDisplay: string;
+  createdAtDisplay: string;
+  updatedAtDisplay: string;
+  invoiceId: string;
+  lines: InvoiceDetailLineView[];
+};
+
+function formatQuantity(value: number): string {
+  return Number.isFinite(value) ? String(value) : "—";
+}
+
+function toLineView(line: InvoiceLine, currency: string): InvoiceDetailLineView {
+  return {
+    sequence: line.sequence,
+    descriptionDisplay: line.description?.trim() ? line.description : "—",
+    quantityDisplay: formatQuantity(line.quantity),
+    unitPriceDisplay: formatMoney(line.unitPrice, currency),
+    lineAmountDisplay: formatMoney(line.lineAmount, currency)
+  };
+}
+
+/** Build read-only display fields from authoritative Invoice DTO. */
+export function buildInvoiceDetailFields(invoice: Invoice): InvoiceDetailFieldView {
+  const lines = (invoice.lines ?? [])
+    .slice()
+    .sort((a, b) => a.sequence - b.sequence)
+    .map((line) => toLineView(line, invoice.currency));
+
+  return {
+    documentNumber: invoice.documentNumber,
+    status: invoice.status,
+    counterpartyReference: invoice.counterpartyReference,
+    amountDisplay: formatMoney(invoice.totalAmount, invoice.currency),
+    currency: invoice.currency,
+    dueDateDisplay: formatDate(invoice.dueDateUtc),
+    issuedAtDisplay: formatDate(invoice.issuedAtUtc),
+    createdAtDisplay: formatDate(invoice.createdAtUtc),
+    updatedAtDisplay: formatDate(invoice.updatedAtUtc),
+    invoiceId: invoice.id,
+    lines
+  };
+}

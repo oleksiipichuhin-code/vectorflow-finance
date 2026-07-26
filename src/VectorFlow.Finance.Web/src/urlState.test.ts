@@ -6,9 +6,12 @@ import {
   buildUrlSearch,
   draftInvoicesDiscovery,
   parseAccrualIdParam,
+  parseInvoiceIdParam,
   parseUrlSearch,
   withAccrualId,
-  withoutAccrualId
+  withInvoiceId,
+  withoutAccrualId,
+  withoutInvoiceId
 } from "./urlState.ts";
 
 describe("urlState", () => {
@@ -17,6 +20,7 @@ describe("urlState", () => {
     assert.equal(state.view, "dashboard");
     assert.equal(state.workspaceId, null);
     assert.equal(state.accrualId, null);
+    assert.equal(state.invoiceId, null);
     assert.equal(state.discovery.page, 1);
     assert.deepEqual(state.discovery.invoiceFilters, EMPTY_INVOICE_FILTERS);
     assert.deepEqual(state.discovery.accrualFilters, EMPTY_ACCRUAL_FILTERS);
@@ -29,6 +33,7 @@ describe("urlState", () => {
       view: "invoices",
       workspaceId,
       accrualId: null,
+      invoiceId: null,
       discovery
     });
 
@@ -41,6 +46,7 @@ describe("urlState", () => {
     assert.equal(parsed.view, "invoices");
     assert.equal(parsed.workspaceId, workspaceId);
     assert.equal(parsed.accrualId, null);
+    assert.equal(parsed.invoiceId, null);
     assert.equal(parsed.discovery.page, 1);
     assert.equal(parsed.discovery.invoiceFilters.status, "Draft");
     assert.equal(parsed.discovery.invoiceFilters.documentNumber, "");
@@ -51,6 +57,7 @@ describe("urlState", () => {
       view: "invoices",
       workspaceId: null,
       accrualId: "a1111111-1111-1111-1111-111111111111",
+      invoiceId: null,
       discovery: {
         page: 2,
         invoiceFilters: {
@@ -88,6 +95,7 @@ describe("urlState", () => {
     assert.equal(parsed.discovery.accrualFilters.recognitionFromDate, "2026-07-10");
     assert.equal(parsed.discovery.accrualFilters.recognitionToDate, "");
     assert.equal(parsed.accrualId, null);
+    assert.equal(parsed.invoiceId, null);
   });
 
   it("round-trips accrual status filter and normalizes unknown values", () => {
@@ -96,6 +104,7 @@ describe("urlState", () => {
       view: "accruals",
       workspaceId,
       accrualId: null,
+      invoiceId: null,
       discovery: {
         page: 1,
         invoiceFilters: { ...EMPTY_INVOICE_FILTERS },
@@ -125,6 +134,7 @@ describe("urlState", () => {
       view: "accruals",
       workspaceId: null,
       accrualId: null,
+      invoiceId: null,
       discovery: {
         page: 3,
         invoiceFilters: { ...EMPTY_INVOICE_FILTERS },
@@ -148,6 +158,7 @@ describe("urlState", () => {
     assert.equal(parsed.view, "dashboard");
     assert.equal(parsed.workspaceId, null);
     assert.equal(parsed.accrualId, null);
+    assert.equal(parsed.invoiceId, null);
   });
 
   it("draftInvoicesDiscovery clears conflicting invoice filters and page", () => {
@@ -169,6 +180,7 @@ describe("accrual detail deep-link URL policy", () => {
     view: "accruals" as const,
     workspaceId,
     accrualId: null as string | null,
+    invoiceId: null as string | null,
     discovery: {
       page: 2,
       invoiceFilters: { ...EMPTY_INVOICE_FILTERS },
@@ -190,6 +202,7 @@ describe("accrual detail deep-link URL policy", () => {
     );
     const parsed = parseUrlSearch(search);
     assert.equal(parsed.accrualId, accrualId);
+    assert.equal(parsed.invoiceId, null);
     assert.equal(parsed.discovery.page, 2);
     assert.equal(parsed.discovery.accrualFilters.status, "Draft");
     assert.equal(parsed.discovery.accrualFilters.descriptionPrefix, "Rent");
@@ -245,6 +258,7 @@ describe("accrual detail deep-link URL policy", () => {
       view: "dashboard",
       workspaceId,
       accrualId,
+      invoiceId: null,
       discovery: baseAccrualsState.discovery
     });
     assert.equal(search.includes("accrualId"), false);
@@ -280,6 +294,117 @@ describe("accrual detail deep-link URL policy", () => {
     assert.notEqual(listOnly, withDetail);
     assert.equal(
       buildUrlSearch(withoutAccrualId(withAccrualId(baseAccrualsState, accrualId))),
+      listOnly
+    );
+  });
+});
+
+describe("invoice detail deep-link URL policy", () => {
+  const workspaceId = "11111111-1111-1111-1111-111111111111";
+  const invoiceId = "b1111111-1111-1111-1111-111111111111";
+  const otherInvoiceId = "b2222222-2222-2222-2222-222222222222";
+  const accrualId = "a1111111-1111-1111-1111-111111111111";
+
+  const baseInvoicesState = {
+    view: "invoices" as const,
+    workspaceId,
+    accrualId: null as string | null,
+    invoiceId: null as string | null,
+    discovery: {
+      page: 2,
+      invoiceFilters: {
+        documentNumber: "INV-9",
+        status: "Draft" as const,
+        createdFromDate: "2026-07-01",
+        createdToDate: "2026-07-31"
+      },
+      accrualFilters: { ...EMPTY_ACCRUAL_FILTERS }
+    }
+  };
+
+  it("parses valid invoiceId GUID", () => {
+    assert.equal(parseInvoiceIdParam(invoiceId), invoiceId);
+    const parsed = parseUrlSearch(
+      `?view=invoices&workspaceId=${workspaceId}&status=Draft&page=2&invoiceId=${invoiceId}`
+    );
+    assert.equal(parsed.invoiceId, invoiceId);
+    assert.equal(parsed.discovery.page, 2);
+    assert.equal(parsed.discovery.invoiceFilters.status, "Draft");
+  });
+
+  it("invalid GUID invoiceId normalizes to null", () => {
+    assert.equal(parseInvoiceIdParam("not-a-guid"), null);
+    const parsed = parseUrlSearch(
+      "?view=invoices&status=Draft&invoiceId=not-a-guid&page=2"
+    );
+    assert.equal(parsed.invoiceId, null);
+    assert.equal(parsed.discovery.page, 2);
+    assert.equal(buildUrlSearch(parsed).includes("invoiceId"), false);
+  });
+
+  it("open adds only invoiceId and preserves invoice filters", () => {
+    const opened = withInvoiceId(baseInvoicesState, invoiceId);
+    const search = buildUrlSearch(opened);
+    assert.equal(
+      search,
+      "?view=invoices&workspaceId=11111111-1111-1111-1111-111111111111&documentNumber=INV-9&status=Draft&createdFrom=2026-07-01&createdTo=2026-07-31&page=2&invoiceId=b1111111-1111-1111-1111-111111111111"
+    );
+  });
+
+  it("close removes only invoiceId", () => {
+    const closed = withoutInvoiceId(withInvoiceId(baseInvoicesState, invoiceId));
+    const search = buildUrlSearch(closed);
+    assert.equal(search.includes("invoiceId"), false);
+    assert.match(search, /documentNumber=INV-9/);
+    assert.match(search, /status=Draft/);
+    assert.match(search, /page=2/);
+  });
+
+  it("view normalization isolates invoiceId and accrualId", () => {
+    const accrualView = parseUrlSearch(
+      `?view=accruals&accrualId=${accrualId}&invoiceId=${invoiceId}&status=Draft`
+    );
+    assert.equal(accrualView.accrualId, accrualId);
+    assert.equal(accrualView.invoiceId, null);
+
+    const invoiceView = parseUrlSearch(
+      `?view=invoices&accrualId=${accrualId}&invoiceId=${invoiceId}&status=Draft`
+    );
+    assert.equal(invoiceView.invoiceId, invoiceId);
+    assert.equal(invoiceView.accrualId, null);
+
+    assert.equal(
+      buildUrlSearch({
+        ...baseInvoicesState,
+        invoiceId,
+        accrualId
+      }).includes("accrualId"),
+      false
+    );
+  });
+
+  it("round-trips invoice deep-link with filters", () => {
+    const search = buildUrlSearch(withInvoiceId(baseInvoicesState, invoiceId));
+    const parsed = parseUrlSearch(search);
+    assert.equal(parsed.invoiceId, invoiceId);
+    assert.equal(parsed.discovery.invoiceFilters.documentNumber, "INV-9");
+    assert.equal(buildUrlSearch(parsed), search);
+  });
+
+  it("switching invoiceId updates only the deep-link target", () => {
+    const search = buildUrlSearch(
+      withInvoiceId(withInvoiceId(baseInvoicesState, invoiceId), otherInvoiceId)
+    );
+    assert.match(search, new RegExp(`invoiceId=${otherInvoiceId}`));
+    assert.equal(search.includes(invoiceId), false);
+  });
+
+  it("back/forward search pairs differ only by invoiceId (no loop helpers)", () => {
+    const listOnly = buildUrlSearch(baseInvoicesState);
+    const withDetail = buildUrlSearch(withInvoiceId(baseInvoicesState, invoiceId));
+    assert.notEqual(listOnly, withDetail);
+    assert.equal(
+      buildUrlSearch(withoutInvoiceId(withInvoiceId(baseInvoicesState, invoiceId))),
       listOnly
     );
   });

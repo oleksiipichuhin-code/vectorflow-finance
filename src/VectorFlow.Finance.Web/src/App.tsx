@@ -32,7 +32,7 @@ function readInitialUrlState(): AppUrlState {
   return parseUrlSearch(window.location.search);
 }
 
-export type AccrualIdChangeOptions = {
+export type DetailIdChangeOptions = {
   /** Use replaceState instead of pushState (404 / normalize recovery). */
   replace?: boolean;
 };
@@ -43,6 +43,7 @@ export default function App() {
   const [view, setView] = useState<AppView>(initialUrl.view);
   const [discovery, setDiscovery] = useState<ListDiscovery>(initialUrl.discovery);
   const [accrualId, setAccrualId] = useState<string | null>(initialUrl.accrualId);
+  const [invoiceId, setInvoiceId] = useState<string | null>(initialUrl.invoiceId);
   const [listEpoch, setListEpoch] = useState(0);
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
 
@@ -127,6 +128,7 @@ export default function App() {
         view: initialUrl.view,
         workspaceId: initialUrl.workspaceId,
         accrualId: initialUrl.accrualId,
+        invoiceId: initialUrl.invoiceId,
         discovery: initialUrl.discovery
       });
       if (window.location.search !== expected) {
@@ -139,6 +141,7 @@ export default function App() {
       view,
       workspaceId: workspace?.id ?? null,
       accrualId: view === "accruals" ? accrualId : null,
+      invoiceId: view === "invoices" ? invoiceId : null,
       discovery
     };
     const search = buildUrlSearch(next);
@@ -152,7 +155,7 @@ export default function App() {
       }
     }
     urlWriteModeRef.current = "push";
-  }, [view, workspace?.id, discovery, accrualId, initialUrl]);
+  }, [view, workspace?.id, discovery, accrualId, invoiceId, initialUrl]);
 
   useEffect(() => {
     function onPopState() {
@@ -161,6 +164,7 @@ export default function App() {
       setView(parsed.view);
       setDiscovery(parsed.discovery);
       setAccrualId(parsed.view === "accruals" ? parsed.accrualId : null);
+      setInvoiceId(parsed.view === "invoices" ? parsed.invoiceId : null);
       setListEpoch((value) => value + 1);
 
       if (parsed.workspaceId) {
@@ -180,12 +184,16 @@ export default function App() {
       setView("workspace");
       setDiscovery(createEmptyDiscovery());
       setAccrualId(null);
+      setInvoiceId(null);
       return;
     }
 
     setView(next);
     if (next !== "accruals") {
       setAccrualId(null);
+    }
+    if (next !== "invoices") {
+      setInvoiceId(null);
     }
     if (next !== "invoices" && next !== "accruals") {
       setDiscovery((current) => ({
@@ -218,11 +226,21 @@ export default function App() {
   );
 
   const handleAccrualIdChange = useCallback(
-    (nextAccrualId: string | null, options?: AccrualIdChangeOptions) => {
+    (nextAccrualId: string | null, options?: DetailIdChangeOptions) => {
       if (options?.replace) {
         urlWriteModeRef.current = "replace";
       }
       setAccrualId(nextAccrualId);
+    },
+    []
+  );
+
+  const handleInvoiceIdChange = useCallback(
+    (nextInvoiceId: string | null, options?: DetailIdChangeOptions) => {
+      if (options?.replace) {
+        urlWriteModeRef.current = "replace";
+      }
+      setInvoiceId(nextInvoiceId);
     },
     []
   );
@@ -235,6 +253,7 @@ export default function App() {
 
     setDiscovery(draftInvoicesDiscovery());
     setAccrualId(null);
+    setInvoiceId(null);
     setListEpoch((value) => value + 1);
     setView("invoices");
   }, [workspace]);
@@ -244,6 +263,7 @@ export default function App() {
       view,
       workspaceId: workspace?.id ?? null,
       accrualId: view === "accruals" ? accrualId : null,
+      invoiceId: view === "invoices" ? invoiceId : null,
       discovery
     });
     const href = `${window.location.origin}${window.location.pathname}${search}`;
@@ -256,7 +276,7 @@ export default function App() {
     }
 
     window.setTimeout(() => setCopyFeedback(null), 2500);
-  }, [view, workspace?.id, discovery, accrualId]);
+  }, [view, workspace?.id, discovery, accrualId, invoiceId]);
 
   async function handleLoadWorkspace(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -357,7 +377,9 @@ export default function App() {
           workspace={workspace}
           initialPage={discovery.page}
           initialFilters={discovery.invoiceFilters}
+          selectedInvoiceId={invoiceId}
           onDiscoveryChange={handleInvoiceDiscoveryChange}
+          onSelectedInvoiceIdChange={handleInvoiceIdChange}
           onShowDraftInvoices={showDraftInvoices}
         />
       ) : null}

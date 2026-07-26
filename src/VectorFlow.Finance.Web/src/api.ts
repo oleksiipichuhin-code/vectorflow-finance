@@ -15,6 +15,15 @@ export type FinanceWorkspace = {
   updatedAt: string;
 };
 
+export type InvoiceLine = {
+  id: string;
+  sequence: number;
+  description: string | null;
+  quantity: number;
+  unitPrice: number;
+  lineAmount: number;
+};
+
 export type Invoice = {
   id: string;
   financeWorkspaceId: string;
@@ -27,6 +36,8 @@ export type Invoice = {
   createdAtUtc: string;
   updatedAtUtc: string;
   issuedAtUtc: string | null;
+  /** Present on GET-by-id; list payloads may omit or return empty. */
+  lines?: InvoiceLine[];
 };
 
 export type InvoicePage = {
