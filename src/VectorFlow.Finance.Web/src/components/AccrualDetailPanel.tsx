@@ -2,6 +2,8 @@ import type { Accrual } from "../api";
 import {
   buildAccrualDetailFields,
   canEditAccrualFromDetails,
+  canManageAccrualLifecycleFromDetails,
+  detailLifecycleActionsFor,
   type SourceInvoiceDetailView
 } from "../accrualDetail";
 import { StatusMessage } from "./Panel";
@@ -12,13 +14,19 @@ type AccrualDetailPanelProps = {
   error: string | null;
   errorRetryable: boolean;
   sourceInvoice: SourceInvoiceDetailView;
+  /** Disables Close and all detail action buttons while loading or pending. */
   editActionsDisabled?: boolean;
+  recognizeBusy?: boolean;
+  reverseBusy?: boolean;
+  reverseOpen?: boolean;
   onClose: () => void;
   onRetry: () => void;
   onRetrySourceInvoice: () => void;
   onEditDetails?: (accrual: Accrual) => void;
   onEditAmount?: (accrual: Accrual) => void;
   onEditSourceInvoice?: (accrual: Accrual) => void;
+  onRecognize?: (accrual: Accrual) => void;
+  onReverse?: (accrual: Accrual) => void;
 };
 
 export function AccrualDetailPanel({
@@ -28,18 +36,35 @@ export function AccrualDetailPanel({
   errorRetryable,
   sourceInvoice,
   editActionsDisabled = false,
+  recognizeBusy = false,
+  reverseBusy = false,
+  reverseOpen = false,
   onClose,
   onRetry,
   onRetrySourceInvoice,
   onEditDetails,
   onEditAmount,
-  onEditSourceInvoice
+  onEditSourceInvoice,
+  onRecognize,
+  onReverse
 }: AccrualDetailPanelProps) {
   const fields = accrual ? buildAccrualDetailFields(accrual) : null;
   const showEditActions =
     accrual !== null &&
     canEditAccrualFromDetails(accrual) &&
     Boolean(onEditDetails && onEditAmount && onEditSourceInvoice);
+  const lifecycleActions = accrual ? detailLifecycleActionsFor(accrual) : [];
+  const showRecognize =
+    accrual !== null &&
+    canManageAccrualLifecycleFromDetails(accrual) &&
+    lifecycleActions.includes("recognize") &&
+    Boolean(onRecognize);
+  const showReverse =
+    accrual !== null &&
+    canManageAccrualLifecycleFromDetails(accrual) &&
+    lifecycleActions.includes("reverse") &&
+    Boolean(onReverse);
+  const showActions = showEditActions || showRecognize || showReverse;
 
   return (
     <section
@@ -142,33 +167,57 @@ export function AccrualDetailPanel({
             </div>
           </dl>
 
-          {showEditActions ? (
+          {showActions ? (
             <div className="filter-actions accrual-detail-actions">
               <p className="meta">Дії</p>
-              <button
-                type="button"
-                className="button-secondary"
-                disabled={editActionsDisabled}
-                onClick={() => onEditDetails?.(accrual)}
-              >
-                Редагувати реквізити
-              </button>
-              <button
-                type="button"
-                className="button-secondary"
-                disabled={editActionsDisabled}
-                onClick={() => onEditAmount?.(accrual)}
-              >
-                Змінити суму
-              </button>
-              <button
-                type="button"
-                className="button-secondary"
-                disabled={editActionsDisabled}
-                onClick={() => onEditSourceInvoice?.(accrual)}
-              >
-                Змінити рахунок
-              </button>
+              {showEditActions ? (
+                <>
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    disabled={editActionsDisabled}
+                    onClick={() => onEditDetails?.(accrual)}
+                  >
+                    Редагувати реквізити
+                  </button>
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    disabled={editActionsDisabled}
+                    onClick={() => onEditAmount?.(accrual)}
+                  >
+                    Змінити суму
+                  </button>
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    disabled={editActionsDisabled}
+                    onClick={() => onEditSourceInvoice?.(accrual)}
+                  >
+                    Змінити рахунок
+                  </button>
+                </>
+              ) : null}
+              {showRecognize ? (
+                <button
+                  type="button"
+                  className="button-secondary"
+                  disabled={editActionsDisabled || recognizeBusy}
+                  onClick={() => onRecognize?.(accrual)}
+                >
+                  {recognizeBusy ? "Визнання…" : "Визнати"}
+                </button>
+              ) : null}
+              {showReverse ? (
+                <button
+                  type="button"
+                  className="button-secondary"
+                  disabled={editActionsDisabled || reverseBusy || reverseOpen}
+                  onClick={() => onReverse?.(accrual)}
+                >
+                  {reverseBusy ? "Сторнування…" : "Сторнувати"}
+                </button>
+              ) : null}
             </div>
           ) : null}
         </>

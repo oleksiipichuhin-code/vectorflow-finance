@@ -42,10 +42,14 @@ import {
   type AccrualListFilters,
   type AccrualStatusFilter
 } from "./accrualListQuery";
-import { canRecognizeAccrual } from "./accrualRecognize";
+import {
+  canRecognizeAccrual,
+  interpretAccrualRecognizeError
+} from "./accrualRecognize";
 import {
   REVERSAL_REASON_MAX_LENGTH,
   canReverseAccrual,
+  interpretAccrualReverseError,
   normalizeReversalReason
 } from "./accrualReverse";
 import {
@@ -462,12 +466,18 @@ export function AccrualsView({
     setCreateSourceInvoicePickerOpen(false);
   }
 
-  async function handleRecognizeAccrual(accrual: Accrual) {
+  async function handleRecognizeAccrual(
+    accrual: Accrual,
+    options: BeginEditorOptions = {}
+  ) {
     if (!workspace || !canRecognizeAccrual(accrual)) {
       return;
     }
 
-    if (recognizingIdsRef.current.has(accrual.id)) {
+    if (
+      recognizingIdsRef.current.has(accrual.id) ||
+      reversingIdsRef.current.has(accrual.id)
+    ) {
       return;
     }
 
@@ -491,7 +501,9 @@ export function AccrualsView({
     setDraftDetailsSuccess(null);
     setDraftDetailsTarget(null);
     setDraftDetailsBaseline(null);
-    clearDetailPanel();
+    if (!options.preserveDetail) {
+      clearDetailPanel();
+    }
 
     try {
       const recognized = await recognizeAccrual(workspace.id, accrual.id);
@@ -500,16 +512,17 @@ export function AccrualsView({
         `Нарахування «${recognized.description}» визнано. Статус: ${recognized.status}.`
       );
       await loadPage(workspace.id, page, appliedFilters);
+      await refreshDetailAfterMutation(recognized.id);
     } catch (recognizeErr) {
-      setRecognizeError(
-        recognizeErr instanceof Error
-          ? recognizeErr.message
-          : "Не вдалося визнати нарахування."
-      );
-      try {
-        await loadPage(workspace.id, page, appliedFilters);
-      } catch {
-        // Keep the recognize error; list refresh failure is secondary.
+      const failure = interpretAccrualRecognizeError(recognizeErr);
+      setRecognizeError(failure.message);
+      if (failure.refreshList) {
+        try {
+          await loadPage(workspace.id, page, appliedFilters);
+          await refreshDetailAfterEditorFailure(accrual.id);
+        } catch {
+          // Keep the recognize error; list refresh failure is secondary.
+        }
       }
     } finally {
       recognizingIdsRef.current.delete(accrual.id);
@@ -517,8 +530,16 @@ export function AccrualsView({
     }
   }
 
-  function beginReverse(accrual: Accrual) {
-    if (!canReverseAccrual(accrual) || reversingIdsRef.current.has(accrual.id)) {
+  function beginReverse(accrual: Accrual, options: BeginEditorOptions = {}) {
+    if (
+      !canReverseAccrual(accrual) ||
+      reversingIdsRef.current.has(accrual.id) ||
+      recognizingIdsRef.current.has(accrual.id)
+    ) {
+      return;
+    }
+
+    if (reverseTarget?.id === accrual.id) {
       return;
     }
 
@@ -539,7 +560,9 @@ export function AccrualsView({
     setDraftDetailsTarget(null);
     setDraftDetailsBaseline(null);
     setCreateSourceInvoicePickerOpen(false);
-    clearDetailPanel();
+    if (!options.preserveDetail) {
+      clearDetailPanel();
+    }
     setReverseTarget(accrual);
     setReverseReason("");
   }
@@ -714,7 +737,9 @@ export function AccrualsView({
     return (
       editingAmountIdsRef.current.has(detailTargetId) ||
       changingSourceInvoiceIdsRef.current.has(detailTargetId) ||
-      editingDraftDetailsIdsRef.current.has(detailTargetId)
+      editingDraftDetailsIdsRef.current.has(detailTargetId) ||
+      recognizingIdsRef.current.has(detailTargetId) ||
+      reversingIdsRef.current.has(detailTargetId)
     );
   }
 
@@ -727,6 +752,9 @@ export function AccrualsView({
     setDraftDetailsTarget(null);
     setDraftDetailsBaseline(null);
     setDraftDetailsError(null);
+    setReverseTarget(null);
+    setReverseReason("");
+    setReverseError(null);
   }
 
   function closeDetailPanel() {
@@ -1205,18 +1233,22 @@ export function AccrualsView({
         `Нарахування «${reversed.description}» сторновано. Статус: ${reversed.status}.`
       );
       await loadPage(workspace.id, page, appliedFilters);
+      await refreshDetailAfterMutation(reversed.id);
     } catch (reverseErr) {
-      setReverseError(
-        reverseErr instanceof Error
-          ? reverseErr.message
-          : "Не вдалося сторнувати нарахування."
-      );
-      setReverseTarget(null);
-      setReverseReason("");
-      try {
-        await loadPage(workspace.id, page, appliedFilters);
-      } catch {
-        // Keep the reverse error; list refresh failure is secondary.
+      const failure = interpretAccrualReverseError(reverseErr);
+      setReverseError(failure.message);
+      if (!failure.keepEditorOpen) {
+        setReverseTarget(null);
+        setReverseReason("");
+      }
+
+      if (failure.refreshList) {
+        try {
+          await loadPage(workspace.id, page, appliedFilters);
+          await refreshDetailAfterEditorFailure(target.id);
+        } catch {
+          // Keep the reverse error; list refresh failure is secondary.
+        }
       }
     } finally {
       reversingIdsRef.current.delete(target.id);
@@ -1243,7 +1275,9 @@ export function AccrualsView({
     detailTargetId &&
       (editingAmountIds.has(detailTargetId) ||
         changingSourceInvoiceIds.has(detailTargetId) ||
-        editingDraftDetailsIds.has(detailTargetId))
+        editingDraftDetailsIds.has(detailTargetId) ||
+        recognizingIds.has(detailTargetId) ||
+        reversingIds.has(detailTargetId))
   );
   const detailEditActionsDisabled = detailLoading || detailEditorPending;
 
@@ -1612,6 +1646,13 @@ export function AccrualsView({
             errorRetryable={detailErrorRetryable}
             sourceInvoice={detailSourceInvoice}
             editActionsDisabled={detailEditActionsDisabled}
+            recognizeBusy={Boolean(
+              detailTargetId && recognizingIds.has(detailTargetId)
+            )}
+            reverseBusy={Boolean(detailTargetId && reversingIds.has(detailTargetId))}
+            reverseOpen={Boolean(
+              detailAccrual && reverseTarget?.id === detailAccrual.id
+            )}
             onClose={closeDetailPanel}
             onRetry={retryAccrualDetail}
             onRetrySourceInvoice={retryDetailSourceInvoice}
@@ -1622,6 +1663,10 @@ export function AccrualsView({
             onEditSourceInvoice={(accrual) =>
               beginChangeSourceInvoice(accrual, { preserveDetail: true })
             }
+            onRecognize={(accrual) =>
+              void handleRecognizeAccrual(accrual, { preserveDetail: true })
+            }
+            onReverse={(accrual) => beginReverse(accrual, { preserveDetail: true })}
           />
         ) : null}
         {workspace ? (

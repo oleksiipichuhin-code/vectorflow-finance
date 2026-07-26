@@ -1,4 +1,6 @@
 import type { Accrual, Invoice } from "./api.ts";
+import { canRecognizeAccrual } from "./accrualRecognize.ts";
+import { canReverseAccrual } from "./accrualReverse.ts";
 import {
   formatSourceInvoiceSelection,
   toInvoicePickerSummary,
@@ -27,6 +29,33 @@ export function detailEditActionsFor(
   }
 
   return ["details", "amount", "sourceInvoice"];
+}
+
+/**
+ * Lifecycle handoff from the read-only detail panel.
+ * Composes existing row-action eligibility — does not invent new rules.
+ */
+export type AccrualDetailLifecycleAction = "recognize" | "reverse";
+
+export function detailLifecycleActionsFor(
+  accrual: Pick<Accrual, "status">
+): AccrualDetailLifecycleAction[] {
+  const actions: AccrualDetailLifecycleAction[] = [];
+  if (canRecognizeAccrual(accrual)) {
+    actions.push("recognize");
+  }
+
+  if (canReverseAccrual(accrual)) {
+    actions.push("reverse");
+  }
+
+  return actions;
+}
+
+export function canManageAccrualLifecycleFromDetails(
+  accrual: Pick<Accrual, "status">
+): boolean {
+  return detailLifecycleActionsFor(accrual).length > 0;
 }
 
 export type BeginEditorOptions = {

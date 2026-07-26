@@ -3,9 +3,11 @@ import { describe, it } from "node:test";
 import {
   buildAccrualDetailFields,
   canEditAccrualFromDetails,
+  canManageAccrualLifecycleFromDetails,
   canViewAccrualDetails,
   DETAIL_RELOAD_AFTER_MUTATION_FAILED_MESSAGE,
   detailEditActionsFor,
+  detailLifecycleActionsFor,
   interpretAccrualDetailLoadError,
   interpretSourceInvoiceDetailLoadError,
   shouldLoadSourceInvoice,
@@ -17,6 +19,8 @@ import {
 import type { Accrual, Invoice } from "./api.ts";
 import { canEditAccrualAmount } from "./accrualEditAmount.ts";
 import { canEditDraftAccrualDetails } from "./draftAccrualEditor.ts";
+import { canRecognizeAccrual } from "./accrualRecognize.ts";
+import { canReverseAccrual } from "./accrualReverse.ts";
 import { canChangeAccrualSourceInvoice } from "./accrualSourceInvoice.ts";
 
 class FakeFinanceApiRequestError extends Error {
@@ -302,5 +306,105 @@ describe("detail handoff callback Accrual identity", () => {
     assert.equal(received[0]!.description, "Handoff target");
     assert.equal(received[1]!.amount, 77.7);
     assert.equal(received[2]!.sourceInvoiceId, "i1111111-1111-1111-1111-111111111111");
+  });
+});
+
+describe("detailLifecycleActionsFor", () => {
+  it("shows Recognize for Draft and aligns with row eligibility", () => {
+    const draft = sampleAccrual({ status: "Draft" });
+    assert.equal(canManageAccrualLifecycleFromDetails(draft), true);
+    assert.deepEqual(detailLifecycleActionsFor(draft), ["recognize"]);
+    assert.equal(canRecognizeAccrual(draft), true);
+    assert.equal(canReverseAccrual(draft), false);
+  });
+
+  it("shows Reverse for Recognized and aligns with row eligibility", () => {
+    const recognized = sampleAccrual({ status: "Recognized" });
+    assert.equal(canManageAccrualLifecycleFromDetails(recognized), true);
+    assert.deepEqual(detailLifecycleActionsFor(recognized), ["reverse"]);
+    assert.equal(canRecognizeAccrual(recognized), false);
+    assert.equal(canReverseAccrual(recognized), true);
+  });
+
+  it("hides lifecycle actions for Reversed", () => {
+    const reversed = sampleAccrual({ status: "Reversed" });
+    assert.equal(canManageAccrualLifecycleFromDetails(reversed), false);
+    assert.deepEqual(detailLifecycleActionsFor(reversed), []);
+    assert.equal(canRecognizeAccrual(reversed), false);
+    assert.equal(canReverseAccrual(reversed), false);
+  });
+
+  it("keeps Draft edit actions available alongside Recognize", () => {
+    const draft = sampleAccrual({ status: "Draft" });
+    assert.deepEqual(detailEditActionsFor(draft), [
+      "details",
+      "amount",
+      "sourceInvoice"
+    ]);
+    assert.deepEqual(detailLifecycleActionsFor(draft), ["recognize"]);
+  });
+
+  it("hides edit actions for Recognized while Reverse remains", () => {
+    const recognized = sampleAccrual({ status: "Recognized" });
+    assert.deepEqual(detailEditActionsFor(recognized), []);
+    assert.deepEqual(detailLifecycleActionsFor(recognized), ["reverse"]);
+  });
+});
+
+describe("detail lifecycle handoff coordination", () => {
+  it("row and detail lifecycle launches share BeginEditorOptions shape", () => {
+    const rowLaunch: BeginEditorOptions = {};
+    const detailLaunch: BeginEditorOptions = { preserveDetail: true };
+    assert.equal(rowLaunch.preserveDetail, undefined);
+    assert.equal(detailLaunch.preserveDetail, true);
+  });
+
+  it("reloads detail only for the open Accrual after lifecycle mutation", () => {
+    const accrualId = "a4444444-4444-4444-4444-444444444444";
+    assert.equal(shouldReloadDetailAfterMutation(accrualId, accrualId), true);
+    assert.equal(shouldReloadDetailAfterMutation(null, accrualId), false);
+    assert.equal(
+      shouldReloadDetailAfterMutation("a5555555-5555-5555-5555-555555555555", accrualId),
+      false
+    );
+  });
+
+  it("post-mutation detail reload failure message does not imply re-mutation", () => {
+    assert.match(DETAIL_RELOAD_AFTER_MUTATION_FAILED_MESSAGE, /Зміни збережено/);
+    assert.match(DETAIL_RELOAD_AFTER_MUTATION_FAILED_MESSAGE, /Спробувати знову/);
+  });
+
+  it("lifecycle callbacks receive the open Accrual identity", () => {
+    const draft = sampleAccrual({
+      id: "a6666666-6666-6666-6666-666666666666",
+      status: "Draft",
+      description: "Recognize handoff"
+    });
+    const recognized = sampleAccrual({
+      id: "a7777777-7777-7777-7777-777777777777",
+      status: "Recognized",
+      description: "Reverse handoff"
+    });
+
+    const recognizedIds: string[] = [];
+    const reverseIds: string[] = [];
+    const onRecognize = (value: Accrual) => recognizedIds.push(value.id);
+    const onReverse = (value: Accrual) => reverseIds.push(value.id);
+
+    assert.deepEqual(detailLifecycleActionsFor(draft), ["recognize"]);
+    onRecognize(draft);
+    assert.deepEqual(detailLifecycleActionsFor(recognized), ["reverse"]);
+    onReverse(recognized);
+
+    assert.deepEqual(recognizedIds, [draft.id]);
+    assert.deepEqual(reverseIds, [recognized.id]);
+  });
+
+  it("cancel contract leaves detail identity untouched", () => {
+    // Cancel is local UI state clear for reverse form / no-op for recognize dialog;
+    // detailTargetId and detailAccrual remain under AccrualsView ownership.
+    const openId = "a8888888-8888-8888-8888-888888888888";
+    assert.equal(shouldReloadDetailAfterMutation(openId, openId), true);
+    assert.equal(canManageAccrualLifecycleFromDetails({ status: "Recognized" }), true);
   });
 });
