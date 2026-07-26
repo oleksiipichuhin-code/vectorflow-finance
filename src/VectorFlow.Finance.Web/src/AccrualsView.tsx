@@ -17,11 +17,14 @@ import {
 } from "./api";
 import {
   canViewAccrualDetails,
+  DETAIL_RELOAD_AFTER_MUTATION_FAILED_MESSAGE,
   interpretAccrualDetailLoadError,
   interpretSourceInvoiceDetailLoadError,
   shouldLoadSourceInvoice,
+  shouldReloadDetailAfterMutation,
   sourceInvoiceDetailFromInvoice,
   sourceInvoiceDetailNone,
+  type BeginEditorOptions,
   type SourceInvoiceDetailView
 } from "./accrualDetail";
 import {
@@ -551,8 +554,12 @@ export function AccrualsView({
     setReverseError(null);
   }
 
-  function beginEditAmount(accrual: Accrual) {
+  function beginEditAmount(accrual: Accrual, options: BeginEditorOptions = {}) {
     if (!canEditAccrualAmount(accrual) || editingAmountIdsRef.current.has(accrual.id)) {
+      return;
+    }
+
+    if (editAmountTarget?.id === accrual.id) {
       return;
     }
 
@@ -571,7 +578,9 @@ export function AccrualsView({
     setDraftDetailsTarget(null);
     setDraftDetailsBaseline(null);
     setCreateSourceInvoicePickerOpen(false);
-    clearDetailPanel();
+    if (!options.preserveDetail) {
+      clearDetailPanel();
+    }
     setEditAmountError(null);
     setEditAmountSuccess(null);
     setEditAmountTarget(accrual);
@@ -588,11 +597,15 @@ export function AccrualsView({
     setEditAmountError(null);
   }
 
-  function beginChangeSourceInvoice(accrual: Accrual) {
+  function beginChangeSourceInvoice(accrual: Accrual, options: BeginEditorOptions = {}) {
     if (
       !canChangeAccrualSourceInvoice(accrual) ||
       changingSourceInvoiceIdsRef.current.has(accrual.id)
     ) {
+      return;
+    }
+
+    if (sourceInvoiceTarget?.id === accrual.id) {
       return;
     }
 
@@ -612,7 +625,9 @@ export function AccrualsView({
     setDraftDetailsTarget(null);
     setDraftDetailsBaseline(null);
     setCreateSourceInvoicePickerOpen(false);
-    clearDetailPanel();
+    if (!options.preserveDetail) {
+      clearDetailPanel();
+    }
     setSourceInvoiceError(null);
     setSourceInvoiceSuccess(null);
     setSourceInvoiceTarget(accrual);
@@ -630,11 +645,15 @@ export function AccrualsView({
     setSourceInvoiceError(null);
   }
 
-  function beginEditDraftDetails(accrual: Accrual) {
+  function beginEditDraftDetails(accrual: Accrual, options: BeginEditorOptions = {}) {
     if (
       !canEditDraftAccrualDetails(accrual) ||
       editingDraftDetailsIdsRef.current.has(accrual.id)
     ) {
+      return;
+    }
+
+    if (draftDetailsTarget?.id === accrual.id) {
       return;
     }
 
@@ -654,7 +673,9 @@ export function AccrualsView({
     setSourceInvoiceSuccess(null);
     setSourceInvoiceTarget(null);
     setCreateSourceInvoicePickerOpen(false);
-    clearDetailPanel();
+    if (!options.preserveDetail) {
+      clearDetailPanel();
+    }
     setDraftDetailsError(null);
     setDraftDetailsSuccess(null);
     setDraftDetailsTarget(accrual);
@@ -685,8 +706,52 @@ export function AccrualsView({
     setDetailSourceInvoice(sourceInvoiceDetailNone());
   }
 
+  function isDetailRelatedEditorPending(): boolean {
+    if (!detailTargetId) {
+      return false;
+    }
+
+    return (
+      editingAmountIdsRef.current.has(detailTargetId) ||
+      changingSourceInvoiceIdsRef.current.has(detailTargetId) ||
+      editingDraftDetailsIdsRef.current.has(detailTargetId)
+    );
+  }
+
+  function closeOpenEditorsForDetailClose() {
+    setEditAmountTarget(null);
+    setEditAmountValue("");
+    setEditAmountError(null);
+    setSourceInvoiceTarget(null);
+    setSourceInvoiceError(null);
+    setDraftDetailsTarget(null);
+    setDraftDetailsBaseline(null);
+    setDraftDetailsError(null);
+  }
+
   function closeDetailPanel() {
+    if (isDetailRelatedEditorPending()) {
+      return;
+    }
+
+    closeOpenEditorsForDetailClose();
     clearDetailPanel();
+  }
+
+  async function refreshDetailAfterMutation(accrualId: string) {
+    if (!workspace || !shouldReloadDetailAfterMutation(detailTargetId, accrualId)) {
+      return;
+    }
+
+    await loadAccrualDetail(workspace.id, accrualId, { afterSuccessfulMutation: true });
+  }
+
+  async function refreshDetailAfterEditorFailure(accrualId: string) {
+    if (!workspace || !shouldReloadDetailAfterMutation(detailTargetId, accrualId)) {
+      return;
+    }
+
+    await loadAccrualDetail(workspace.id, accrualId);
   }
 
   async function loadDetailSourceInvoice(
@@ -747,7 +812,11 @@ export function AccrualsView({
     }
   }
 
-  async function loadAccrualDetail(workspaceId: string, accrualId: string) {
+  async function loadAccrualDetail(
+    workspaceId: string,
+    accrualId: string,
+    options: { afterSuccessfulMutation?: boolean } = {}
+  ) {
     detailAbortRef.current?.abort();
     detailInvoiceAbortRef.current?.abort();
     const controller = new AbortController();
@@ -793,8 +862,13 @@ export function AccrualsView({
       }
 
       setDetailLoading(false);
-      setDetailError(failure.message);
-      setDetailErrorRetryable(failure.kind === "retryable");
+      if (options.afterSuccessfulMutation && failure.kind === "retryable") {
+        setDetailError(DETAIL_RELOAD_AFTER_MUTATION_FAILED_MESSAGE);
+        setDetailErrorRetryable(true);
+      } else {
+        setDetailError(failure.message);
+        setDetailErrorRetryable(failure.kind === "retryable");
+      }
 
       if (failure.refreshList) {
         await loadPage(workspaceId, page, appliedFilters);
@@ -911,6 +985,7 @@ export function AccrualsView({
         `Деталі нарахування «${updated.description}» оновлено.`
       );
       await loadPage(workspace.id, page, appliedFilters);
+      await refreshDetailAfterMutation(updated.id);
     } catch (editErr) {
       const failure = interpretDraftAccrualEditorError(editErr);
       setDraftDetailsError(failure.message);
@@ -922,6 +997,7 @@ export function AccrualsView({
       if (failure.refreshList) {
         try {
           await loadPage(workspace.id, page, appliedFilters);
+          await refreshDetailAfterEditorFailure(target.id);
         } catch {
           // Keep the editor error; list refresh failure is secondary.
         }
@@ -984,6 +1060,7 @@ export function AccrualsView({
         );
       }
       await loadPage(workspace.id, page, appliedFilters);
+      await refreshDetailAfterMutation(updated.id);
     } catch (sourceErr) {
       const failure = interpretAccrualSourceInvoiceEditError(sourceErr);
       setSourceInvoiceError(failure.message);
@@ -994,6 +1071,7 @@ export function AccrualsView({
       if (failure.refreshList) {
         try {
           await loadPage(workspace.id, page, appliedFilters);
+          await refreshDetailAfterEditorFailure(target.id);
         } catch {
           // Keep the source-invoice error; list refresh failure is secondary.
         }
@@ -1053,6 +1131,7 @@ export function AccrualsView({
         `Суму нарахування «${updated.description}» змінено на ${formatMoney(updated.amount, updated.currency)}.`
       );
       await loadPage(workspace.id, page, appliedFilters);
+      await refreshDetailAfterMutation(updated.id);
     } catch (editErr) {
       const failure = interpretAccrualAmountEditError(editErr);
       setEditAmountError(failure.message);
@@ -1064,6 +1143,7 @@ export function AccrualsView({
       if (failure.refreshList) {
         try {
           await loadPage(workspace.id, page, appliedFilters);
+          await refreshDetailAfterEditorFailure(target.id);
         } catch {
           // Keep the edit error; list refresh failure is secondary.
         }
@@ -1159,6 +1239,13 @@ export function AccrualsView({
   const canGoPrevious = page > 1 && !loading;
   const canGoNext = page < pages && !loading;
   const filtersActive = hasActiveAccrualFilters(appliedFilters);
+  const detailEditorPending = Boolean(
+    detailTargetId &&
+      (editingAmountIds.has(detailTargetId) ||
+        changingSourceInvoiceIds.has(detailTargetId) ||
+        editingDraftDetailsIds.has(detailTargetId))
+  );
+  const detailEditActionsDisabled = detailLoading || detailEditorPending;
 
   return (
     <>
@@ -1524,9 +1611,17 @@ export function AccrualsView({
             error={detailError}
             errorRetryable={detailErrorRetryable}
             sourceInvoice={detailSourceInvoice}
+            editActionsDisabled={detailEditActionsDisabled}
             onClose={closeDetailPanel}
             onRetry={retryAccrualDetail}
             onRetrySourceInvoice={retryDetailSourceInvoice}
+            onEditDetails={(accrual) =>
+              beginEditDraftDetails(accrual, { preserveDetail: true })
+            }
+            onEditAmount={(accrual) => beginEditAmount(accrual, { preserveDetail: true })}
+            onEditSourceInvoice={(accrual) =>
+              beginChangeSourceInvoice(accrual, { preserveDetail: true })
+            }
           />
         ) : null}
         {workspace ? (

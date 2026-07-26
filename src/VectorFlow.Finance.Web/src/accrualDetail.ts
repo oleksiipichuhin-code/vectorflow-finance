@@ -12,6 +12,42 @@ export function canViewAccrualDetails(accrual: Pick<Accrual, "status">): boolean
   return VIEWABLE_STATUSES.has(accrual.status);
 }
 
+/** Draft-only edit handoff from the read-only detail panel. */
+export function canEditAccrualFromDetails(accrual: Pick<Accrual, "status">): boolean {
+  return accrual.status === "Draft";
+}
+
+export type AccrualDetailEditAction = "details" | "amount" | "sourceInvoice";
+
+export function detailEditActionsFor(
+  accrual: Pick<Accrual, "status">
+): AccrualDetailEditAction[] {
+  if (!canEditAccrualFromDetails(accrual)) {
+    return [];
+  }
+
+  return ["details", "amount", "sourceInvoice"];
+}
+
+export type BeginEditorOptions = {
+  /** Keep the open detail panel when launching an editor from it. */
+  preserveDetail?: boolean;
+};
+
+export const DETAIL_RELOAD_AFTER_MUTATION_FAILED_MESSAGE =
+  "Зміни збережено, але не вдалося оновити деталі. Натисніть «Спробувати знову».";
+
+/**
+ * After a successful Draft mutation, refresh list always and reload detail
+ * when the same Accrual is open in the detail panel.
+ */
+export function shouldReloadDetailAfterMutation(
+  detailTargetId: string | null | undefined,
+  mutatedAccrualId: string
+): boolean {
+  return Boolean(detailTargetId) && detailTargetId === mutatedAccrualId;
+}
+
 export type AccrualDetailLoadFailure = {
   kind: "not_found" | "retryable";
   message: string;

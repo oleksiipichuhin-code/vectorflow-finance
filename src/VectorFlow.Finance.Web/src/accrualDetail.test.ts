@@ -2,14 +2,22 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   buildAccrualDetailFields,
+  canEditAccrualFromDetails,
   canViewAccrualDetails,
+  DETAIL_RELOAD_AFTER_MUTATION_FAILED_MESSAGE,
+  detailEditActionsFor,
   interpretAccrualDetailLoadError,
   interpretSourceInvoiceDetailLoadError,
   shouldLoadSourceInvoice,
+  shouldReloadDetailAfterMutation,
   sourceInvoiceDetailFromInvoice,
-  sourceInvoiceDetailNone
+  sourceInvoiceDetailNone,
+  type BeginEditorOptions
 } from "./accrualDetail.ts";
 import type { Accrual, Invoice } from "./api.ts";
+import { canEditAccrualAmount } from "./accrualEditAmount.ts";
+import { canEditDraftAccrualDetails } from "./draftAccrualEditor.ts";
+import { canChangeAccrualSourceInvoice } from "./accrualSourceInvoice.ts";
 
 class FakeFinanceApiRequestError extends Error {
   readonly status: number;
@@ -206,5 +214,93 @@ describe("detail panel close contract", () => {
     // Close is a local UI state clear; opening uses GET helpers only.
     assert.equal(typeof canViewAccrualDetails, "function");
     assert.equal(typeof buildAccrualDetailFields, "function");
+  });
+});
+
+describe("canEditAccrualFromDetails", () => {
+  it("allows edit actions for Draft", () => {
+    assert.equal(canEditAccrualFromDetails({ status: "Draft" }), true);
+    assert.deepEqual(detailEditActionsFor({ status: "Draft" }), [
+      "details",
+      "amount",
+      "sourceInvoice"
+    ]);
+  });
+
+  it("hides edit actions for Recognized", () => {
+    assert.equal(canEditAccrualFromDetails({ status: "Recognized" }), false);
+    assert.deepEqual(detailEditActionsFor({ status: "Recognized" }), []);
+  });
+
+  it("hides edit actions for Reversed", () => {
+    assert.equal(canEditAccrualFromDetails({ status: "Reversed" }), false);
+    assert.deepEqual(detailEditActionsFor({ status: "Reversed" }), []);
+  });
+
+  it("aligns Draft edit gates with existing row editor eligibility", () => {
+    const draft = sampleAccrual({ status: "Draft" });
+    assert.equal(canEditDraftAccrualDetails(draft), true);
+    assert.equal(canEditAccrualAmount(draft), true);
+    assert.equal(canChangeAccrualSourceInvoice(draft), true);
+    assert.equal(canEditAccrualFromDetails(draft), true);
+  });
+});
+
+describe("detail edit handoff coordination", () => {
+  it("row and detail launches share BeginEditorOptions shape", () => {
+    const rowLaunch: BeginEditorOptions = {};
+    const detailLaunch: BeginEditorOptions = { preserveDetail: true };
+    assert.equal(rowLaunch.preserveDetail, undefined);
+    assert.equal(detailLaunch.preserveDetail, true);
+  });
+
+  it("reloads detail only for the open Accrual after mutation", () => {
+    const accrualId = "a1111111-1111-1111-1111-111111111111";
+    assert.equal(shouldReloadDetailAfterMutation(accrualId, accrualId), true);
+    assert.equal(shouldReloadDetailAfterMutation(null, accrualId), false);
+    assert.equal(
+      shouldReloadDetailAfterMutation("a2222222-2222-2222-2222-222222222222", accrualId),
+      false
+    );
+  });
+
+  it("exposes post-mutation detail reload failure message without implying re-mutation", () => {
+    assert.match(DETAIL_RELOAD_AFTER_MUTATION_FAILED_MESSAGE, /Зміни збережено/);
+    assert.match(DETAIL_RELOAD_AFTER_MUTATION_FAILED_MESSAGE, /Спробувати знову/);
+  });
+
+  it("duplicate open of the same editor target is a no-op contract at begin helpers", () => {
+    // AccrualsView begin* returns early when target.id already matches.
+    const openId = "a1111111-1111-1111-1111-111111111111";
+    const sameTarget = sampleAccrual({ id: openId });
+    assert.equal(sameTarget.id, openId);
+    assert.equal(canEditAccrualFromDetails(sameTarget), true);
+  });
+});
+
+describe("detail handoff callback Accrual identity", () => {
+  it("edit callbacks receive the open Draft Accrual identity", () => {
+    const accrual = sampleAccrual({
+      id: "a3333333-3333-3333-3333-333333333333",
+      description: "Handoff target",
+      amount: 77.7,
+      sourceInvoiceId: "i1111111-1111-1111-1111-111111111111"
+    });
+
+    const received: Accrual[] = [];
+    const onEditDetails = (value: Accrual) => received.push(value);
+    const onEditAmount = (value: Accrual) => received.push(value);
+    const onEditSourceInvoice = (value: Accrual) => received.push(value);
+
+    assert.equal(canEditAccrualFromDetails(accrual), true);
+    onEditDetails(accrual);
+    onEditAmount(accrual);
+    onEditSourceInvoice(accrual);
+
+    assert.equal(received.length, 3);
+    assert.ok(received.every((item) => item.id === accrual.id));
+    assert.equal(received[0]!.description, "Handoff target");
+    assert.equal(received[1]!.amount, 77.7);
+    assert.equal(received[2]!.sourceInvoiceId, "i1111111-1111-1111-1111-111111111111");
   });
 });

@@ -1,6 +1,7 @@
 import type { Accrual } from "../api";
 import {
   buildAccrualDetailFields,
+  canEditAccrualFromDetails,
   type SourceInvoiceDetailView
 } from "../accrualDetail";
 import { StatusMessage } from "./Panel";
@@ -11,9 +12,13 @@ type AccrualDetailPanelProps = {
   error: string | null;
   errorRetryable: boolean;
   sourceInvoice: SourceInvoiceDetailView;
+  editActionsDisabled?: boolean;
   onClose: () => void;
   onRetry: () => void;
   onRetrySourceInvoice: () => void;
+  onEditDetails?: (accrual: Accrual) => void;
+  onEditAmount?: (accrual: Accrual) => void;
+  onEditSourceInvoice?: (accrual: Accrual) => void;
 };
 
 export function AccrualDetailPanel({
@@ -22,11 +27,19 @@ export function AccrualDetailPanel({
   error,
   errorRetryable,
   sourceInvoice,
+  editActionsDisabled = false,
   onClose,
   onRetry,
-  onRetrySourceInvoice
+  onRetrySourceInvoice,
+  onEditDetails,
+  onEditAmount,
+  onEditSourceInvoice
 }: AccrualDetailPanelProps) {
   const fields = accrual ? buildAccrualDetailFields(accrual) : null;
+  const showEditActions =
+    accrual !== null &&
+    canEditAccrualFromDetails(accrual) &&
+    Boolean(onEditDetails && onEditAmount && onEditSourceInvoice);
 
   return (
     <section
@@ -35,7 +48,12 @@ export function AccrualDetailPanel({
     >
       <div className="panel-header">
         <h3 id="accrual-detail-heading">Деталі нарахування</h3>
-        <button type="button" className="button-secondary" onClick={onClose}>
+        <button
+          type="button"
+          className="button-secondary"
+          onClick={onClose}
+          disabled={editActionsDisabled}
+        >
           Закрити
         </button>
       </div>
@@ -53,7 +71,7 @@ export function AccrualDetailPanel({
         </div>
       ) : null}
 
-      {!loading && !error && fields ? (
+      {!loading && !error && fields && accrual ? (
         <>
           <p className="meta cell-wrap">{fields.description}</p>
           <dl className="facts">
@@ -123,6 +141,36 @@ export function AccrualDetailPanel({
               <dd className="mono">{fields.accrualId}</dd>
             </div>
           </dl>
+
+          {showEditActions ? (
+            <div className="filter-actions accrual-detail-actions">
+              <p className="meta">Дії</p>
+              <button
+                type="button"
+                className="button-secondary"
+                disabled={editActionsDisabled}
+                onClick={() => onEditDetails?.(accrual)}
+              >
+                Редагувати реквізити
+              </button>
+              <button
+                type="button"
+                className="button-secondary"
+                disabled={editActionsDisabled}
+                onClick={() => onEditAmount?.(accrual)}
+              >
+                Змінити суму
+              </button>
+              <button
+                type="button"
+                className="button-secondary"
+                disabled={editActionsDisabled}
+                onClick={() => onEditSourceInvoice?.(accrual)}
+              >
+                Змінити рахунок
+              </button>
+            </div>
+          ) : null}
         </>
       ) : null}
     </section>
