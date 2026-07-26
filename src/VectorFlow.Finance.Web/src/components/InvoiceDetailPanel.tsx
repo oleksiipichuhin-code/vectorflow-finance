@@ -1,6 +1,7 @@
 import type { Invoice } from "../api";
 import {
   buildInvoiceDetailFields,
+  canAddInvoiceLineFromDetails,
   canEditInvoiceDueDateFromDetails,
   canIssueInvoiceFromDetails,
   detailLifecycleActionsFor
@@ -13,12 +14,15 @@ type InvoiceDetailPanelProps = {
   error: string | null;
   errorRetryable: boolean;
   closeDisabled?: boolean;
+  lineAddBusy?: boolean;
+  lineAddOpen?: boolean;
   dueDateEditBusy?: boolean;
   dueDateEditOpen?: boolean;
   issueBusy?: boolean;
   issueOpen?: boolean;
   onClose: () => void;
   onRetry: () => void;
+  onAddLine?: (invoice: Invoice) => void;
   onEditDueDate?: (invoice: Invoice) => void;
   onIssue?: (invoice: Invoice) => void;
 };
@@ -29,17 +33,25 @@ export function InvoiceDetailPanel({
   error,
   errorRetryable,
   closeDisabled = false,
+  lineAddBusy = false,
+  lineAddOpen = false,
   dueDateEditBusy = false,
   dueDateEditOpen = false,
   issueBusy = false,
   issueOpen = false,
   onClose,
   onRetry,
+  onAddLine,
   onEditDueDate,
   onIssue
 }: InvoiceDetailPanelProps) {
   const fields = invoice ? buildInvoiceDetailFields(invoice) : null;
   const lifecycleActions = invoice ? detailLifecycleActionsFor(invoice) : [];
+  const showAddLine =
+    invoice !== null &&
+    canAddInvoiceLineFromDetails(invoice) &&
+    lifecycleActions.includes("addLine") &&
+    Boolean(onAddLine);
   const showEditDueDate =
     invoice !== null &&
     canEditInvoiceDueDateFromDetails(invoice) &&
@@ -50,9 +62,15 @@ export function InvoiceDetailPanel({
     canIssueInvoiceFromDetails(invoice) &&
     lifecycleActions.includes("issue") &&
     Boolean(onIssue);
-  const showActions = showEditDueDate || showIssue;
+  const showActions = showAddLine || showEditDueDate || showIssue;
   const actionsDisabled =
-    closeDisabled || dueDateEditBusy || dueDateEditOpen || issueBusy || issueOpen;
+    closeDisabled ||
+    lineAddBusy ||
+    lineAddOpen ||
+    dueDateEditBusy ||
+    dueDateEditOpen ||
+    issueBusy ||
+    issueOpen;
 
   return (
     <section
@@ -159,6 +177,16 @@ export function InvoiceDetailPanel({
           {showActions ? (
             <div className="filter-actions invoice-detail-actions">
               <p className="meta">Дії</p>
+              {showAddLine ? (
+                <button
+                  type="button"
+                  className="button-secondary"
+                  disabled={actionsDisabled}
+                  onClick={() => onAddLine?.(invoice)}
+                >
+                  {lineAddBusy ? "Збереження…" : "Додати рядок"}
+                </button>
+              ) : null}
               {showEditDueDate ? (
                 <button
                   type="button"

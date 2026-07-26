@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   buildInvoiceDetailFields,
+  canAddInvoiceLineFromDetails,
   canEditInvoiceDueDateFromDetails,
   canIssueInvoiceFromDetails,
   canViewInvoiceDetails,
@@ -11,6 +12,7 @@ import {
   shouldReloadDetailAfterMutation,
   type BeginEditorOptions
 } from "./invoiceDetail.ts";
+import { canAddDraftInvoiceLine } from "./draftInvoiceLineAddEditor.ts";
 import { canEditDraftInvoiceDueDate } from "./draftInvoiceDueDateEditor.ts";
 import { isDraftInvoice } from "./invoiceIssue.ts";
 import type { Invoice } from "./api.ts";
@@ -163,12 +165,15 @@ describe("invoice detail deep-link coordination", () => {
 });
 
 describe("detailLifecycleActionsFor / issue handoff policy", () => {
-  it("shows editDueDate and issue actions only for Draft", () => {
+  it("shows addLine, editDueDate and issue actions only for Draft", () => {
     assert.deepEqual(detailLifecycleActionsFor({ status: "Draft" }), [
+      "addLine",
       "editDueDate",
       "issue"
     ]);
     assert.deepEqual(detailLifecycleActionsFor({ status: "Issued" }), []);
+    assert.equal(canAddInvoiceLineFromDetails({ status: "Draft" }), true);
+    assert.equal(canAddInvoiceLineFromDetails({ status: "Issued" }), false);
     assert.equal(canEditInvoiceDueDateFromDetails({ status: "Draft" }), true);
     assert.equal(canEditInvoiceDueDateFromDetails({ status: "Issued" }), false);
     assert.equal(canIssueInvoiceFromDetails({ status: "Draft" }), true);
@@ -188,6 +193,8 @@ describe("detailLifecycleActionsFor / issue handoff policy", () => {
       canEditInvoiceDueDateFromDetails(issued),
       canEditDraftInvoiceDueDate(issued)
     );
+    assert.equal(canAddInvoiceLineFromDetails(draft), canAddDraftInvoiceLine(draft));
+    assert.equal(canAddInvoiceLineFromDetails(issued), canAddDraftInvoiceLine(issued));
   });
 
   it("row and detail launches share BeginEditorOptions shape", () => {

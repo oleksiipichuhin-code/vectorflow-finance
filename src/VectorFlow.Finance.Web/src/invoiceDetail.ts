@@ -1,4 +1,5 @@
 import type { Invoice, InvoiceLine } from "./api.ts";
+import { canAddDraftInvoiceLine } from "./draftInvoiceLineAddEditor.ts";
 import { canEditDraftInvoiceDueDate } from "./draftInvoiceDueDateEditor.ts";
 import { isDraftInvoice } from "./invoiceIssue.ts";
 import { formatDate, formatMoney } from "./format.ts";
@@ -13,12 +14,15 @@ export function canViewInvoiceDetails(invoice: Pick<Invoice, "status">): boolean
  * Lifecycle handoff from the read-only detail panel.
  * Composes existing row-action eligibility — does not invent new rules.
  */
-export type InvoiceDetailLifecycleAction = "editDueDate" | "issue";
+export type InvoiceDetailLifecycleAction = "addLine" | "editDueDate" | "issue";
 
 export function detailLifecycleActionsFor(
   invoice: Pick<Invoice, "status">
 ): InvoiceDetailLifecycleAction[] {
   const actions: InvoiceDetailLifecycleAction[] = [];
+  if (canAddDraftInvoiceLine(invoice)) {
+    actions.push("addLine");
+  }
   if (canEditDraftInvoiceDueDate(invoice)) {
     actions.push("editDueDate");
   }
@@ -26,6 +30,12 @@ export function detailLifecycleActionsFor(
     actions.push("issue");
   }
   return actions;
+}
+
+export function canAddInvoiceLineFromDetails(
+  invoice: Pick<Invoice, "status">
+): boolean {
+  return detailLifecycleActionsFor(invoice).includes("addLine");
 }
 
 export function canEditInvoiceDueDateFromDetails(
