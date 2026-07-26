@@ -1,6 +1,7 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import {
   changeAccrualAmount,
+  changeAccrualSourceInvoice,
   createAccrual,
   listAccrualsPaged,
   recognizeAccrual,
@@ -29,10 +30,17 @@ import {
   canReverseAccrual,
   normalizeReversalReason
 } from "./accrualReverse";
+import {
+  canChangeAccrualSourceInvoice,
+  formatAccrualSourceInvoiceListCell,
+  interpretAccrualSourceInvoiceEditError,
+  type InvoicePickerSummary
+} from "./accrualSourceInvoice";
 import { EMPTY_ACCRUAL_FILTERS } from "./urlState";
 import { ListLoadState } from "./components/ListLoadState";
 import { Panel, StatusMessage } from "./components/Panel";
 import { formatDate, formatMoney } from "./format";
+import { SourceInvoicePicker } from "./SourceInvoicePicker";
 
 type AccrualsViewProps = {
   workspace: FinanceWorkspace | null;
@@ -99,12 +107,22 @@ export function AccrualsView({
   const [editingAmountIds, setEditingAmountIds] = useState<ReadonlySet<string>>(
     () => new Set()
   );
+  const [sourceInvoiceTarget, setSourceInvoiceTarget] = useState<Accrual | null>(null);
+  const [sourceInvoiceError, setSourceInvoiceError] = useState<string | null>(null);
+  const [sourceInvoiceSuccess, setSourceInvoiceSuccess] = useState<string | null>(null);
+  const [changingSourceInvoiceIds, setChangingSourceInvoiceIds] = useState<ReadonlySet<string>>(
+    () => new Set()
+  );
+  const [invoiceDisplayCache, setInvoiceDisplayCache] = useState<
+    ReadonlyMap<string, InvoicePickerSummary>
+  >(() => new Map());
 
   const requestSeq = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
   const recognizingIdsRef = useRef<Set<string>>(new Set());
   const reversingIdsRef = useRef<Set<string>>(new Set());
   const editingAmountIdsRef = useRef<Set<string>>(new Set());
+  const changingSourceInvoiceIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (workspace) {
@@ -144,6 +162,12 @@ export function AccrualsView({
       setEditAmountSuccess(null);
       editingAmountIdsRef.current = new Set();
       setEditingAmountIds(new Set());
+      setSourceInvoiceTarget(null);
+      setSourceInvoiceError(null);
+      setSourceInvoiceSuccess(null);
+      changingSourceInvoiceIdsRef.current = new Set();
+      setChangingSourceInvoiceIds(new Set());
+      setInvoiceDisplayCache(new Map());
       onDiscoveryChange?.(1, emptyFilters);
     }
   }, [workspace?.id, onDiscoveryChange]);
@@ -263,6 +287,9 @@ export function AccrualsView({
     setEditAmountSuccess(null);
     setEditAmountTarget(null);
     setEditAmountValue("");
+    setSourceInvoiceError(null);
+    setSourceInvoiceSuccess(null);
+    setSourceInvoiceTarget(null);
 
     try {
       const created = await createAccrual(workspace.id, {
@@ -313,6 +340,9 @@ export function AccrualsView({
     setReverseReason("");
     setReverseError(null);
     setReverseSuccess(null);
+    setSourceInvoiceError(null);
+    setSourceInvoiceSuccess(null);
+    setSourceInvoiceTarget(null);
 
     try {
       const recognized = await recognizeAccrual(workspace.id, accrual.id);
@@ -352,6 +382,9 @@ export function AccrualsView({
     setEditAmountSuccess(null);
     setEditAmountTarget(null);
     setEditAmountValue("");
+    setSourceInvoiceError(null);
+    setSourceInvoiceSuccess(null);
+    setSourceInvoiceTarget(null);
     setReverseTarget(accrual);
     setReverseReason("");
   }
@@ -378,6 +411,9 @@ export function AccrualsView({
     setReverseSuccess(null);
     setReverseTarget(null);
     setReverseReason("");
+    setSourceInvoiceError(null);
+    setSourceInvoiceSuccess(null);
+    setSourceInvoiceTarget(null);
     setEditAmountError(null);
     setEditAmountSuccess(null);
     setEditAmountTarget(accrual);
@@ -392,6 +428,110 @@ export function AccrualsView({
     setEditAmountTarget(null);
     setEditAmountValue("");
     setEditAmountError(null);
+  }
+
+  function beginChangeSourceInvoice(accrual: Accrual) {
+    if (
+      !canChangeAccrualSourceInvoice(accrual) ||
+      changingSourceInvoiceIdsRef.current.has(accrual.id)
+    ) {
+      return;
+    }
+
+    setCreateSuccess(null);
+    setRecognizeSuccess(null);
+    setRecognizeError(null);
+    setReverseError(null);
+    setReverseSuccess(null);
+    setReverseTarget(null);
+    setReverseReason("");
+    setEditAmountError(null);
+    setEditAmountSuccess(null);
+    setEditAmountTarget(null);
+    setEditAmountValue("");
+    setSourceInvoiceError(null);
+    setSourceInvoiceSuccess(null);
+    setSourceInvoiceTarget(accrual);
+  }
+
+  function cancelChangeSourceInvoice() {
+    if (
+      sourceInvoiceTarget &&
+      changingSourceInvoiceIdsRef.current.has(sourceInvoiceTarget.id)
+    ) {
+      return;
+    }
+
+    setSourceInvoiceTarget(null);
+    setSourceInvoiceError(null);
+  }
+
+  async function handleChangeSourceInvoice(
+    sourceInvoiceId: string | null,
+    selected: InvoicePickerSummary | null
+  ) {
+    if (!workspace || !sourceInvoiceTarget || !canChangeAccrualSourceInvoice(sourceInvoiceTarget)) {
+      return;
+    }
+
+    if (changingSourceInvoiceIdsRef.current.has(sourceInvoiceTarget.id)) {
+      return;
+    }
+
+    const target = sourceInvoiceTarget;
+    changingSourceInvoiceIdsRef.current.add(target.id);
+    setChangingSourceInvoiceIds(new Set(changingSourceInvoiceIdsRef.current));
+    setCreateSuccess(null);
+    setRecognizeSuccess(null);
+    setRecognizeError(null);
+    setReverseError(null);
+    setReverseSuccess(null);
+    setEditAmountError(null);
+    setEditAmountSuccess(null);
+    setSourceInvoiceError(null);
+    setSourceInvoiceSuccess(null);
+
+    try {
+      const updated = await changeAccrualSourceInvoice(
+        workspace.id,
+        target.id,
+        sourceInvoiceId
+      );
+      setSourceInvoiceTarget(null);
+      setHighlightedId(updated.id);
+      if (selected) {
+        setInvoiceDisplayCache((current) => {
+          const next = new Map(current);
+          next.set(selected.id, selected);
+          return next;
+        });
+        setSourceInvoiceSuccess(
+          `Рахунок-джерело нарахування «${updated.description}» змінено на ${selected.documentNumber}.`
+        );
+      } else {
+        setSourceInvoiceSuccess(
+          `Рахунок-джерело нарахування «${updated.description}» очищено.`
+        );
+      }
+      await loadPage(workspace.id, page, appliedFilters);
+    } catch (sourceErr) {
+      const failure = interpretAccrualSourceInvoiceEditError(sourceErr);
+      setSourceInvoiceError(failure.message);
+      if (!failure.keepEditorOpen) {
+        setSourceInvoiceTarget(null);
+      }
+
+      if (failure.refreshList) {
+        try {
+          await loadPage(workspace.id, page, appliedFilters);
+        } catch {
+          // Keep the source-invoice error; list refresh failure is secondary.
+        }
+      }
+    } finally {
+      changingSourceInvoiceIdsRef.current.delete(target.id);
+      setChangingSourceInvoiceIds(new Set(changingSourceInvoiceIdsRef.current));
+    }
   }
 
   async function handleEditAmount(event: FormEvent<HTMLFormElement>) {
@@ -426,6 +566,9 @@ export function AccrualsView({
     setReverseSuccess(null);
     setEditAmountError(null);
     setEditAmountSuccess(null);
+    setSourceInvoiceError(null);
+    setSourceInvoiceSuccess(null);
+    setSourceInvoiceTarget(null);
 
     try {
       const updated = await changeAccrualAmount(workspace.id, target.id, amount);
@@ -491,6 +634,9 @@ export function AccrualsView({
     setEditAmountSuccess(null);
     setEditAmountTarget(null);
     setEditAmountValue("");
+    setSourceInvoiceError(null);
+    setSourceInvoiceSuccess(null);
+    setSourceInvoiceTarget(null);
 
     try {
       const reversed = await reverseAccrual(workspace.id, target.id, reason);
@@ -723,6 +869,12 @@ export function AccrualsView({
         {editAmountSuccess ? (
           <StatusMessage tone="success">{editAmountSuccess}</StatusMessage>
         ) : null}
+        {sourceInvoiceError && !sourceInvoiceTarget ? (
+          <StatusMessage tone="error">{sourceInvoiceError}</StatusMessage>
+        ) : null}
+        {sourceInvoiceSuccess ? (
+          <StatusMessage tone="success">{sourceInvoiceSuccess}</StatusMessage>
+        ) : null}
         {reverseError ? <StatusMessage tone="error">{reverseError}</StatusMessage> : null}
         {reverseSuccess ? <StatusMessage tone="success">{reverseSuccess}</StatusMessage> : null}
 
@@ -765,6 +917,20 @@ export function AccrualsView({
               </button>
             </div>
           </form>
+        ) : null}
+
+        {workspace && sourceInvoiceTarget ? (
+          <SourceInvoicePicker
+            workspaceId={workspace.id}
+            accrualDescription={sourceInvoiceTarget.description}
+            baselineInvoiceId={sourceInvoiceTarget.sourceInvoiceId}
+            busy={changingSourceInvoiceIds.has(sourceInvoiceTarget.id)}
+            formError={sourceInvoiceError}
+            onSave={(sourceInvoiceId, selected) =>
+              void handleChangeSourceInvoice(sourceInvoiceId, selected)
+            }
+            onCancel={cancelChangeSourceInvoice}
+          />
         ) : null}
 
         {workspace && reverseTarget ? (
@@ -830,6 +996,7 @@ export function AccrualsView({
                     <th>Статус</th>
                     <th>Опис</th>
                     <th>Сума</th>
+                    <th>Рахунок</th>
                     <th>Дата визнання</th>
                     <th>Визнано</th>
                     <th>Сторновано</th>
@@ -842,10 +1009,19 @@ export function AccrualsView({
                     const recognizeBusy = recognizingIds.has(accrual.id);
                     const reverseBusy = reversingIds.has(accrual.id);
                     const editAmountBusy = editingAmountIds.has(accrual.id);
-                    const rowBusy = recognizeBusy || reverseBusy || editAmountBusy;
+                    const sourceInvoiceBusy = changingSourceInvoiceIds.has(accrual.id);
+                    const rowBusy =
+                      recognizeBusy || reverseBusy || editAmountBusy || sourceInvoiceBusy;
                     const showEditAmount = canEditAccrualAmount(accrual);
+                    const showSourceInvoice = canChangeAccrualSourceInvoice(accrual);
                     const showRecognize = canRecognizeAccrual(accrual);
                     const showReverse = canReverseAccrual(accrual);
+                    const sourceInvoiceLabel = formatAccrualSourceInvoiceListCell(
+                      accrual.sourceInvoiceId,
+                      accrual.sourceInvoiceId
+                        ? invoiceDisplayCache.get(accrual.sourceInvoiceId)
+                        : null
+                    );
                     return (
                     <tr
                       key={accrual.id}
@@ -856,6 +1032,7 @@ export function AccrualsView({
                       <td>{accrual.status}</td>
                       <td className="cell-wrap">{accrual.description}</td>
                       <td>{formatMoney(accrual.amount, accrual.currency)}</td>
+                      <td className="cell-wrap">{sourceInvoiceLabel}</td>
                       <td>{formatDate(accrual.recognitionDateUtc)}</td>
                       <td>{formatDate(accrual.recognizedAtUtc)}</td>
                       <td>
@@ -865,7 +1042,10 @@ export function AccrualsView({
                       </td>
                       <td className="cell-wrap">{accrual.reversalReason ?? "—"}</td>
                       <td>
-                        {showEditAmount || showRecognize || showReverse ? (
+                        {showEditAmount ||
+                        showSourceInvoice ||
+                        showRecognize ||
+                        showReverse ? (
                           <div className="filter-actions">
                             {showEditAmount ? (
                               <button
@@ -879,6 +1059,20 @@ export function AccrualsView({
                                 onClick={() => beginEditAmount(accrual)}
                               >
                                 {editAmountBusy ? "Збереження…" : "Змінити суму"}
+                              </button>
+                            ) : null}
+                            {showSourceInvoice ? (
+                              <button
+                                type="button"
+                                className="button-secondary"
+                                disabled={
+                                  rowBusy ||
+                                  loading ||
+                                  sourceInvoiceTarget?.id === accrual.id
+                                }
+                                onClick={() => beginChangeSourceInvoice(accrual)}
+                              >
+                                {sourceInvoiceBusy ? "Збереження…" : "Змінити рахунок"}
                               </button>
                             ) : null}
                             {showRecognize ? (

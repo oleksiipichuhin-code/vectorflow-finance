@@ -252,6 +252,17 @@ export function issueInvoice(workspaceId: string, invoiceId: string): Promise<In
   );
 }
 
+export function getInvoice(
+  workspaceId: string,
+  invoiceId: string,
+  signal?: AbortSignal
+): Promise<Invoice> {
+  return requestJson<Invoice>(
+    `/api/finance-workspaces/${workspaceId}/invoices/${invoiceId}`,
+    signal ? { signal } : undefined
+  );
+}
+
 export type Accrual = {
   id: string;
   financeWorkspaceId: string;
@@ -389,6 +400,20 @@ export function changeAccrualAmount(
     {
       method: "POST",
       body: JSON.stringify({ amount })
+    }
+  );
+}
+
+export function changeAccrualSourceInvoice(
+  workspaceId: string,
+  accrualId: string,
+  sourceInvoiceId: string | null
+): Promise<Accrual> {
+  return requestJson<Accrual>(
+    `/api/finance-workspaces/${workspaceId}/accruals/${accrualId}/change-source-invoice`,
+    {
+      method: "POST",
+      body: JSON.stringify({ sourceInvoiceId })
     }
   );
 }
