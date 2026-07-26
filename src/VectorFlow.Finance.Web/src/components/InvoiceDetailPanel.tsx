@@ -1,5 +1,9 @@
 import type { Invoice } from "../api";
-import { buildInvoiceDetailFields } from "../invoiceDetail";
+import {
+  buildInvoiceDetailFields,
+  canIssueInvoiceFromDetails,
+  detailLifecycleActionsFor
+} from "../invoiceDetail";
 import { StatusMessage } from "./Panel";
 
 type InvoiceDetailPanelProps = {
@@ -8,8 +12,11 @@ type InvoiceDetailPanelProps = {
   error: string | null;
   errorRetryable: boolean;
   closeDisabled?: boolean;
+  issueBusy?: boolean;
+  issueOpen?: boolean;
   onClose: () => void;
   onRetry: () => void;
+  onIssue?: (invoice: Invoice) => void;
 };
 
 export function InvoiceDetailPanel({
@@ -18,10 +25,19 @@ export function InvoiceDetailPanel({
   error,
   errorRetryable,
   closeDisabled = false,
+  issueBusy = false,
+  issueOpen = false,
   onClose,
-  onRetry
+  onRetry,
+  onIssue
 }: InvoiceDetailPanelProps) {
   const fields = invoice ? buildInvoiceDetailFields(invoice) : null;
+  const lifecycleActions = invoice ? detailLifecycleActionsFor(invoice) : [];
+  const showIssue =
+    invoice !== null &&
+    canIssueInvoiceFromDetails(invoice) &&
+    lifecycleActions.includes("issue") &&
+    Boolean(onIssue);
 
   return (
     <section
@@ -124,6 +140,20 @@ export function InvoiceDetailPanel({
           ) : (
             <p className="meta">Рядків немає.</p>
           )}
+
+          {showIssue ? (
+            <div className="filter-actions invoice-detail-actions">
+              <p className="meta">Дії</p>
+              <button
+                type="button"
+                className="button-secondary"
+                disabled={closeDisabled || issueBusy || issueOpen}
+                onClick={() => onIssue?.(invoice)}
+              >
+                {issueBusy ? "Виставлення…" : "Виставити"}
+              </button>
+            </div>
+          ) : null}
         </>
       ) : null}
     </section>

@@ -24,11 +24,15 @@ import {
 } from "./invoiceListQuery";
 import {
   canViewInvoiceDetails,
-  interpretInvoiceDetailLoadError
+  DETAIL_RELOAD_AFTER_MUTATION_FAILED_MESSAGE,
+  interpretInvoiceDetailLoadError,
+  shouldReloadDetailAfterMutation,
+  type BeginEditorOptions
 } from "./invoiceDetail";
 import {
   defaultDueDateInputValue,
   getInvoiceIssueReadiness,
+  interpretInvoiceIssueError,
   isDraftInvoice,
   toDueDateUtcIso
 } from "./invoiceIssue";
@@ -109,12 +113,14 @@ export function InvoicesView({
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [detailErrorRetryable, setDetailErrorRetryable] = useState(false);
+  const [issuingInvoiceId, setIssuingInvoiceId] = useState<string | null>(null);
 
   const requestSeq = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
   const detailAbortRef = useRef<AbortController | null>(null);
   const detailRequestSeq = useRef(0);
   const issueBusyRef = useRef(false);
+  const issuingInvoiceIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (workspace) {
@@ -277,15 +283,21 @@ export function InvoicesView({
     }
   }
 
-  function beginIssue(invoice: Invoice) {
+  function beginIssue(invoice: Invoice, options: BeginEditorOptions = {}) {
     if (!isDraftInvoice(invoice) || issueBusyRef.current) {
+      return;
+    }
+
+    if (issueTarget?.id === invoice.id) {
       return;
     }
 
     setCreateSuccess(null);
     setIssueError(null);
     setIssueSuccess(null);
-    dismissDetailFromUrl();
+    if (!options.preserveDetail) {
+      dismissDetailFromUrl();
+    }
 
     const readiness = getInvoiceIssueReadiness(invoice);
     if (readiness.ready) {
@@ -328,7 +340,12 @@ export function InvoicesView({
   }
 
   function isDetailRelatedPending(): boolean {
-    return Boolean(detailTargetId && issueBusyRef.current && issueTarget?.id === detailTargetId);
+    return Boolean(
+      detailTargetId &&
+        issueBusyRef.current &&
+        (issueTarget?.id === detailTargetId ||
+          issuingInvoiceIdRef.current === detailTargetId)
+    );
   }
 
   function closeDetailPanel() {
@@ -343,7 +360,27 @@ export function InvoicesView({
     dismissDetailFromUrl();
   }
 
-  async function loadInvoiceDetail(workspaceId: string, invoiceId: string) {
+  async function refreshDetailAfterMutation(invoiceId: string) {
+    if (!workspace || !shouldReloadDetailAfterMutation(detailTargetId, invoiceId)) {
+      return;
+    }
+
+    await loadInvoiceDetail(workspace.id, invoiceId, { afterSuccessfulMutation: true });
+  }
+
+  async function refreshDetailAfterEditorFailure(invoiceId: string) {
+    if (!workspace || !shouldReloadDetailAfterMutation(detailTargetId, invoiceId)) {
+      return;
+    }
+
+    await loadInvoiceDetail(workspace.id, invoiceId);
+  }
+
+  async function loadInvoiceDetail(
+    workspaceId: string,
+    invoiceId: string,
+    options: { afterSuccessfulMutation?: boolean } = {}
+  ) {
     detailAbortRef.current?.abort();
     const controller = new AbortController();
     detailAbortRef.current = controller;
@@ -380,8 +417,13 @@ export function InvoicesView({
       }
 
       setDetailLoading(false);
-      setDetailError(failure.message);
-      setDetailErrorRetryable(failure.kind === "retryable");
+      if (options.afterSuccessfulMutation && failure.kind === "retryable") {
+        setDetailError(DETAIL_RELOAD_AFTER_MUTATION_FAILED_MESSAGE);
+        setDetailErrorRetryable(true);
+      } else {
+        setDetailError(failure.message);
+        setDetailErrorRetryable(failure.kind === "retryable");
+      }
 
       if (failure.refreshList) {
         await loadPage(workspaceId, page, appliedFilters);
@@ -457,6 +499,8 @@ export function InvoicesView({
     }
 
     issueBusyRef.current = true;
+    issuingInvoiceIdRef.current = invoice.id;
+    setIssuingInvoiceId(invoice.id);
     setIssueBusy(true);
     setIssueError(null);
     setIssueSuccess(null);
@@ -499,18 +543,26 @@ export function InvoicesView({
         `Рахунок «${issued.documentNumber}» виставлено. Статус: ${issued.status}.`
       );
       await loadPage(workspace.id, page, appliedFilters);
+      await refreshDetailAfterMutation(issued.id);
     } catch (issueErr) {
-      setIssueError(
-        issueErr instanceof Error ? issueErr.message : "Не вдалося виставити рахунок."
-      );
-      setIssueTarget(null);
-      try {
-        await loadPage(workspace.id, page, appliedFilters);
-      } catch {
-        // Keep the issue error; list refresh failure is secondary.
+      const failure = interpretInvoiceIssueError(issueErr);
+      setIssueError(failure.message);
+      if (!failure.keepEditorOpen) {
+        setIssueTarget(null);
+      }
+
+      if (failure.refreshList) {
+        try {
+          await loadPage(workspace.id, page, appliedFilters);
+          await refreshDetailAfterEditorFailure(invoice.id);
+        } catch {
+          // Keep the issue error; list refresh failure is secondary.
+        }
       }
     } finally {
       issueBusyRef.current = false;
+      issuingInvoiceIdRef.current = null;
+      setIssuingInvoiceId(null);
       setIssueBusy(false);
     }
   }
@@ -868,8 +920,14 @@ export function InvoicesView({
             error={detailError}
             errorRetryable={detailErrorRetryable}
             closeDisabled={detailLoading || isDetailRelatedPending()}
+            issueBusy={
+              issueBusy &&
+              (issuingInvoiceId === detailTargetId || issueTarget?.id === detailTargetId)
+            }
+            issueOpen={Boolean(issueTarget && issueTarget.id === detailTargetId)}
             onClose={closeDetailPanel}
             onRetry={retryInvoiceDetail}
+            onIssue={(invoice) => beginIssue(invoice, { preserveDetail: true })}
           />
         ) : null}
 

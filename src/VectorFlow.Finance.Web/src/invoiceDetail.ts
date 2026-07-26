@@ -1,10 +1,45 @@
 import type { Invoice, InvoiceLine } from "./api.ts";
+import { isDraftInvoice } from "./invoiceIssue.ts";
 import { formatDate, formatMoney } from "./format.ts";
 
 const VIEWABLE_STATUSES = new Set(["Draft", "Issued"]);
 
 export function canViewInvoiceDetails(invoice: Pick<Invoice, "status">): boolean {
   return VIEWABLE_STATUSES.has(invoice.status);
+}
+
+/**
+ * Lifecycle handoff from the read-only detail panel.
+ * Composes existing row-action eligibility — does not invent new rules.
+ */
+export type InvoiceDetailLifecycleAction = "issue";
+
+export function detailLifecycleActionsFor(
+  invoice: Pick<Invoice, "status">
+): InvoiceDetailLifecycleAction[] {
+  return isDraftInvoice(invoice) ? ["issue"] : [];
+}
+
+export function canIssueInvoiceFromDetails(invoice: Pick<Invoice, "status">): boolean {
+  return detailLifecycleActionsFor(invoice).includes("issue");
+}
+
+export type BeginEditorOptions = {
+  /** Keep the open detail panel when launching issue prepare from it. */
+  preserveDetail?: boolean;
+};
+
+export const DETAIL_RELOAD_AFTER_MUTATION_FAILED_MESSAGE =
+  "Зміни збережено, але не вдалося оновити деталі. Натисніть «Спробувати знову».";
+
+/**
+ * After a successful issue mutation, reload detail when the same Invoice is open.
+ */
+export function shouldReloadDetailAfterMutation(
+  detailTargetId: string | null | undefined,
+  mutatedInvoiceId: string
+): boolean {
+  return Boolean(detailTargetId) && detailTargetId === mutatedInvoiceId;
 }
 
 export type InvoiceDetailLoadFailure = {
