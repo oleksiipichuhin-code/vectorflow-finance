@@ -75,11 +75,21 @@ import { DraftAccrualEditor } from "./components/DraftAccrualEditor";
 import { formatDate, formatMoney } from "./format";
 import { SourceInvoicePicker } from "./SourceInvoicePicker";
 
+type AccrualIdChangeOptions = {
+  replace?: boolean;
+};
+
 type AccrualsViewProps = {
   workspace: FinanceWorkspace | null;
   initialPage?: number;
   initialFilters?: AccrualListFilters;
+  /** URL-owned detail target; authoritative data still comes from getAccrual. */
+  selectedAccrualId?: string | null;
   onDiscoveryChange?: (page: number, filters: AccrualListFilters) => void;
+  onSelectedAccrualIdChange?: (
+    accrualId: string | null,
+    options?: AccrualIdChangeOptions
+  ) => void;
 };
 
 const emptyFilters: AccrualListFilters = { ...EMPTY_ACCRUAL_FILTERS };
@@ -92,7 +102,9 @@ export function AccrualsView({
   workspace,
   initialPage = 1,
   initialFilters = emptyFilters,
-  onDiscoveryChange
+  selectedAccrualId = null,
+  onDiscoveryChange,
+  onSelectedAccrualIdChange
 }: AccrualsViewProps) {
   const [draftFilters, setDraftFilters] = useState<AccrualListFilters>(() => ({
     ...emptyFilters,
@@ -234,18 +246,11 @@ export function AccrualsView({
       setDraftDetailsSuccess(null);
       editingDraftDetailsIdsRef.current = new Set();
       setEditingDraftDetailsIds(new Set());
-      detailAbortRef.current?.abort();
-      detailInvoiceAbortRef.current?.abort();
-      setDetailTargetId(null);
-      setDetailAccrual(null);
-      setDetailLoading(false);
-      setDetailError(null);
-      setDetailErrorRetryable(false);
-      setDetailSourceInvoice(sourceInvoiceDetailNone());
+      dismissDetailFromUrl({ replace: true });
       setInvoiceDisplayCache(new Map());
       onDiscoveryChange?.(1, emptyFilters);
     }
-  }, [workspace?.id, onDiscoveryChange]);
+  }, [workspace?.id, onDiscoveryChange, onSelectedAccrualIdChange, selectedAccrualId]);
 
   const loadPage = useCallback(
     async (workspaceId: string, nextPage: number, filters: AccrualListFilters) => {
@@ -370,7 +375,7 @@ export function AccrualsView({
     setDraftDetailsTarget(null);
     setDraftDetailsBaseline(null);
     setCreateSourceInvoicePickerOpen(false);
-    clearDetailPanel();
+    dismissDetailFromUrl();
 
     const selectedSource = createSourceInvoiceDisplay;
     const selectedSourceId = createSourceInvoiceId;
@@ -436,7 +441,7 @@ export function AccrualsView({
     setDraftDetailsSuccess(null);
     setDraftDetailsTarget(null);
     setDraftDetailsBaseline(null);
-    clearDetailPanel();
+    dismissDetailFromUrl();
     setCreateSourceInvoicePickerOpen(true);
   }
 
@@ -502,7 +507,7 @@ export function AccrualsView({
     setDraftDetailsTarget(null);
     setDraftDetailsBaseline(null);
     if (!options.preserveDetail) {
-      clearDetailPanel();
+      dismissDetailFromUrl();
     }
 
     try {
@@ -561,7 +566,7 @@ export function AccrualsView({
     setDraftDetailsBaseline(null);
     setCreateSourceInvoicePickerOpen(false);
     if (!options.preserveDetail) {
-      clearDetailPanel();
+      dismissDetailFromUrl();
     }
     setReverseTarget(accrual);
     setReverseReason("");
@@ -602,7 +607,7 @@ export function AccrualsView({
     setDraftDetailsBaseline(null);
     setCreateSourceInvoicePickerOpen(false);
     if (!options.preserveDetail) {
-      clearDetailPanel();
+      dismissDetailFromUrl();
     }
     setEditAmountError(null);
     setEditAmountSuccess(null);
@@ -649,7 +654,7 @@ export function AccrualsView({
     setDraftDetailsBaseline(null);
     setCreateSourceInvoicePickerOpen(false);
     if (!options.preserveDetail) {
-      clearDetailPanel();
+      dismissDetailFromUrl();
     }
     setSourceInvoiceError(null);
     setSourceInvoiceSuccess(null);
@@ -697,7 +702,7 @@ export function AccrualsView({
     setSourceInvoiceTarget(null);
     setCreateSourceInvoicePickerOpen(false);
     if (!options.preserveDetail) {
-      clearDetailPanel();
+      dismissDetailFromUrl();
     }
     setDraftDetailsError(null);
     setDraftDetailsSuccess(null);
@@ -727,6 +732,14 @@ export function AccrualsView({
     setDetailError(null);
     setDetailErrorRetryable(false);
     setDetailSourceInvoice(sourceInvoiceDetailNone());
+  }
+
+  /** Close detail locally and drop accrualId from URL when it was open. */
+  function dismissDetailFromUrl(options: AccrualIdChangeOptions = {}) {
+    clearDetailPanel();
+    if (selectedAccrualId) {
+      onSelectedAccrualIdChange?.(null, options);
+    }
   }
 
   function isDetailRelatedEditorPending(): boolean {
@@ -763,8 +776,54 @@ export function AccrualsView({
     }
 
     closeOpenEditorsForDetailClose();
-    clearDetailPanel();
+    dismissDetailFromUrl();
   }
+
+  /**
+   * URL is the navigation source for which detail is open.
+   * getAccrual remains authoritative for panel data.
+   */
+  useEffect(() => {
+    if (!workspace) {
+      return;
+    }
+
+    if (!selectedAccrualId) {
+      if (detailTargetId !== null && !isDetailRelatedEditorPending()) {
+        closeOpenEditorsForDetailClose();
+        clearDetailPanel();
+      }
+      return;
+    }
+
+    if (detailTargetId === selectedAccrualId) {
+      return;
+    }
+
+    setCreateSuccess(null);
+    setRecognizeSuccess(null);
+    setRecognizeError(null);
+    setReverseError(null);
+    setReverseSuccess(null);
+    setReverseTarget(null);
+    setReverseReason("");
+    setEditAmountError(null);
+    setEditAmountSuccess(null);
+    setEditAmountTarget(null);
+    setEditAmountValue("");
+    setSourceInvoiceError(null);
+    setSourceInvoiceSuccess(null);
+    setSourceInvoiceTarget(null);
+    setDraftDetailsError(null);
+    setDraftDetailsSuccess(null);
+    setDraftDetailsTarget(null);
+    setDraftDetailsBaseline(null);
+    setCreateSourceInvoicePickerOpen(false);
+
+    void loadAccrualDetail(workspace.id, selectedAccrualId);
+    // loadAccrualDetail is stable enough via refs; intentionally keyed on selection + workspace.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- avoid reload loops on detail state
+  }, [workspace?.id, selectedAccrualId]);
 
   async function refreshDetailAfterMutation(accrualId: string) {
     if (!workspace || !shouldReloadDetailAfterMutation(detailTargetId, accrualId)) {
@@ -909,6 +968,10 @@ export function AccrualsView({
       return;
     }
 
+    if (selectedAccrualId === accrual.id && detailTargetId === accrual.id) {
+      return;
+    }
+
     setCreateSuccess(null);
     setRecognizeSuccess(null);
     setRecognizeError(null);
@@ -929,7 +992,7 @@ export function AccrualsView({
     setDraftDetailsBaseline(null);
     setCreateSourceInvoicePickerOpen(false);
 
-    void loadAccrualDetail(workspace.id, accrual.id);
+    onSelectedAccrualIdChange?.(accrual.id);
   }
 
   function retryAccrualDetail() {

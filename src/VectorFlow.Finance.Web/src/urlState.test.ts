@@ -5,7 +5,10 @@ import {
   EMPTY_INVOICE_FILTERS,
   buildUrlSearch,
   draftInvoicesDiscovery,
-  parseUrlSearch
+  parseAccrualIdParam,
+  parseUrlSearch,
+  withAccrualId,
+  withoutAccrualId
 } from "./urlState.ts";
 
 describe("urlState", () => {
@@ -13,6 +16,7 @@ describe("urlState", () => {
     const state = parseUrlSearch("");
     assert.equal(state.view, "dashboard");
     assert.equal(state.workspaceId, null);
+    assert.equal(state.accrualId, null);
     assert.equal(state.discovery.page, 1);
     assert.deepEqual(state.discovery.invoiceFilters, EMPTY_INVOICE_FILTERS);
     assert.deepEqual(state.discovery.accrualFilters, EMPTY_ACCRUAL_FILTERS);
@@ -24,6 +28,7 @@ describe("urlState", () => {
     const search = buildUrlSearch({
       view: "invoices",
       workspaceId,
+      accrualId: null,
       discovery
     });
 
@@ -35,6 +40,7 @@ describe("urlState", () => {
     const parsed = parseUrlSearch(search);
     assert.equal(parsed.view, "invoices");
     assert.equal(parsed.workspaceId, workspaceId);
+    assert.equal(parsed.accrualId, null);
     assert.equal(parsed.discovery.page, 1);
     assert.equal(parsed.discovery.invoiceFilters.status, "Draft");
     assert.equal(parsed.discovery.invoiceFilters.documentNumber, "");
@@ -44,6 +50,7 @@ describe("urlState", () => {
     const search = buildUrlSearch({
       view: "invoices",
       workspaceId: null,
+      accrualId: "a1111111-1111-1111-1111-111111111111",
       discovery: {
         page: 2,
         invoiceFilters: {
@@ -67,6 +74,7 @@ describe("urlState", () => {
     );
     assert.equal(search.includes("descriptionPrefix"), false);
     assert.equal(search.includes("recognitionFrom"), false);
+    assert.equal(search.includes("accrualId"), false);
   });
 
   it("parses accrual discovery and ignores invalid page or dates", () => {
@@ -79,6 +87,7 @@ describe("urlState", () => {
     assert.equal(parsed.discovery.accrualFilters.status, "");
     assert.equal(parsed.discovery.accrualFilters.recognitionFromDate, "2026-07-10");
     assert.equal(parsed.discovery.accrualFilters.recognitionToDate, "");
+    assert.equal(parsed.accrualId, null);
   });
 
   it("round-trips accrual status filter and normalizes unknown values", () => {
@@ -86,6 +95,7 @@ describe("urlState", () => {
     const search = buildUrlSearch({
       view: "accruals",
       workspaceId,
+      accrualId: null,
       discovery: {
         page: 1,
         invoiceFilters: { ...EMPTY_INVOICE_FILTERS },
@@ -114,6 +124,7 @@ describe("urlState", () => {
     const search = buildUrlSearch({
       view: "accruals",
       workspaceId: null,
+      accrualId: null,
       discovery: {
         page: 3,
         invoiceFilters: { ...EMPTY_INVOICE_FILTERS },
@@ -136,6 +147,7 @@ describe("urlState", () => {
     const parsed = parseUrlSearch("?view=ledger&workspaceId=not-a-guid&status=Draft");
     assert.equal(parsed.view, "dashboard");
     assert.equal(parsed.workspaceId, null);
+    assert.equal(parsed.accrualId, null);
   });
 
   it("draftInvoicesDiscovery clears conflicting invoice filters and page", () => {
@@ -145,5 +157,130 @@ describe("urlState", () => {
     assert.equal(discovery.invoiceFilters.documentNumber, "");
     assert.equal(discovery.invoiceFilters.createdFromDate, "");
     assert.equal(discovery.invoiceFilters.createdToDate, "");
+  });
+});
+
+describe("accrual detail deep-link URL policy", () => {
+  const workspaceId = "11111111-1111-1111-1111-111111111111";
+  const accrualId = "a1111111-1111-1111-1111-111111111111";
+  const otherAccrualId = "a2222222-2222-2222-2222-222222222222";
+
+  const baseAccrualsState = {
+    view: "accruals" as const,
+    workspaceId,
+    accrualId: null as string | null,
+    discovery: {
+      page: 2,
+      invoiceFilters: { ...EMPTY_INVOICE_FILTERS },
+      accrualFilters: {
+        descriptionPrefix: "Rent",
+        status: "Draft" as const,
+        recognitionFromDate: "2026-07-01",
+        recognitionToDate: "2026-07-31"
+      }
+    }
+  };
+
+  it("open detail adds accrualId and preserves filters/page", () => {
+    const opened = withAccrualId(baseAccrualsState, accrualId);
+    const search = buildUrlSearch(opened);
+    assert.equal(
+      search,
+      "?view=accruals&workspaceId=11111111-1111-1111-1111-111111111111&descriptionPrefix=Rent&status=Draft&recognitionFrom=2026-07-01&recognitionTo=2026-07-31&page=2&accrualId=a1111111-1111-1111-1111-111111111111"
+    );
+    const parsed = parseUrlSearch(search);
+    assert.equal(parsed.accrualId, accrualId);
+    assert.equal(parsed.discovery.page, 2);
+    assert.equal(parsed.discovery.accrualFilters.status, "Draft");
+    assert.equal(parsed.discovery.accrualFilters.descriptionPrefix, "Rent");
+  });
+
+  it("close detail removes only accrualId", () => {
+    const opened = withAccrualId(baseAccrualsState, accrualId);
+    const closed = withoutAccrualId(opened);
+    const search = buildUrlSearch(closed);
+    assert.equal(search.includes("accrualId"), false);
+    assert.equal(
+      search,
+      "?view=accruals&workspaceId=11111111-1111-1111-1111-111111111111&descriptionPrefix=Rent&status=Draft&recognitionFrom=2026-07-01&recognitionTo=2026-07-31&page=2"
+    );
+  });
+
+  it("initial URL with accrualId restores deep link without requiring list presence", () => {
+    const parsed = parseUrlSearch(
+      `?view=accruals&workspaceId=${workspaceId}&status=Recognized&page=3&accrualId=${accrualId}`
+    );
+    assert.equal(parsed.accrualId, accrualId);
+    assert.equal(parsed.discovery.page, 3);
+    assert.equal(parsed.discovery.accrualFilters.status, "Recognized");
+  });
+
+  it("switching accrualId updates only the deep-link target", () => {
+    const first = withAccrualId(baseAccrualsState, accrualId);
+    const second = withAccrualId(first, otherAccrualId);
+    const search = buildUrlSearch(second);
+    assert.match(search, new RegExp(`accrualId=${otherAccrualId}`));
+    assert.equal(search.includes(accrualId), false);
+    assert.equal(parseUrlSearch(search).discovery.accrualFilters.status, "Draft");
+  });
+
+  it("invalid GUID accrualId does not become a detail target", () => {
+    assert.equal(parseAccrualIdParam("not-a-guid"), null);
+    assert.equal(parseAccrualIdParam(""), null);
+    assert.equal(parseAccrualIdParam("   "), null);
+    const parsed = parseUrlSearch(
+      "?view=accruals&status=Draft&accrualId=not-a-guid&page=2"
+    );
+    assert.equal(parsed.accrualId, null);
+    assert.equal(parsed.discovery.page, 2);
+    assert.equal(parsed.discovery.accrualFilters.status, "Draft");
+    const normalized = buildUrlSearch(parsed);
+    assert.equal(normalized.includes("accrualId"), false);
+    assert.match(normalized, /status=Draft/);
+    assert.match(normalized, /page=2/);
+  });
+
+  it("omits accrualId outside accruals view even if present in state", () => {
+    const search = buildUrlSearch({
+      view: "dashboard",
+      workspaceId,
+      accrualId,
+      discovery: baseAccrualsState.discovery
+    });
+    assert.equal(search.includes("accrualId"), false);
+  });
+
+  it("ignores accrualId query when view is not accruals", () => {
+    const parsed = parseUrlSearch(
+      `?view=invoices&status=Draft&accrualId=${accrualId}`
+    );
+    assert.equal(parsed.view, "invoices");
+    assert.equal(parsed.accrualId, null);
+  });
+
+  it("mutation coordination keeps accrualId when filters stay put", () => {
+    const before = withAccrualId(baseAccrualsState, accrualId);
+    const afterLifecycle = {
+      ...before,
+      discovery: {
+        ...before.discovery,
+        accrualFilters: {
+          ...before.discovery.accrualFilters,
+          status: "Draft" as const
+        }
+      }
+    };
+    assert.equal(afterLifecycle.accrualId, accrualId);
+    assert.match(buildUrlSearch(afterLifecycle), new RegExp(`accrualId=${accrualId}`));
+  });
+
+  it("back/forward search pairs differ only by accrualId (no loop helpers)", () => {
+    const listOnly = buildUrlSearch(baseAccrualsState);
+    const withDetail = buildUrlSearch(withAccrualId(baseAccrualsState, accrualId));
+    assert.notEqual(listOnly, withDetail);
+    assert.equal(
+      buildUrlSearch(withoutAccrualId(withAccrualId(baseAccrualsState, accrualId))),
+      listOnly
+    );
   });
 });

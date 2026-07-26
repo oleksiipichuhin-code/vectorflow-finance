@@ -32,11 +32,17 @@ function readInitialUrlState(): AppUrlState {
   return parseUrlSearch(window.location.search);
 }
 
+export type AccrualIdChangeOptions = {
+  /** Use replaceState instead of pushState (404 / normalize recovery). */
+  replace?: boolean;
+};
+
 export default function App() {
   const initialUrl = useRef(readInitialUrlState()).current;
 
   const [view, setView] = useState<AppView>(initialUrl.view);
   const [discovery, setDiscovery] = useState<ListDiscovery>(initialUrl.discovery);
+  const [accrualId, setAccrualId] = useState<string | null>(initialUrl.accrualId);
   const [listEpoch, setListEpoch] = useState(0);
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
 
@@ -60,6 +66,7 @@ export default function App() {
   const [workspaceBusy, setWorkspaceBusy] = useState(false);
 
   const skipUrlWrite = useRef(true);
+  const urlWriteModeRef = useRef<"push" | "replace">("push");
 
   const refreshHealth = useCallback(async () => {
     setHealthLoading(true);
@@ -119,6 +126,7 @@ export default function App() {
       const expected = buildUrlSearch({
         view: initialUrl.view,
         workspaceId: initialUrl.workspaceId,
+        accrualId: initialUrl.accrualId,
         discovery: initialUrl.discovery
       });
       if (window.location.search !== expected) {
@@ -130,15 +138,21 @@ export default function App() {
     const next: AppUrlState = {
       view,
       workspaceId: workspace?.id ?? null,
+      accrualId: view === "accruals" ? accrualId : null,
       discovery
     };
     const search = buildUrlSearch(next);
     const nextUrl = `${window.location.pathname}${search}`;
     const current = `${window.location.pathname}${window.location.search}`;
     if (current !== nextUrl) {
-      window.history.pushState(null, "", nextUrl);
+      if (urlWriteModeRef.current === "replace") {
+        window.history.replaceState(null, "", nextUrl);
+      } else {
+        window.history.pushState(null, "", nextUrl);
+      }
     }
-  }, [view, workspace?.id, discovery, initialUrl]);
+    urlWriteModeRef.current = "push";
+  }, [view, workspace?.id, discovery, accrualId, initialUrl]);
 
   useEffect(() => {
     function onPopState() {
@@ -146,6 +160,7 @@ export default function App() {
       skipUrlWrite.current = true;
       setView(parsed.view);
       setDiscovery(parsed.discovery);
+      setAccrualId(parsed.view === "accruals" ? parsed.accrualId : null);
       setListEpoch((value) => value + 1);
 
       if (parsed.workspaceId) {
@@ -164,10 +179,14 @@ export default function App() {
     if ((next === "invoices" || next === "accruals") && !workspace) {
       setView("workspace");
       setDiscovery(createEmptyDiscovery());
+      setAccrualId(null);
       return;
     }
 
     setView(next);
+    if (next !== "accruals") {
+      setAccrualId(null);
+    }
     if (next !== "invoices" && next !== "accruals") {
       setDiscovery((current) => ({
         ...current,
@@ -198,6 +217,16 @@ export default function App() {
     []
   );
 
+  const handleAccrualIdChange = useCallback(
+    (nextAccrualId: string | null, options?: AccrualIdChangeOptions) => {
+      if (options?.replace) {
+        urlWriteModeRef.current = "replace";
+      }
+      setAccrualId(nextAccrualId);
+    },
+    []
+  );
+
   const showDraftInvoices = useCallback(() => {
     if (!workspace) {
       setView("workspace");
@@ -205,6 +234,7 @@ export default function App() {
     }
 
     setDiscovery(draftInvoicesDiscovery());
+    setAccrualId(null);
     setListEpoch((value) => value + 1);
     setView("invoices");
   }, [workspace]);
@@ -213,6 +243,7 @@ export default function App() {
     const search = buildUrlSearch({
       view,
       workspaceId: workspace?.id ?? null,
+      accrualId: view === "accruals" ? accrualId : null,
       discovery
     });
     const href = `${window.location.origin}${window.location.pathname}${search}`;
@@ -225,7 +256,7 @@ export default function App() {
     }
 
     window.setTimeout(() => setCopyFeedback(null), 2500);
-  }, [view, workspace?.id, discovery]);
+  }, [view, workspace?.id, discovery, accrualId]);
 
   async function handleLoadWorkspace(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -337,7 +368,9 @@ export default function App() {
           workspace={workspace}
           initialPage={discovery.page}
           initialFilters={discovery.accrualFilters}
+          selectedAccrualId={accrualId}
           onDiscoveryChange={handleAccrualDiscoveryChange}
+          onSelectedAccrualIdChange={handleAccrualIdChange}
         />
       ) : null}
     </main>

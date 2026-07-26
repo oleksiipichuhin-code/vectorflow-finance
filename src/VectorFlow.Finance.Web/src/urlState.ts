@@ -23,6 +23,8 @@ export type ListDiscovery = {
 export type AppUrlState = {
   view: AppView;
   workspaceId: string | null;
+  /** Accruals detail deep-link; omitted outside accruals view. */
+  accrualId: string | null;
   discovery: ListDiscovery;
 };
 
@@ -52,6 +54,44 @@ export function isAppView(value: string | null | undefined): value is AppView {
 
 export function isWorkspaceId(value: string | null | undefined): value is string {
   return typeof value === "string" && UUID_RE.test(value.trim());
+}
+
+/** Same GUID shape as workspace ids; invalid values never become detail targets. */
+export function isAccrualId(value: string | null | undefined): value is string {
+  return isWorkspaceId(value);
+}
+
+/**
+ * Parse accrualId query value.
+ * Missing/blank/invalid → null (no API call; normalize strips the param).
+ */
+export function parseAccrualIdParam(value: string | null | undefined): string | null {
+  if (value == null) {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  return isAccrualId(trimmed) ? trimmed : null;
+}
+
+/** Open detail: set accrualId while preserving all other AppUrlState fields. */
+export function withAccrualId(state: AppUrlState, accrualId: string | null): AppUrlState {
+  return {
+    ...state,
+    accrualId: accrualId && isAccrualId(accrualId) ? accrualId : null
+  };
+}
+
+/** Close detail: clear only accrualId. */
+export function withoutAccrualId(state: AppUrlState): AppUrlState {
+  return {
+    ...state,
+    accrualId: null
+  };
 }
 
 function parsePage(value: string | null): number {
@@ -109,6 +149,7 @@ export function parseUrlSearch(search: string): AppUrlState {
 
   const workspaceRaw = params.get("workspaceId")?.trim() ?? "";
   const workspaceId = isWorkspaceId(workspaceRaw) ? workspaceRaw : null;
+  const accrualId = parseAccrualIdParam(params.get("accrualId"));
 
   const page = parsePage(params.get("page"));
 
@@ -129,6 +170,7 @@ export function parseUrlSearch(search: string): AppUrlState {
   return {
     view,
     workspaceId,
+    accrualId: view === "accruals" ? accrualId : null,
     discovery: {
       page,
       invoiceFilters,
@@ -189,6 +231,9 @@ export function buildUrlSearch(state: AppUrlState): string {
     setIfPresent(params, "recognitionTo", filters.recognitionToDate);
     if (page > 1) {
       params.set("page", String(page));
+    }
+    if (state.accrualId && isAccrualId(state.accrualId)) {
+      params.set("accrualId", state.accrualId);
     }
   }
 

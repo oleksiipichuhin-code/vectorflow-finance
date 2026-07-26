@@ -221,6 +221,31 @@ describe("detail panel close contract", () => {
   });
 });
 
+describe("detail deep-link load coordination", () => {
+  it("404 detail load clears accrual data and refreshes list without mutation", () => {
+    const failure = interpretAccrualDetailLoadError(
+      new FakeFinanceApiRequestError("Missing", 404, "NotFound")
+    );
+    assert.equal(failure.kind, "not_found");
+    assert.equal(failure.refreshList, true);
+    assert.equal(failure.clearAccrualData, true);
+  });
+
+  it("retryable detail load keeps deep-link target recoverable", () => {
+    const failure = interpretAccrualDetailLoadError(new Error("Failed to fetch"));
+    assert.equal(failure.kind, "retryable");
+    assert.equal(failure.refreshList, false);
+    assert.equal(failure.clearAccrualData, true);
+  });
+
+  it("stale selection protection compares detail target to requested id", () => {
+    const openId = "a1111111-1111-1111-1111-111111111111";
+    const lateId = "a2222222-2222-2222-2222-222222222222";
+    assert.equal(shouldReloadDetailAfterMutation(openId, openId), true);
+    assert.equal(shouldReloadDetailAfterMutation(openId, lateId), false);
+  });
+});
+
 describe("canEditAccrualFromDetails", () => {
   it("allows edit actions for Draft", () => {
     assert.equal(canEditAccrualFromDetails({ status: "Draft" }), true);
