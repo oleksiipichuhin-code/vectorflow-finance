@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   buildInvoiceDetailFields,
+  canEditInvoiceDueDateFromDetails,
   canIssueInvoiceFromDetails,
   canViewInvoiceDetails,
   DETAIL_RELOAD_AFTER_MUTATION_FAILED_MESSAGE,
@@ -10,6 +11,7 @@ import {
   shouldReloadDetailAfterMutation,
   type BeginEditorOptions
 } from "./invoiceDetail.ts";
+import { canEditDraftInvoiceDueDate } from "./draftInvoiceDueDateEditor.ts";
 import { isDraftInvoice } from "./invoiceIssue.ts";
 import type { Invoice } from "./api.ts";
 
@@ -161,9 +163,14 @@ describe("invoice detail deep-link coordination", () => {
 });
 
 describe("detailLifecycleActionsFor / issue handoff policy", () => {
-  it("shows issue action only for Draft", () => {
-    assert.deepEqual(detailLifecycleActionsFor({ status: "Draft" }), ["issue"]);
+  it("shows editDueDate and issue actions only for Draft", () => {
+    assert.deepEqual(detailLifecycleActionsFor({ status: "Draft" }), [
+      "editDueDate",
+      "issue"
+    ]);
     assert.deepEqual(detailLifecycleActionsFor({ status: "Issued" }), []);
+    assert.equal(canEditInvoiceDueDateFromDetails({ status: "Draft" }), true);
+    assert.equal(canEditInvoiceDueDateFromDetails({ status: "Issued" }), false);
     assert.equal(canIssueInvoiceFromDetails({ status: "Draft" }), true);
     assert.equal(canIssueInvoiceFromDetails({ status: "Issued" }), false);
   });
@@ -173,6 +180,14 @@ describe("detailLifecycleActionsFor / issue handoff policy", () => {
     const issued = sampleInvoice({ status: "Issued" });
     assert.equal(canIssueInvoiceFromDetails(draft), isDraftInvoice(draft));
     assert.equal(canIssueInvoiceFromDetails(issued), isDraftInvoice(issued));
+    assert.equal(
+      canEditInvoiceDueDateFromDetails(draft),
+      canEditDraftInvoiceDueDate(draft)
+    );
+    assert.equal(
+      canEditInvoiceDueDateFromDetails(issued),
+      canEditDraftInvoiceDueDate(issued)
+    );
   });
 
   it("row and detail launches share BeginEditorOptions shape", () => {

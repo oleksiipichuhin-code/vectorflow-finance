@@ -30,6 +30,12 @@ import {
   type BeginEditorOptions
 } from "./invoiceDetail";
 import {
+  applyDraftInvoiceDueDateChange,
+  canEditDraftInvoiceDueDate,
+  initialDueDateInputValue,
+  interpretDraftInvoiceDueDateEditError
+} from "./draftInvoiceDueDateEditor";
+import {
   defaultDueDateInputValue,
   getInvoiceIssueReadiness,
   interpretInvoiceIssueError,
@@ -108,6 +114,12 @@ export function InvoicesView({
   const [issueBusy, setIssueBusy] = useState(false);
   const [issueError, setIssueError] = useState<string | null>(null);
   const [issueSuccess, setIssueSuccess] = useState<string | null>(null);
+  const [dueDateEditTarget, setDueDateEditTarget] = useState<Invoice | null>(null);
+  const [dueDateEditValue, setDueDateEditValue] = useState("");
+  const [dueDateEditBusy, setDueDateEditBusy] = useState(false);
+  const [dueDateEditError, setDueDateEditError] = useState<string | null>(null);
+  const [dueDateEditSuccess, setDueDateEditSuccess] = useState<string | null>(null);
+  const [savingDueDateInvoiceId, setSavingDueDateInvoiceId] = useState<string | null>(null);
   const [detailTargetId, setDetailTargetId] = useState<string | null>(null);
   const [detailInvoice, setDetailInvoice] = useState<Invoice | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -121,6 +133,8 @@ export function InvoicesView({
   const detailRequestSeq = useRef(0);
   const issueBusyRef = useRef(false);
   const issuingInvoiceIdRef = useRef<string | null>(null);
+  const dueDateEditBusyRef = useRef(false);
+  const savingDueDateInvoiceIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (workspace) {
@@ -148,6 +162,10 @@ export function InvoicesView({
       setIssueTarget(null);
       setIssueError(null);
       setIssueSuccess(null);
+      setDueDateEditTarget(null);
+      setDueDateEditValue("");
+      setDueDateEditError(null);
+      setDueDateEditSuccess(null);
       dismissDetailFromUrl({ replace: true });
       onDiscoveryChange?.(1, emptyFilters);
     }
@@ -254,6 +272,8 @@ export function InvoicesView({
     setCreateSuccess(null);
     setIssueError(null);
     setIssueSuccess(null);
+    setDueDateEditError(null);
+    setDueDateEditSuccess(null);
     dismissDetailFromUrl();
 
     try {
@@ -269,6 +289,8 @@ export function InvoicesView({
       setPage(1);
       setHighlightedId(created.id);
       setIssueTarget(null);
+      setDueDateEditTarget(null);
+      setDueDateEditValue("");
       setCreateSuccess(
         `Чернетку рахунка «${created.documentNumber}» створено. Запис показано у списку нижче.`
       );
@@ -284,7 +306,7 @@ export function InvoicesView({
   }
 
   function beginIssue(invoice: Invoice, options: BeginEditorOptions = {}) {
-    if (!isDraftInvoice(invoice) || issueBusyRef.current) {
+    if (!isDraftInvoice(invoice) || issueBusyRef.current || dueDateEditBusyRef.current) {
       return;
     }
 
@@ -295,6 +317,10 @@ export function InvoicesView({
     setCreateSuccess(null);
     setIssueError(null);
     setIssueSuccess(null);
+    setDueDateEditError(null);
+    setDueDateEditSuccess(null);
+    setDueDateEditTarget(null);
+    setDueDateEditValue("");
     if (!options.preserveDetail) {
       dismissDetailFromUrl();
     }
@@ -323,6 +349,43 @@ export function InvoicesView({
     setIssueError(null);
   }
 
+  function beginDueDateEdit(invoice: Invoice, options: BeginEditorOptions = {}) {
+    if (
+      !canEditDraftInvoiceDueDate(invoice) ||
+      dueDateEditBusyRef.current ||
+      issueBusyRef.current
+    ) {
+      return;
+    }
+
+    if (dueDateEditTarget?.id === invoice.id) {
+      return;
+    }
+
+    setCreateSuccess(null);
+    setIssueError(null);
+    setIssueSuccess(null);
+    setIssueTarget(null);
+    setDueDateEditError(null);
+    setDueDateEditSuccess(null);
+    if (!options.preserveDetail) {
+      dismissDetailFromUrl();
+    }
+
+    setDueDateEditTarget(invoice);
+    setDueDateEditValue(initialDueDateInputValue(invoice));
+  }
+
+  function cancelDueDateEdit() {
+    if (dueDateEditBusyRef.current) {
+      return;
+    }
+
+    setDueDateEditTarget(null);
+    setDueDateEditValue("");
+    setDueDateEditError(null);
+  }
+
   function clearDetailPanel() {
     detailAbortRef.current?.abort();
     setDetailTargetId(null);
@@ -340,12 +403,28 @@ export function InvoicesView({
   }
 
   function isDetailRelatedPending(): boolean {
-    return Boolean(
-      detailTargetId &&
-        issueBusyRef.current &&
-        (issueTarget?.id === detailTargetId ||
-          issuingInvoiceIdRef.current === detailTargetId)
-    );
+    if (!detailTargetId) {
+      return false;
+    }
+
+    const issuePending =
+      issueBusyRef.current &&
+      (issueTarget?.id === detailTargetId ||
+        issuingInvoiceIdRef.current === detailTargetId);
+    const dueDatePending =
+      dueDateEditBusyRef.current &&
+      (dueDateEditTarget?.id === detailTargetId ||
+        savingDueDateInvoiceIdRef.current === detailTargetId);
+
+    return Boolean(issuePending || dueDatePending);
+  }
+
+  function closeOpenEditorsForDetailClose() {
+    setIssueTarget(null);
+    setIssueError(null);
+    setDueDateEditTarget(null);
+    setDueDateEditValue("");
+    setDueDateEditError(null);
   }
 
   function closeDetailPanel() {
@@ -353,10 +432,7 @@ export function InvoicesView({
       return;
     }
 
-    if (issueTarget) {
-      setIssueTarget(null);
-      setIssueError(null);
-    }
+    closeOpenEditorsForDetailClose();
     dismissDetailFromUrl();
   }
 
@@ -442,10 +518,7 @@ export function InvoicesView({
 
     if (!selectedInvoiceId) {
       if (detailTargetId !== null && !isDetailRelatedPending()) {
-        if (issueTarget) {
-          setIssueTarget(null);
-          setIssueError(null);
-        }
+        closeOpenEditorsForDetailClose();
         clearDetailPanel();
       }
       return;
@@ -459,6 +532,10 @@ export function InvoicesView({
     setIssueSuccess(null);
     setIssueError(null);
     setIssueTarget(null);
+    setDueDateEditSuccess(null);
+    setDueDateEditError(null);
+    setDueDateEditTarget(null);
+    setDueDateEditValue("");
 
     void loadInvoiceDetail(workspace.id, selectedInvoiceId);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on selection + workspace
@@ -477,6 +554,10 @@ export function InvoicesView({
     setIssueSuccess(null);
     setIssueError(null);
     setIssueTarget(null);
+    setDueDateEditSuccess(null);
+    setDueDateEditError(null);
+    setDueDateEditTarget(null);
+    setDueDateEditValue("");
     onSelectedInvoiceIdChange?.(invoice.id);
   }
 
@@ -505,6 +586,10 @@ export function InvoicesView({
     setIssueError(null);
     setIssueSuccess(null);
     setCreateSuccess(null);
+    setDueDateEditError(null);
+    setDueDateEditSuccess(null);
+    setDueDateEditTarget(null);
+    setDueDateEditValue("");
 
     try {
       const readiness = getInvoiceIssueReadiness(invoice);
@@ -611,6 +696,68 @@ export function InvoicesView({
       unitPrice,
       description: issueLineDescription.trim() || null
     });
+  }
+
+  async function handleSaveDueDate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (
+      !workspace ||
+      !dueDateEditTarget ||
+      !canEditDraftInvoiceDueDate(dueDateEditTarget) ||
+      dueDateEditBusyRef.current
+    ) {
+      return;
+    }
+
+    const target = dueDateEditTarget;
+    dueDateEditBusyRef.current = true;
+    savingDueDateInvoiceIdRef.current = target.id;
+    setSavingDueDateInvoiceId(target.id);
+    setDueDateEditBusy(true);
+    setDueDateEditError(null);
+    setDueDateEditSuccess(null);
+    setCreateSuccess(null);
+    setIssueError(null);
+    setIssueSuccess(null);
+    setIssueTarget(null);
+
+    try {
+      const updated = await applyDraftInvoiceDueDateChange(
+        workspace.id,
+        target.id,
+        dueDateEditValue,
+        setInvoiceDueDate
+      );
+      setDueDateEditTarget(null);
+      setDueDateEditValue("");
+      setHighlightedId(updated.id);
+      setDueDateEditSuccess(
+        `Дату оплати рахунка «${updated.documentNumber}» оновлено.`
+      );
+      await loadPage(workspace.id, page, appliedFilters);
+      await refreshDetailAfterMutation(updated.id);
+    } catch (editErr) {
+      const failure = interpretDraftInvoiceDueDateEditError(editErr);
+      setDueDateEditError(failure.message);
+      if (!failure.keepEditorOpen) {
+        setDueDateEditTarget(null);
+        setDueDateEditValue("");
+      }
+
+      if (failure.refreshList) {
+        try {
+          await loadPage(workspace.id, page, appliedFilters);
+          await refreshDetailAfterEditorFailure(target.id);
+        } catch {
+          // Keep the due-date error; list refresh failure is secondary.
+        }
+      }
+    } finally {
+      dueDateEditBusyRef.current = false;
+      savingDueDateInvoiceIdRef.current = null;
+      setSavingDueDateInvoiceId(null);
+      setDueDateEditBusy(false);
+    }
   }
 
   useEffect(() => {
@@ -845,8 +992,49 @@ export function InvoicesView({
 
         {createError ? <StatusMessage tone="error">{createError}</StatusMessage> : null}
         {createSuccess ? <StatusMessage tone="success">{createSuccess}</StatusMessage> : null}
+        {dueDateEditError ? (
+          <StatusMessage tone="error">{dueDateEditError}</StatusMessage>
+        ) : null}
+        {dueDateEditSuccess ? (
+          <StatusMessage tone="success">{dueDateEditSuccess}</StatusMessage>
+        ) : null}
         {issueError ? <StatusMessage tone="error">{issueError}</StatusMessage> : null}
         {issueSuccess ? <StatusMessage tone="success">{issueSuccess}</StatusMessage> : null}
+
+        {workspace && dueDateEditTarget ? (
+          <form
+            className="create-form issue-prepare-form"
+            onSubmit={(event) => void handleSaveDueDate(event)}
+          >
+            <p className="meta">
+              Зміна дати оплати:{" "}
+              <span className="mono">{dueDateEditTarget.documentNumber}</span>
+            </p>
+            <label>
+              Дата оплати
+              <input
+                type="date"
+                value={dueDateEditValue}
+                onChange={(event) => setDueDateEditValue(event.target.value)}
+                required
+                disabled={dueDateEditBusy}
+              />
+            </label>
+            <div className="filter-actions">
+              <button type="submit" disabled={dueDateEditBusy || loading}>
+                {dueDateEditBusy ? "Збереження…" : "Зберегти"}
+              </button>
+              <button
+                type="button"
+                className="button-secondary"
+                disabled={dueDateEditBusy}
+                onClick={cancelDueDateEdit}
+              >
+                Скасувати
+              </button>
+            </div>
+          </form>
+        ) : null}
 
         {workspace && issueTarget ? (
           <form
@@ -920,6 +1108,14 @@ export function InvoicesView({
             error={detailError}
             errorRetryable={detailErrorRetryable}
             closeDisabled={detailLoading || isDetailRelatedPending()}
+            dueDateEditBusy={
+              dueDateEditBusy &&
+              (savingDueDateInvoiceId === detailTargetId ||
+                dueDateEditTarget?.id === detailTargetId)
+            }
+            dueDateEditOpen={Boolean(
+              dueDateEditTarget && dueDateEditTarget.id === detailTargetId
+            )}
             issueBusy={
               issueBusy &&
               (issuingInvoiceId === detailTargetId || issueTarget?.id === detailTargetId)
@@ -927,6 +1123,9 @@ export function InvoicesView({
             issueOpen={Boolean(issueTarget && issueTarget.id === detailTargetId)}
             onClose={closeDetailPanel}
             onRetry={retryInvoiceDetail}
+            onEditDueDate={(invoice) =>
+              beginDueDateEdit(invoice, { preserveDetail: true })
+            }
             onIssue={(invoice) => beginIssue(invoice, { preserveDetail: true })}
           />
         ) : null}
@@ -990,11 +1189,33 @@ export function InvoicesView({
                                 : "Деталі"}
                             </button>
                           ) : null}
+                          {canEditDraftInvoiceDueDate(invoice) ? (
+                            <button
+                              type="button"
+                              className="button-secondary"
+                              disabled={
+                                dueDateEditBusy ||
+                                issueBusy ||
+                                loading ||
+                                dueDateEditTarget?.id === invoice.id
+                              }
+                              onClick={() => beginDueDateEdit(invoice)}
+                            >
+                              {dueDateEditBusy && savingDueDateInvoiceId === invoice.id
+                                ? "Збереження…"
+                                : "Змінити дату"}
+                            </button>
+                          ) : null}
                           {isDraftInvoice(invoice) ? (
                             <button
                               type="button"
                               className="button-secondary"
-                              disabled={issueBusy || loading}
+                              disabled={
+                                issueBusy ||
+                                dueDateEditBusy ||
+                                loading ||
+                                issueTarget?.id === invoice.id
+                              }
                               onClick={() => beginIssue(invoice)}
                             >
                               Виставити

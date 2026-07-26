@@ -1,4 +1,5 @@
 import type { Invoice, InvoiceLine } from "./api.ts";
+import { canEditDraftInvoiceDueDate } from "./draftInvoiceDueDateEditor.ts";
 import { isDraftInvoice } from "./invoiceIssue.ts";
 import { formatDate, formatMoney } from "./format.ts";
 
@@ -12,12 +13,25 @@ export function canViewInvoiceDetails(invoice: Pick<Invoice, "status">): boolean
  * Lifecycle handoff from the read-only detail panel.
  * Composes existing row-action eligibility — does not invent new rules.
  */
-export type InvoiceDetailLifecycleAction = "issue";
+export type InvoiceDetailLifecycleAction = "editDueDate" | "issue";
 
 export function detailLifecycleActionsFor(
   invoice: Pick<Invoice, "status">
 ): InvoiceDetailLifecycleAction[] {
-  return isDraftInvoice(invoice) ? ["issue"] : [];
+  const actions: InvoiceDetailLifecycleAction[] = [];
+  if (canEditDraftInvoiceDueDate(invoice)) {
+    actions.push("editDueDate");
+  }
+  if (isDraftInvoice(invoice)) {
+    actions.push("issue");
+  }
+  return actions;
+}
+
+export function canEditInvoiceDueDateFromDetails(
+  invoice: Pick<Invoice, "status">
+): boolean {
+  return detailLifecycleActionsFor(invoice).includes("editDueDate");
 }
 
 export function canIssueInvoiceFromDetails(invoice: Pick<Invoice, "status">): boolean {
@@ -25,7 +39,7 @@ export function canIssueInvoiceFromDetails(invoice: Pick<Invoice, "status">): bo
 }
 
 export type BeginEditorOptions = {
-  /** Keep the open detail panel when launching issue prepare from it. */
+  /** Keep the open detail panel when launching an editor from it. */
   preserveDetail?: boolean;
 };
 

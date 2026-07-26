@@ -1,6 +1,7 @@
 import type { Invoice } from "../api";
 import {
   buildInvoiceDetailFields,
+  canEditInvoiceDueDateFromDetails,
   canIssueInvoiceFromDetails,
   detailLifecycleActionsFor
 } from "../invoiceDetail";
@@ -12,10 +13,13 @@ type InvoiceDetailPanelProps = {
   error: string | null;
   errorRetryable: boolean;
   closeDisabled?: boolean;
+  dueDateEditBusy?: boolean;
+  dueDateEditOpen?: boolean;
   issueBusy?: boolean;
   issueOpen?: boolean;
   onClose: () => void;
   onRetry: () => void;
+  onEditDueDate?: (invoice: Invoice) => void;
   onIssue?: (invoice: Invoice) => void;
 };
 
@@ -25,19 +29,30 @@ export function InvoiceDetailPanel({
   error,
   errorRetryable,
   closeDisabled = false,
+  dueDateEditBusy = false,
+  dueDateEditOpen = false,
   issueBusy = false,
   issueOpen = false,
   onClose,
   onRetry,
+  onEditDueDate,
   onIssue
 }: InvoiceDetailPanelProps) {
   const fields = invoice ? buildInvoiceDetailFields(invoice) : null;
   const lifecycleActions = invoice ? detailLifecycleActionsFor(invoice) : [];
+  const showEditDueDate =
+    invoice !== null &&
+    canEditInvoiceDueDateFromDetails(invoice) &&
+    lifecycleActions.includes("editDueDate") &&
+    Boolean(onEditDueDate);
   const showIssue =
     invoice !== null &&
     canIssueInvoiceFromDetails(invoice) &&
     lifecycleActions.includes("issue") &&
     Boolean(onIssue);
+  const showActions = showEditDueDate || showIssue;
+  const actionsDisabled =
+    closeDisabled || dueDateEditBusy || dueDateEditOpen || issueBusy || issueOpen;
 
   return (
     <section
@@ -141,17 +156,29 @@ export function InvoiceDetailPanel({
             <p className="meta">Рядків немає.</p>
           )}
 
-          {showIssue ? (
+          {showActions ? (
             <div className="filter-actions invoice-detail-actions">
               <p className="meta">Дії</p>
-              <button
-                type="button"
-                className="button-secondary"
-                disabled={closeDisabled || issueBusy || issueOpen}
-                onClick={() => onIssue?.(invoice)}
-              >
-                {issueBusy ? "Виставлення…" : "Виставити"}
-              </button>
+              {showEditDueDate ? (
+                <button
+                  type="button"
+                  className="button-secondary"
+                  disabled={actionsDisabled}
+                  onClick={() => onEditDueDate?.(invoice)}
+                >
+                  {dueDateEditBusy ? "Збереження…" : "Змінити дату оплати"}
+                </button>
+              ) : null}
+              {showIssue ? (
+                <button
+                  type="button"
+                  className="button-secondary"
+                  disabled={actionsDisabled}
+                  onClick={() => onIssue?.(invoice)}
+                >
+                  {issueBusy ? "Виставлення…" : "Виставити"}
+                </button>
+              ) : null}
             </div>
           ) : null}
         </>
