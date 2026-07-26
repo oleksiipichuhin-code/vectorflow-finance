@@ -1,5 +1,6 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import {
+  changeAccrualAmount,
   createAccrual,
   listAccrualsPaged,
   recognizeAccrual,
@@ -7,6 +8,12 @@ import {
   type Accrual,
   type FinanceWorkspace
 } from "./api";
+import {
+  canEditAccrualAmount,
+  formatAccrualAmountInput,
+  interpretAccrualAmountEditError,
+  parseAccrualAmountInput
+} from "./accrualEditAmount";
 import {
   ACCRUAL_PAGE_SIZE,
   ACCRUAL_STATUS_OPTIONS,
@@ -85,11 +92,19 @@ export function AccrualsView({
   const [reversingIds, setReversingIds] = useState<ReadonlySet<string>>(
     () => new Set()
   );
+  const [editAmountTarget, setEditAmountTarget] = useState<Accrual | null>(null);
+  const [editAmountValue, setEditAmountValue] = useState("");
+  const [editAmountError, setEditAmountError] = useState<string | null>(null);
+  const [editAmountSuccess, setEditAmountSuccess] = useState<string | null>(null);
+  const [editingAmountIds, setEditingAmountIds] = useState<ReadonlySet<string>>(
+    () => new Set()
+  );
 
   const requestSeq = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
   const recognizingIdsRef = useRef<Set<string>>(new Set());
   const reversingIdsRef = useRef<Set<string>>(new Set());
+  const editingAmountIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (workspace) {
@@ -123,6 +138,12 @@ export function AccrualsView({
       setReverseSuccess(null);
       reversingIdsRef.current = new Set();
       setReversingIds(new Set());
+      setEditAmountTarget(null);
+      setEditAmountValue("");
+      setEditAmountError(null);
+      setEditAmountSuccess(null);
+      editingAmountIdsRef.current = new Set();
+      setEditingAmountIds(new Set());
       onDiscoveryChange?.(1, emptyFilters);
     }
   }, [workspace?.id, onDiscoveryChange]);
@@ -238,6 +259,10 @@ export function AccrualsView({
     setReverseSuccess(null);
     setReverseTarget(null);
     setReverseReason("");
+    setEditAmountError(null);
+    setEditAmountSuccess(null);
+    setEditAmountTarget(null);
+    setEditAmountValue("");
 
     try {
       const created = await createAccrual(workspace.id, {
@@ -280,6 +305,14 @@ export function AccrualsView({
     setCreateSuccess(null);
     setRecognizeError(null);
     setRecognizeSuccess(null);
+    setEditAmountError(null);
+    setEditAmountSuccess(null);
+    setEditAmountTarget(null);
+    setEditAmountValue("");
+    setReverseTarget(null);
+    setReverseReason("");
+    setReverseError(null);
+    setReverseSuccess(null);
 
     try {
       const recognized = await recognizeAccrual(workspace.id, accrual.id);
@@ -315,6 +348,10 @@ export function AccrualsView({
     setRecognizeError(null);
     setReverseError(null);
     setReverseSuccess(null);
+    setEditAmountError(null);
+    setEditAmountSuccess(null);
+    setEditAmountTarget(null);
+    setEditAmountValue("");
     setReverseTarget(accrual);
     setReverseReason("");
   }
@@ -327,6 +364,97 @@ export function AccrualsView({
     setReverseTarget(null);
     setReverseReason("");
     setReverseError(null);
+  }
+
+  function beginEditAmount(accrual: Accrual) {
+    if (!canEditAccrualAmount(accrual) || editingAmountIdsRef.current.has(accrual.id)) {
+      return;
+    }
+
+    setCreateSuccess(null);
+    setRecognizeSuccess(null);
+    setRecognizeError(null);
+    setReverseError(null);
+    setReverseSuccess(null);
+    setReverseTarget(null);
+    setReverseReason("");
+    setEditAmountError(null);
+    setEditAmountSuccess(null);
+    setEditAmountTarget(accrual);
+    setEditAmountValue(formatAccrualAmountInput(accrual.amount));
+  }
+
+  function cancelEditAmount() {
+    if (editAmountTarget && editingAmountIdsRef.current.has(editAmountTarget.id)) {
+      return;
+    }
+
+    setEditAmountTarget(null);
+    setEditAmountValue("");
+    setEditAmountError(null);
+  }
+
+  async function handleEditAmount(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!workspace || !editAmountTarget || !canEditAccrualAmount(editAmountTarget)) {
+      return;
+    }
+
+    if (editingAmountIdsRef.current.has(editAmountTarget.id)) {
+      return;
+    }
+
+    let amount: number;
+    try {
+      amount = parseAccrualAmountInput(editAmountValue);
+    } catch (validationErr) {
+      setEditAmountError(
+        validationErr instanceof Error
+          ? validationErr.message
+          : "Перевірте суму нарахування."
+      );
+      return;
+    }
+
+    const target = editAmountTarget;
+    editingAmountIdsRef.current.add(target.id);
+    setEditingAmountIds(new Set(editingAmountIdsRef.current));
+    setCreateSuccess(null);
+    setRecognizeSuccess(null);
+    setRecognizeError(null);
+    setReverseError(null);
+    setReverseSuccess(null);
+    setEditAmountError(null);
+    setEditAmountSuccess(null);
+
+    try {
+      const updated = await changeAccrualAmount(workspace.id, target.id, amount);
+      setEditAmountTarget(null);
+      setEditAmountValue("");
+      setHighlightedId(updated.id);
+      setEditAmountSuccess(
+        `Суму нарахування «${updated.description}» змінено на ${formatMoney(updated.amount, updated.currency)}.`
+      );
+      await loadPage(workspace.id, page, appliedFilters);
+    } catch (editErr) {
+      const failure = interpretAccrualAmountEditError(editErr);
+      setEditAmountError(failure.message);
+      if (!failure.keepEditorOpen) {
+        setEditAmountTarget(null);
+        setEditAmountValue("");
+      }
+
+      if (failure.refreshList) {
+        try {
+          await loadPage(workspace.id, page, appliedFilters);
+        } catch {
+          // Keep the edit error; list refresh failure is secondary.
+        }
+      }
+    } finally {
+      editingAmountIdsRef.current.delete(target.id);
+      setEditingAmountIds(new Set(editingAmountIdsRef.current));
+    }
   }
 
   async function handleReverseAccrual(event: FormEvent<HTMLFormElement>) {
@@ -359,6 +487,10 @@ export function AccrualsView({
     setRecognizeError(null);
     setReverseError(null);
     setReverseSuccess(null);
+    setEditAmountError(null);
+    setEditAmountSuccess(null);
+    setEditAmountTarget(null);
+    setEditAmountValue("");
 
     try {
       const reversed = await reverseAccrual(workspace.id, target.id, reason);
@@ -587,8 +719,53 @@ export function AccrualsView({
         {recognizeSuccess ? (
           <StatusMessage tone="success">{recognizeSuccess}</StatusMessage>
         ) : null}
+        {editAmountError ? <StatusMessage tone="error">{editAmountError}</StatusMessage> : null}
+        {editAmountSuccess ? (
+          <StatusMessage tone="success">{editAmountSuccess}</StatusMessage>
+        ) : null}
         {reverseError ? <StatusMessage tone="error">{reverseError}</StatusMessage> : null}
         {reverseSuccess ? <StatusMessage tone="success">{reverseSuccess}</StatusMessage> : null}
+
+        {workspace && editAmountTarget ? (
+          <form
+            className="create-form issue-prepare-form"
+            onSubmit={(event) => void handleEditAmount(event)}
+          >
+            <p className="meta">
+              Редагування суми:{" "}
+              <span className="cell-wrap">{editAmountTarget.description}</span>
+              {" · "}
+              {editAmountTarget.currency}
+            </p>
+            <label>
+              Сума
+              <input
+                value={editAmountValue}
+                onChange={(event) => setEditAmountValue(event.target.value)}
+                inputMode="decimal"
+                required
+                disabled={editingAmountIds.has(editAmountTarget.id)}
+                aria-label="Нова сума нарахування"
+              />
+            </label>
+            <div className="filter-actions">
+              <button
+                type="submit"
+                disabled={editingAmountIds.has(editAmountTarget.id) || loading}
+              >
+                {editingAmountIds.has(editAmountTarget.id) ? "Збереження…" : "Зберегти"}
+              </button>
+              <button
+                type="button"
+                className="button-secondary"
+                disabled={editingAmountIds.has(editAmountTarget.id)}
+                onClick={cancelEditAmount}
+              >
+                Скасувати
+              </button>
+            </div>
+          </form>
+        ) : null}
 
         {workspace && reverseTarget ? (
           <form
@@ -664,7 +841,11 @@ export function AccrualsView({
                   {accruals.map((accrual) => {
                     const recognizeBusy = recognizingIds.has(accrual.id);
                     const reverseBusy = reversingIds.has(accrual.id);
-                    const rowBusy = recognizeBusy || reverseBusy;
+                    const editAmountBusy = editingAmountIds.has(accrual.id);
+                    const rowBusy = recognizeBusy || reverseBusy || editAmountBusy;
+                    const showEditAmount = canEditAccrualAmount(accrual);
+                    const showRecognize = canRecognizeAccrual(accrual);
+                    const showReverse = canReverseAccrual(accrual);
                     return (
                     <tr
                       key={accrual.id}
@@ -684,26 +865,45 @@ export function AccrualsView({
                       </td>
                       <td className="cell-wrap">{accrual.reversalReason ?? "—"}</td>
                       <td>
-                        {canRecognizeAccrual(accrual) ? (
-                          <button
-                            type="button"
-                            className="button-secondary"
-                            disabled={rowBusy || loading}
-                            onClick={() => void handleRecognizeAccrual(accrual)}
-                          >
-                            {recognizeBusy ? "Визнання…" : "Визнати"}
-                          </button>
-                        ) : canReverseAccrual(accrual) ? (
-                          <button
-                            type="button"
-                            className="button-secondary"
-                            disabled={
-                              rowBusy || loading || reverseTarget?.id === accrual.id
-                            }
-                            onClick={() => beginReverse(accrual)}
-                          >
-                            {reverseBusy ? "Сторнування…" : "Сторнувати"}
-                          </button>
+                        {showEditAmount || showRecognize || showReverse ? (
+                          <div className="filter-actions">
+                            {showEditAmount ? (
+                              <button
+                                type="button"
+                                className="button-secondary"
+                                disabled={
+                                  rowBusy ||
+                                  loading ||
+                                  editAmountTarget?.id === accrual.id
+                                }
+                                onClick={() => beginEditAmount(accrual)}
+                              >
+                                {editAmountBusy ? "Збереження…" : "Змінити суму"}
+                              </button>
+                            ) : null}
+                            {showRecognize ? (
+                              <button
+                                type="button"
+                                className="button-secondary"
+                                disabled={rowBusy || loading}
+                                onClick={() => void handleRecognizeAccrual(accrual)}
+                              >
+                                {recognizeBusy ? "Визнання…" : "Визнати"}
+                              </button>
+                            ) : null}
+                            {showReverse ? (
+                              <button
+                                type="button"
+                                className="button-secondary"
+                                disabled={
+                                  rowBusy || loading || reverseTarget?.id === accrual.id
+                                }
+                                onClick={() => beginReverse(accrual)}
+                              >
+                                {reverseBusy ? "Сторнування…" : "Сторнувати"}
+                              </button>
+                            ) : null}
+                          </div>
                         ) : (
                           <span className="meta">—</span>
                         )}

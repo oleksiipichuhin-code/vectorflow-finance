@@ -41,34 +41,57 @@ export type ApiErrorBody = {
   message?: string;
 };
 
+/** Narrow typed API failure; `instanceof Error` remains true for existing catch sites. */
+export class FinanceApiRequestError extends Error {
+  readonly status: number;
+  readonly errorKind: string | null;
+
+  constructor(message: string, status: number, errorKind: string | null) {
+    super(message);
+    this.name = "FinanceApiRequestError";
+    this.status = status;
+    this.errorKind = errorKind;
+  }
+}
+
 function apiBaseUrl(): string {
-  const configured = import.meta.env.VITE_FINANCE_API_BASE_URL?.trim();
+  const env = (import.meta as ImportMeta & { env?: Record<string, string | boolean | undefined> })
+    .env;
+  const configured = typeof env?.VITE_FINANCE_API_BASE_URL === "string"
+    ? env.VITE_FINANCE_API_BASE_URL.trim()
+    : "";
   if (configured) {
     return configured.replace(/\/$/, "");
   }
 
-  if (import.meta.env.DEV) {
+  if (env?.DEV || env == null) {
+    // Vite DEV uses localhost; Node unit tests also lack import.meta.env.
     return "http://localhost:5080";
   }
 
   throw new Error("VITE_FINANCE_API_BASE_URL is not configured.");
 }
 
-async function readErrorMessage(response: Response): Promise<string> {
+async function readApiFailure(
+  response: Response
+): Promise<{ message: string; errorKind: string | null }> {
   try {
     const body = (await response.json()) as ApiErrorBody;
     if (body.message) {
-      return body.message;
+      return { message: body.message, errorKind: body.error ?? null };
     }
 
     if (body.error) {
-      return body.error;
+      return { message: body.error, errorKind: body.error };
     }
   } catch {
     // Fall through to status text.
   }
 
-  return response.statusText || `HTTP ${response.status}`;
+  return {
+    message: response.statusText || `HTTP ${response.status}`,
+    errorKind: null
+  };
 }
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
@@ -82,7 +105,8 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   });
 
   if (!response.ok) {
-    throw new Error(await readErrorMessage(response));
+    const failure = await readApiFailure(response);
+    throw new FinanceApiRequestError(failure.message, response.status, failure.errorKind);
   }
 
   if (response.status === 204) {
@@ -351,6 +375,20 @@ export function reverseAccrual(
     {
       method: "POST",
       body: JSON.stringify({ reason })
+    }
+  );
+}
+
+export function changeAccrualAmount(
+  workspaceId: string,
+  accrualId: string,
+  amount: number
+): Promise<Accrual> {
+  return requestJson<Accrual>(
+    `/api/finance-workspaces/${workspaceId}/accruals/${accrualId}/change-amount`,
+    {
+      method: "POST",
+      body: JSON.stringify({ amount })
     }
   );
 }
