@@ -7,12 +7,23 @@ import {
   changeAccrualSourceInvoice,
   changeAccrualType,
   createAccrual,
+  getAccrual,
+  getInvoice,
   listAccrualsPaged,
   recognizeAccrual,
   reverseAccrual,
   type Accrual,
   type FinanceWorkspace
 } from "./api";
+import {
+  canViewAccrualDetails,
+  interpretAccrualDetailLoadError,
+  interpretSourceInvoiceDetailLoadError,
+  shouldLoadSourceInvoice,
+  sourceInvoiceDetailFromInvoice,
+  sourceInvoiceDetailNone,
+  type SourceInvoiceDetailView
+} from "./accrualDetail";
 import {
   canEditAccrualAmount,
   formatAccrualAmountInput,
@@ -50,6 +61,7 @@ import {
   type DraftAccrualEditorValues
 } from "./draftAccrualEditor";
 import { EMPTY_ACCRUAL_FILTERS } from "./urlState";
+import { AccrualDetailPanel } from "./components/AccrualDetailPanel";
 import { ListLoadState } from "./components/ListLoadState";
 import { Panel, StatusMessage } from "./components/Panel";
 import { DraftAccrualEditor } from "./components/DraftAccrualEditor";
@@ -139,12 +151,24 @@ export function AccrualsView({
   const [editingDraftDetailsIds, setEditingDraftDetailsIds] = useState<ReadonlySet<string>>(
     () => new Set()
   );
+  const [detailTargetId, setDetailTargetId] = useState<string | null>(null);
+  const [detailAccrual, setDetailAccrual] = useState<Accrual | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const [detailErrorRetryable, setDetailErrorRetryable] = useState(false);
+  const [detailSourceInvoice, setDetailSourceInvoice] = useState<SourceInvoiceDetailView>(() =>
+    sourceInvoiceDetailNone()
+  );
   const [invoiceDisplayCache, setInvoiceDisplayCache] = useState<
     ReadonlyMap<string, InvoicePickerSummary>
   >(() => new Map());
 
   const requestSeq = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
+  const detailAbortRef = useRef<AbortController | null>(null);
+  const detailInvoiceAbortRef = useRef<AbortController | null>(null);
+  const detailRequestSeq = useRef(0);
+  const detailInvoiceRequestSeq = useRef(0);
   const recognizingIdsRef = useRef<Set<string>>(new Set());
   const reversingIdsRef = useRef<Set<string>>(new Set());
   const editingAmountIdsRef = useRef<Set<string>>(new Set());
@@ -203,6 +227,14 @@ export function AccrualsView({
       setDraftDetailsSuccess(null);
       editingDraftDetailsIdsRef.current = new Set();
       setEditingDraftDetailsIds(new Set());
+      detailAbortRef.current?.abort();
+      detailInvoiceAbortRef.current?.abort();
+      setDetailTargetId(null);
+      setDetailAccrual(null);
+      setDetailLoading(false);
+      setDetailError(null);
+      setDetailErrorRetryable(false);
+      setDetailSourceInvoice(sourceInvoiceDetailNone());
       setInvoiceDisplayCache(new Map());
       onDiscoveryChange?.(1, emptyFilters);
     }
@@ -331,6 +363,7 @@ export function AccrualsView({
     setDraftDetailsTarget(null);
     setDraftDetailsBaseline(null);
     setCreateSourceInvoicePickerOpen(false);
+    clearDetailPanel();
 
     const selectedSource = createSourceInvoiceDisplay;
     const selectedSourceId = createSourceInvoiceId;
@@ -396,6 +429,7 @@ export function AccrualsView({
     setDraftDetailsSuccess(null);
     setDraftDetailsTarget(null);
     setDraftDetailsBaseline(null);
+    clearDetailPanel();
     setCreateSourceInvoicePickerOpen(true);
   }
 
@@ -454,6 +488,7 @@ export function AccrualsView({
     setDraftDetailsSuccess(null);
     setDraftDetailsTarget(null);
     setDraftDetailsBaseline(null);
+    clearDetailPanel();
 
     try {
       const recognized = await recognizeAccrual(workspace.id, accrual.id);
@@ -501,6 +536,7 @@ export function AccrualsView({
     setDraftDetailsTarget(null);
     setDraftDetailsBaseline(null);
     setCreateSourceInvoicePickerOpen(false);
+    clearDetailPanel();
     setReverseTarget(accrual);
     setReverseReason("");
   }
@@ -535,6 +571,7 @@ export function AccrualsView({
     setDraftDetailsTarget(null);
     setDraftDetailsBaseline(null);
     setCreateSourceInvoicePickerOpen(false);
+    clearDetailPanel();
     setEditAmountError(null);
     setEditAmountSuccess(null);
     setEditAmountTarget(accrual);
@@ -575,6 +612,7 @@ export function AccrualsView({
     setDraftDetailsTarget(null);
     setDraftDetailsBaseline(null);
     setCreateSourceInvoicePickerOpen(false);
+    clearDetailPanel();
     setSourceInvoiceError(null);
     setSourceInvoiceSuccess(null);
     setSourceInvoiceTarget(accrual);
@@ -616,6 +654,7 @@ export function AccrualsView({
     setSourceInvoiceSuccess(null);
     setSourceInvoiceTarget(null);
     setCreateSourceInvoicePickerOpen(false);
+    clearDetailPanel();
     setDraftDetailsError(null);
     setDraftDetailsSuccess(null);
     setDraftDetailsTarget(accrual);
@@ -633,6 +672,187 @@ export function AccrualsView({
     setDraftDetailsTarget(null);
     setDraftDetailsBaseline(null);
     setDraftDetailsError(null);
+  }
+
+  function clearDetailPanel() {
+    detailAbortRef.current?.abort();
+    detailInvoiceAbortRef.current?.abort();
+    setDetailTargetId(null);
+    setDetailAccrual(null);
+    setDetailLoading(false);
+    setDetailError(null);
+    setDetailErrorRetryable(false);
+    setDetailSourceInvoice(sourceInvoiceDetailNone());
+  }
+
+  function closeDetailPanel() {
+    clearDetailPanel();
+  }
+
+  async function loadDetailSourceInvoice(
+    workspaceId: string,
+    sourceInvoiceId: string,
+    expectedDetailSeq: number
+  ) {
+    detailInvoiceAbortRef.current?.abort();
+    const controller = new AbortController();
+    detailInvoiceAbortRef.current = controller;
+    const invoiceSeq = ++detailInvoiceRequestSeq.current;
+    setDetailSourceInvoice({ kind: "loading" });
+
+    try {
+      const invoice = await getInvoice(workspaceId, sourceInvoiceId, controller.signal);
+      if (
+        invoiceSeq !== detailInvoiceRequestSeq.current ||
+        expectedDetailSeq !== detailRequestSeq.current
+      ) {
+        return;
+      }
+
+      const view = sourceInvoiceDetailFromInvoice(invoice);
+      setDetailSourceInvoice(view);
+      if (view.kind === "ready") {
+        setInvoiceDisplayCache((current) => {
+          const next = new Map(current);
+          next.set(view.invoice.id, view.invoice);
+          return next;
+        });
+      }
+    } catch (invoiceError) {
+      if (
+        invoiceSeq !== detailInvoiceRequestSeq.current ||
+        expectedDetailSeq !== detailRequestSeq.current
+      ) {
+        return;
+      }
+
+      if (invoiceError instanceof DOMException && invoiceError.name === "AbortError") {
+        return;
+      }
+
+      const failure = interpretSourceInvoiceDetailLoadError(invoiceError);
+      if (failure.kind === "not_found") {
+        setDetailSourceInvoice({
+          kind: "unavailable",
+          message: failure.message
+        });
+        return;
+      }
+
+      setDetailSourceInvoice({
+        kind: "error",
+        message: failure.message,
+        retryable: true
+      });
+    }
+  }
+
+  async function loadAccrualDetail(workspaceId: string, accrualId: string) {
+    detailAbortRef.current?.abort();
+    detailInvoiceAbortRef.current?.abort();
+    const controller = new AbortController();
+    detailAbortRef.current = controller;
+    const seq = ++detailRequestSeq.current;
+
+    setDetailTargetId(accrualId);
+    setDetailAccrual(null);
+    setDetailLoading(true);
+    setDetailError(null);
+    setDetailErrorRetryable(false);
+    setDetailSourceInvoice(sourceInvoiceDetailNone());
+
+    try {
+      const accrual = await getAccrual(workspaceId, accrualId, controller.signal);
+      if (seq !== detailRequestSeq.current) {
+        return;
+      }
+
+      setDetailAccrual(accrual);
+      setDetailLoading(false);
+      setDetailError(null);
+      setDetailErrorRetryable(false);
+
+      if (shouldLoadSourceInvoice(accrual.sourceInvoiceId)) {
+        await loadDetailSourceInvoice(workspaceId, accrual.sourceInvoiceId, seq);
+      } else {
+        setDetailSourceInvoice(sourceInvoiceDetailNone());
+      }
+    } catch (loadError) {
+      if (seq !== detailRequestSeq.current) {
+        return;
+      }
+
+      if (loadError instanceof DOMException && loadError.name === "AbortError") {
+        return;
+      }
+
+      const failure = interpretAccrualDetailLoadError(loadError);
+      if (failure.clearAccrualData) {
+        setDetailAccrual(null);
+        setDetailSourceInvoice(sourceInvoiceDetailNone());
+      }
+
+      setDetailLoading(false);
+      setDetailError(failure.message);
+      setDetailErrorRetryable(failure.kind === "retryable");
+
+      if (failure.refreshList) {
+        await loadPage(workspaceId, page, appliedFilters);
+      }
+    }
+  }
+
+  function beginViewAccrualDetails(accrual: Accrual) {
+    if (!workspace || !canViewAccrualDetails(accrual)) {
+      return;
+    }
+
+    setCreateSuccess(null);
+    setRecognizeSuccess(null);
+    setRecognizeError(null);
+    setReverseError(null);
+    setReverseSuccess(null);
+    setReverseTarget(null);
+    setReverseReason("");
+    setEditAmountError(null);
+    setEditAmountSuccess(null);
+    setEditAmountTarget(null);
+    setEditAmountValue("");
+    setSourceInvoiceError(null);
+    setSourceInvoiceSuccess(null);
+    setSourceInvoiceTarget(null);
+    setDraftDetailsError(null);
+    setDraftDetailsSuccess(null);
+    setDraftDetailsTarget(null);
+    setDraftDetailsBaseline(null);
+    setCreateSourceInvoicePickerOpen(false);
+
+    void loadAccrualDetail(workspace.id, accrual.id);
+  }
+
+  function retryAccrualDetail() {
+    if (!workspace || !detailTargetId || !detailErrorRetryable) {
+      return;
+    }
+
+    void loadAccrualDetail(workspace.id, detailTargetId);
+  }
+
+  function retryDetailSourceInvoice() {
+    if (
+      !workspace ||
+      !detailAccrual ||
+      !shouldLoadSourceInvoice(detailAccrual.sourceInvoiceId) ||
+      detailSourceInvoice.kind !== "error"
+    ) {
+      return;
+    }
+
+    void loadDetailSourceInvoice(
+      workspace.id,
+      detailAccrual.sourceInvoiceId,
+      detailRequestSeq.current
+    );
   }
 
   async function handleEditDraftDetails(values: DraftAccrualEditorValues) {
@@ -1296,6 +1516,19 @@ export function AccrualsView({
             </div>
           </form>
         ) : null}
+
+        {workspace && detailTargetId ? (
+          <AccrualDetailPanel
+            accrual={detailAccrual}
+            loading={detailLoading}
+            error={detailError}
+            errorRetryable={detailErrorRetryable}
+            sourceInvoice={detailSourceInvoice}
+            onClose={closeDetailPanel}
+            onRetry={retryAccrualDetail}
+            onRetrySourceInvoice={retryDetailSourceInvoice}
+          />
+        ) : null}
         {workspace ? (
           <ListLoadState
             loading={loading}
@@ -1351,6 +1584,7 @@ export function AccrualsView({
                     const showSourceInvoice = canChangeAccrualSourceInvoice(accrual);
                     const showRecognize = canRecognizeAccrual(accrual);
                     const showReverse = canReverseAccrual(accrual);
+                    const showDetails = canViewAccrualDetails(accrual);
                     const sourceInvoiceLabel = formatAccrualSourceInvoiceListCell(
                       accrual.sourceInvoiceId,
                       accrual.sourceInvoiceId
@@ -1377,12 +1611,25 @@ export function AccrualsView({
                       </td>
                       <td className="cell-wrap">{accrual.reversalReason ?? "—"}</td>
                       <td>
-                        {showEditDraftDetails ||
+                        {showDetails ||
+                        showEditDraftDetails ||
                         showEditAmount ||
                         showSourceInvoice ||
                         showRecognize ||
                         showReverse ? (
                           <div className="filter-actions">
+                            {showDetails ? (
+                              <button
+                                type="button"
+                                className="button-secondary"
+                                disabled={loading || detailLoading}
+                                onClick={() => beginViewAccrualDetails(accrual)}
+                              >
+                                {detailLoading && detailTargetId === accrual.id
+                                  ? "Завантаження…"
+                                  : "Деталі"}
+                              </button>
+                            ) : null}
                             {showEditDraftDetails ? (
                               <button
                                 type="button"

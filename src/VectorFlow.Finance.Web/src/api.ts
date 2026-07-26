@@ -340,6 +340,17 @@ export function listAccrualsPaged(
   );
 }
 
+export function getAccrual(
+  workspaceId: string,
+  accrualId: string,
+  signal?: AbortSignal
+): Promise<Accrual> {
+  return requestJson<Accrual>(
+    `/api/finance-workspaces/${workspaceId}/accruals/${accrualId}`,
+    signal ? { signal } : undefined
+  );
+}
+
 export function createAccrual(
   workspaceId: string,
   input: {
