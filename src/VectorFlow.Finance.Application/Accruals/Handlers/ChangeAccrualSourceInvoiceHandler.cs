@@ -1,5 +1,6 @@
 using VectorFlow.Finance.Application.Abstractions;
 using VectorFlow.Finance.Application.Accruals.Commands;
+using VectorFlow.Finance.Application.Invoices;
 using VectorFlow.Finance.Domain.Invoices;
 
 namespace VectorFlow.Finance.Application.Accruals.Handlers;
@@ -7,11 +8,16 @@ namespace VectorFlow.Finance.Application.Accruals.Handlers;
 public sealed class ChangeAccrualSourceInvoiceHandler
 {
     private readonly IAccrualRepository _repository;
+    private readonly IInvoiceRepository _invoiceRepository;
     private readonly IClock _clock;
 
-    public ChangeAccrualSourceInvoiceHandler(IAccrualRepository repository, IClock clock)
+    public ChangeAccrualSourceInvoiceHandler(
+        IAccrualRepository repository,
+        IInvoiceRepository invoiceRepository,
+        IClock clock)
     {
         _repository = repository;
+        _invoiceRepository = invoiceRepository;
         _clock = clock;
     }
 
@@ -40,6 +46,20 @@ public sealed class ChangeAccrualSourceInvoiceHandler
         catch (ArgumentException ex)
         {
             return AccrualHandlerSupport.FromArgumentException(ex);
+        }
+
+        if (sourceInvoiceId is not null)
+        {
+            var sourceLoad = await AccrualHandlerSupport.LoadSourceInvoiceInWorkspaceAsync(
+                _invoiceRepository,
+                load.Value!.FinanceWorkspaceId,
+                sourceInvoiceId.Value,
+                cancellationToken);
+
+            if (!sourceLoad.IsSuccess)
+            {
+                return ApplicationResult<AccrualDto>.FromFailure(sourceLoad);
+            }
         }
 
         try

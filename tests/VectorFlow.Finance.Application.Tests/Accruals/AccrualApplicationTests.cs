@@ -5,6 +5,8 @@ using VectorFlow.Finance.Application.Accruals;
 using VectorFlow.Finance.Application.Accruals.Commands;
 using VectorFlow.Finance.Application.Accruals.Handlers;
 using VectorFlow.Finance.Application.Accruals.Queries;
+using VectorFlow.Finance.Application.Invoices;
+using VectorFlow.Finance.Application.Tests.Invoices;
 using VectorFlow.Finance.Application.Tests.Workspaces;
 using VectorFlow.Finance.Application.Workspaces.Commands;
 using VectorFlow.Finance.Application.Workspaces.Handlers;
@@ -45,12 +47,14 @@ public sealed class AccrualApplicationTests
     private static (
         InMemoryAccrualRepository Accruals,
         InMemoryFinanceWorkspaceRepository Workspaces,
+        InMemoryInvoiceRepository Invoices,
         FixedClock Clock) CreateHarness()
     {
         var accruals = new InMemoryAccrualRepository();
         var workspaces = new InMemoryFinanceWorkspaceRepository();
+        var invoices = new InMemoryInvoiceRepository();
         var clock = new FixedClock(T0);
-        return (accruals, workspaces, clock);
+        return (accruals, workspaces, invoices, clock);
     }
 
     private static async Task<Guid> SeedWorkspaceAsync(
@@ -71,9 +75,35 @@ public sealed class AccrualApplicationTests
         return result.Value!.Id;
     }
 
+    private static async Task SeedInvoiceAsync(
+        InMemoryInvoiceRepository invoices,
+        Guid workspaceId,
+        Guid invoiceId,
+        FixedClock clock,
+        string documentNumber = "INV-SRC")
+    {
+        var financeWorkspaceId = new FinanceWorkspaceId(workspaceId);
+        var id = new InvoiceId(invoiceId);
+        if (await invoices.GetByIdAsync(financeWorkspaceId, id) is not null)
+        {
+            return;
+        }
+
+        var invoice = Invoice.Create(
+            id,
+            financeWorkspaceId,
+            documentNumber,
+            new CounterpartyReference("cp-src"),
+            new Currency("UAH"),
+            clock.UtcNow);
+        await invoices.AddAsync(invoice);
+        await invoices.SaveChangesAsync();
+    }
+
     private static async Task<AccrualDto> CreateAccrualAsync(
         InMemoryAccrualRepository accruals,
         InMemoryFinanceWorkspaceRepository workspaces,
+        InMemoryInvoiceRepository invoices,
         FixedClock clock,
         Guid workspaceId,
         string type = "Revenue",
@@ -83,7 +113,12 @@ public sealed class AccrualApplicationTests
         string description = "Monthly recognition",
         Guid? sourceInvoiceId = null)
     {
-        var result = await new CreateAccrualHandler(accruals, workspaces, clock).HandleAsync(
+        if (sourceInvoiceId is not null)
+        {
+            await SeedInvoiceAsync(invoices, workspaceId, sourceInvoiceId.Value, clock);
+        }
+
+        var result = await new CreateAccrualHandler(accruals, workspaces, invoices, clock).HandleAsync(
             new CreateAccrualCommand(
                 workspaceId,
                 type,
@@ -100,10 +135,11 @@ public sealed class AccrualApplicationTests
     private static async Task<AccrualDto> CreateRecognizedAsync(
         InMemoryAccrualRepository accruals,
         InMemoryFinanceWorkspaceRepository workspaces,
+        InMemoryInvoiceRepository invoices,
         FixedClock clock,
         Guid workspaceId)
     {
-        var created = await CreateAccrualAsync(accruals, workspaces, clock, workspaceId);
+        var created = await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceId);
         clock.UtcNow = T1;
         var recognized = await new RecognizeAccrualHandler(accruals, clock).HandleAsync(
             new RecognizeAccrualCommand(workspaceId, created.Id));
@@ -114,10 +150,11 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task Create_returns_draft_dto_and_persists_once()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        await SeedInvoiceAsync(invoices, workspaceId, SourceInvoiceId, clock);
 
-        var result = await new CreateAccrualHandler(accruals, workspaces, clock).HandleAsync(
+        var result = await new CreateAccrualHandler(accruals, workspaces, invoices, clock).HandleAsync(
             new CreateAccrualCommand(
                 workspaceId,
                 "Revenue",
@@ -150,9 +187,9 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task Create_rejects_missing_workspace_without_persist()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
 
-        var result = await new CreateAccrualHandler(accruals, workspaces, clock).HandleAsync(
+        var result = await new CreateAccrualHandler(accruals, workspaces, invoices, clock).HandleAsync(
             new CreateAccrualCommand(
                 Guid.NewGuid(),
                 "Expense",
@@ -170,10 +207,10 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task Create_rejects_invalid_amount_without_persist()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
-        var result = await new CreateAccrualHandler(accruals, workspaces, clock).HandleAsync(
+        var result = await new CreateAccrualHandler(accruals, workspaces, invoices, clock).HandleAsync(
             new CreateAccrualCommand(
                 workspaceId,
                 "Revenue",
@@ -191,10 +228,10 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task Create_rejects_blank_description_without_persist()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
-        var result = await new CreateAccrualHandler(accruals, workspaces, clock).HandleAsync(
+        var result = await new CreateAccrualHandler(accruals, workspaces, invoices, clock).HandleAsync(
             new CreateAccrualCommand(
                 workspaceId,
                 "Revenue",
@@ -212,12 +249,13 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task Create_expense_type_is_supported()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var created = await CreateAccrualAsync(
             accruals,
             workspaces,
+            invoices,
             clock,
             workspaceId,
             type: "Expense",
@@ -229,9 +267,9 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task Get_returns_accrual_from_same_workspace()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
-        var created = await CreateAccrualAsync(accruals, workspaces, clock, workspaceId);
+        var created = await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceId);
         var savesBefore = accruals.SaveChangesCallCount;
 
         var result = await new GetAccrualHandler(accruals).HandleAsync(
@@ -245,7 +283,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task Get_missing_returns_NotFound()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualHandler(accruals).HandleAsync(
@@ -258,7 +296,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task Get_wrong_workspace_returns_NotFound()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceA = await SeedWorkspaceAsync(workspaces, clock);
         var workspaceB = await SeedWorkspaceAsync(
             workspaces,
@@ -266,7 +304,7 @@ public sealed class AccrualApplicationTests
             Guid.Parse("cccccccc-3333-3333-3333-333333333333"),
             Guid.Parse("dddddddd-4444-4444-4444-444444444444"),
             "Other");
-        var created = await CreateAccrualAsync(accruals, workspaces, clock, workspaceA);
+        var created = await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceA);
 
         var result = await new GetAccrualHandler(accruals).HandleAsync(
             new GetAccrualByIdQuery(workspaceB, created.Id));
@@ -278,7 +316,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task List_empty_workspace_returns_empty_list()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsHandler(accruals).HandleAsync(
@@ -293,7 +331,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task List_returns_only_requested_workspace_newest_first()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceA = await SeedWorkspaceAsync(workspaces, clock);
         var workspaceB = await SeedWorkspaceAsync(
             workspaces,
@@ -303,11 +341,11 @@ public sealed class AccrualApplicationTests
             "Other");
 
         clock.UtcNow = T0;
-        var older = await CreateAccrualAsync(accruals, workspaces, clock, workspaceA, description: "Older");
+        var older = await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceA, description: "Older");
         clock.UtcNow = T1;
-        var newer = await CreateAccrualAsync(accruals, workspaces, clock, workspaceA, description: "Newer");
+        var newer = await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceA, description: "Newer");
         clock.UtcNow = T2;
-        await CreateAccrualAsync(accruals, workspaces, clock, workspaceB, description: "Other workspace");
+        await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceB, description: "Other workspace");
 
         var result = await new GetAccrualsHandler(accruals).HandleAsync(
             new GetAccrualsQuery(workspaceA));
@@ -322,7 +360,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_returns_page_with_total_count()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceA = await SeedWorkspaceAsync(workspaces, clock);
         var workspaceB = await SeedWorkspaceAsync(
             workspaces,
@@ -332,11 +370,11 @@ public sealed class AccrualApplicationTests
             "Other");
 
         clock.UtcNow = T0;
-        var older = await CreateAccrualAsync(accruals, workspaces, clock, workspaceA, description: "Older");
+        var older = await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceA, description: "Older");
         clock.UtcNow = T1;
-        var newer = await CreateAccrualAsync(accruals, workspaces, clock, workspaceA, description: "Newer");
+        var newer = await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceA, description: "Newer");
         clock.UtcNow = T2;
-        await CreateAccrualAsync(accruals, workspaces, clock, workspaceB, description: "Other");
+        await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceB, description: "Other");
 
         using var cts = new CancellationTokenSource();
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -360,7 +398,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_empty_returns_empty_items_with_zero_total()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -377,15 +415,15 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_multiple_pages_preserve_order_and_total()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         clock.UtcNow = T0;
-        var first = await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "1");
+        var first = await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceId, description: "1");
         clock.UtcNow = T1;
-        var second = await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "2");
+        var second = await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceId, description: "2");
         clock.UtcNow = T2;
-        var third = await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "3");
+        var third = await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceId, description: "3");
 
         var page1 = await new GetAccrualsPagedHandler(accruals).HandleAsync(
             new GetAccrualsPagedQuery(workspaceId, Page: 1, PageSize: 2));
@@ -403,7 +441,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_rejects_page_below_one()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -416,7 +454,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_rejects_negative_page()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -429,7 +467,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_rejects_page_size_below_one()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -442,7 +480,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_rejects_negative_page_size()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -455,7 +493,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_rejects_page_size_above_max()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -471,7 +509,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_accepts_exact_max_page_size()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -488,7 +526,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_rejects_empty_workspace_id()
     {
-        var (accruals, _, _) = CreateHarness();
+        var (accruals, _, _, _) = CreateHarness();
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
             new GetAccrualsPagedQuery(Guid.Empty, Page: 1, PageSize: 10));
@@ -500,7 +538,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_missing_status_passes_null_to_repository()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -514,9 +552,9 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_status_Draft_passes_Draft_to_repository()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
-        await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "Draft");
+        await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceId, description: "Draft");
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
             new GetAccrualsPagedQuery(workspaceId, Page: 1, PageSize: 10, Status: "Draft"));
@@ -530,9 +568,9 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_status_Recognized_passes_Recognized_to_repository()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
-        await CreateRecognizedAsync(accruals, workspaces, clock, workspaceId);
+        await CreateRecognizedAsync(accruals, workspaces, invoices, clock, workspaceId);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
             new GetAccrualsPagedQuery(workspaceId, Page: 1, PageSize: 10, Status: "Recognized"));
@@ -546,9 +584,9 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_status_Reversed_passes_Reversed_to_repository()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
-        var recognized = await CreateRecognizedAsync(accruals, workspaces, clock, workspaceId);
+        var recognized = await CreateRecognizedAsync(accruals, workspaces, invoices, clock, workspaceId);
         clock.UtcNow = T2;
         var reversed = await new ReverseAccrualHandler(accruals, clock).HandleAsync(
             new ReverseAccrualCommand(workspaceId, recognized.Id, "Correction"));
@@ -566,7 +604,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_explicit_blank_status_returns_ValidationFailed()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -579,7 +617,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_whitespace_status_returns_ValidationFailed()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -592,7 +630,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_unknown_status_Paid_returns_ValidationFailed()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -605,7 +643,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_lowercase_status_returns_ValidationFailed()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -618,7 +656,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_numeric_status_returns_ValidationFailed()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -631,7 +669,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_padded_status_returns_ValidationFailed_without_repository_call()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -644,9 +682,9 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_status_filter_empty_match_returns_empty_page()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
-        await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "Draft only");
+        await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceId, description: "Draft only");
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
             new GetAccrualsPagedQuery(workspaceId, Page: 1, PageSize: 10, Status: "Recognized"));
@@ -660,15 +698,15 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_status_filter_pages_within_filtered_set()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         clock.UtcNow = T0;
-        var draftOlder = await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "Draft older");
+        var draftOlder = await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceId, description: "Draft older");
         clock.UtcNow = T1;
-        var draftNewer = await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "Draft newer");
+        var draftNewer = await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceId, description: "Draft newer");
         clock.UtcNow = T2;
-        var toRecognize = await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "Recognized");
+        var toRecognize = await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceId, description: "Recognized");
         clock.UtcNow = T2.AddMinutes(1);
         var recognized = await new RecognizeAccrualHandler(accruals, clock).HandleAsync(
             new RecognizeAccrualCommand(workspaceId, toRecognize.Id));
@@ -690,9 +728,9 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_omitted_created_bounds_pass_null_to_repository()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
-        await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "1");
+        await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceId, description: "1");
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
             new GetAccrualsPagedQuery(workspaceId, Page: 1, PageSize: 10));
@@ -707,7 +745,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_created_from_only_passes_bound_to_repository()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
         var from = T1;
 
@@ -722,7 +760,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_created_to_only_passes_bound_to_repository()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
         var to = T1;
 
@@ -737,7 +775,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_created_both_bounds_pass_to_repository()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -756,7 +794,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_equal_created_bounds_are_accepted()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -776,7 +814,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_created_from_after_to_returns_ValidationFailed()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -794,7 +832,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_created_range_with_status_forwards_both()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -815,15 +853,15 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_created_from_filters_inclusive_via_repository()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         clock.UtcNow = T0;
-        await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "Earlier");
+        await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceId, description: "Earlier");
         clock.UtcNow = T1;
-        var onBound = await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "On bound");
+        var onBound = await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceId, description: "On bound");
         clock.UtcNow = T2;
-        var later = await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "Later");
+        var later = await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceId, description: "Later");
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
             new GetAccrualsPagedQuery(workspaceId, Page: 1, PageSize: 10, CreatedFromUtc: T1));
@@ -837,15 +875,15 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_created_range_pages_after_filter()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         clock.UtcNow = T0;
-        await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "1");
+        await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceId, description: "1");
         clock.UtcNow = T1;
-        var mid = await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "2");
+        var mid = await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceId, description: "2");
         clock.UtcNow = T2;
-        var newest = await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "3");
+        var newest = await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceId, description: "3");
 
         var page1 = await new GetAccrualsPagedHandler(accruals).HandleAsync(
             new GetAccrualsPagedQuery(
@@ -873,9 +911,9 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_omitted_source_invoice_passes_null_to_repository()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
-        await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "1");
+        await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceId, description: "1");
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
             new GetAccrualsPagedQuery(workspaceId, Page: 1, PageSize: 10));
@@ -887,7 +925,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_source_invoice_passes_id_to_repository()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -904,7 +942,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_empty_source_invoice_returns_ValidationFailed()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -921,21 +959,21 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_source_invoice_filters_matching_accruals()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
         var otherInvoiceId = Guid.Parse("33333333-3333-3333-3333-333333333333");
 
         clock.UtcNow = T0;
         await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId, description: "Other", sourceInvoiceId: otherInvoiceId);
+            accruals, workspaces, invoices, clock, workspaceId, description: "Other", sourceInvoiceId: otherInvoiceId);
         clock.UtcNow = T1;
         var olderMatch = await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId, description: "Match older", sourceInvoiceId: SourceInvoiceId);
+            accruals, workspaces, invoices, clock, workspaceId, description: "Match older", sourceInvoiceId: SourceInvoiceId);
         clock.UtcNow = T2;
         var newerMatch = await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId, description: "Match newer", sourceInvoiceId: SourceInvoiceId);
+            accruals, workspaces, invoices, clock, workspaceId, description: "Match newer", sourceInvoiceId: SourceInvoiceId);
         await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId, description: "Unlinked", sourceInvoiceId: null);
+            accruals, workspaces, invoices, clock, workspaceId, description: "Unlinked", sourceInvoiceId: null);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
             new GetAccrualsPagedQuery(
@@ -954,10 +992,10 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_source_invoice_no_match_returns_empty_page()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
         await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId, description: "Other", sourceInvoiceId: SourceInvoiceId);
+            accruals, workspaces, invoices, clock, workspaceId, description: "Other", sourceInvoiceId: SourceInvoiceId);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
             new GetAccrualsPagedQuery(
@@ -974,7 +1012,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_source_invoice_with_status_and_created_range_forwards_all()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -997,19 +1035,19 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_source_invoice_composes_with_status_and_created_range()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
         var otherInvoiceId = Guid.Parse("33333333-3333-3333-3333-333333333333");
 
         clock.UtcNow = T0;
         await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId, description: "Draft other invoice", sourceInvoiceId: otherInvoiceId);
+            accruals, workspaces, invoices, clock, workspaceId, description: "Draft other invoice", sourceInvoiceId: otherInvoiceId);
         clock.UtcNow = T1;
         var match = await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId, description: "Draft match", sourceInvoiceId: SourceInvoiceId);
+            accruals, workspaces, invoices, clock, workspaceId, description: "Draft match", sourceInvoiceId: SourceInvoiceId);
         clock.UtcNow = T2;
         var recognizedMatch = await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId, description: "Recognized match", sourceInvoiceId: SourceInvoiceId);
+            accruals, workspaces, invoices, clock, workspaceId, description: "Recognized match", sourceInvoiceId: SourceInvoiceId);
         var recognized = await new RecognizeAccrualHandler(accruals, clock).HandleAsync(
             new RecognizeAccrualCommand(workspaceId, recognizedMatch.Id));
         Assert.True(recognized.IsSuccess);
@@ -1033,20 +1071,20 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_source_invoice_pages_after_filter()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         clock.UtcNow = T0;
         await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId, description: "1", sourceInvoiceId: SourceInvoiceId);
+            accruals, workspaces, invoices, clock, workspaceId, description: "1", sourceInvoiceId: SourceInvoiceId);
         clock.UtcNow = T1;
         var mid = await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId, description: "2", sourceInvoiceId: SourceInvoiceId);
+            accruals, workspaces, invoices, clock, workspaceId, description: "2", sourceInvoiceId: SourceInvoiceId);
         clock.UtcNow = T2;
         var newest = await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId, description: "3", sourceInvoiceId: SourceInvoiceId);
+            accruals, workspaces, invoices, clock, workspaceId, description: "3", sourceInvoiceId: SourceInvoiceId);
         await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId, description: "Other", sourceInvoiceId: null);
+            accruals, workspaces, invoices, clock, workspaceId, description: "Other", sourceInvoiceId: null);
 
         var page1 = await new GetAccrualsPagedHandler(accruals).HandleAsync(
             new GetAccrualsPagedQuery(
@@ -1072,9 +1110,9 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_omitted_type_passes_null_to_repository()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
-        await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "1");
+        await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceId, description: "1");
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
             new GetAccrualsPagedQuery(workspaceId, Page: 1, PageSize: 10));
@@ -1086,7 +1124,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_type_Revenue_passes_enum_to_repository()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -1099,7 +1137,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_type_Expense_passes_enum_to_repository()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -1112,18 +1150,18 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_type_Revenue_filters_matching_accruals()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         clock.UtcNow = T0;
         await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId, type: "Expense", description: "Expense");
+            accruals, workspaces, invoices, clock, workspaceId, type: "Expense", description: "Expense");
         clock.UtcNow = T1;
         var olderRevenue = await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId, type: "Revenue", description: "Older revenue");
+            accruals, workspaces, invoices, clock, workspaceId, type: "Revenue", description: "Older revenue");
         clock.UtcNow = T2;
         var newerRevenue = await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId, type: "Revenue", description: "Newer revenue");
+            accruals, workspaces, invoices, clock, workspaceId, type: "Revenue", description: "Newer revenue");
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
             new GetAccrualsPagedQuery(workspaceId, Page: 1, PageSize: 10, Type: "Revenue"));
@@ -1138,13 +1176,13 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_type_Expense_filters_matching_accruals()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId, type: "Revenue", description: "Revenue");
+            accruals, workspaces, invoices, clock, workspaceId, type: "Revenue", description: "Revenue");
         var expense = await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId, type: "Expense", description: "Expense");
+            accruals, workspaces, invoices, clock, workspaceId, type: "Expense", description: "Expense");
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
             new GetAccrualsPagedQuery(workspaceId, Page: 1, PageSize: 10, Type: "Expense"));
@@ -1158,7 +1196,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_blank_type_returns_ValidationFailed()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -1171,7 +1209,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_whitespace_type_returns_ValidationFailed()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -1184,7 +1222,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_lowercase_type_returns_ValidationFailed()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -1197,7 +1235,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_uppercase_type_returns_ValidationFailed()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -1210,7 +1248,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_unknown_type_returns_ValidationFailed()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -1223,7 +1261,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_numeric_type_returns_ValidationFailed()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -1236,7 +1274,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_trimmed_type_returns_ValidationFailed()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -1249,7 +1287,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_type_preserves_status_created_range_source_invoice_and_paging()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         using var cts = new CancellationTokenSource();
@@ -1279,27 +1317,27 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_type_composes_with_status_source_invoice_and_created_range()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
         var otherInvoiceId = Guid.Parse("33333333-3333-3333-3333-333333333333");
 
         clock.UtcNow = T0;
         await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId,
+            accruals, workspaces, invoices, clock, workspaceId,
             type: "Revenue", description: "Out of range", sourceInvoiceId: SourceInvoiceId);
         clock.UtcNow = T1;
         var match = await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId,
+            accruals, workspaces, invoices, clock, workspaceId,
             type: "Revenue", description: "Match", sourceInvoiceId: SourceInvoiceId);
         clock.UtcNow = T2;
         await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId,
+            accruals, workspaces, invoices, clock, workspaceId,
             type: "Expense", description: "Wrong type", sourceInvoiceId: SourceInvoiceId);
         await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId,
+            accruals, workspaces, invoices, clock, workspaceId,
             type: "Revenue", description: "Wrong invoice", sourceInvoiceId: otherInvoiceId);
         var toRecognize = await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId,
+            accruals, workspaces, invoices, clock, workspaceId,
             type: "Revenue", description: "Wrong status", sourceInvoiceId: SourceInvoiceId);
         var recognized = await new RecognizeAccrualHandler(accruals, clock).HandleAsync(
             new RecognizeAccrualCommand(workspaceId, toRecognize.Id));
@@ -1324,9 +1362,9 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_omitted_recognition_bounds_pass_null_to_repository()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
-        await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "1");
+        await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceId, description: "1");
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
             new GetAccrualsPagedQuery(workspaceId, Page: 1, PageSize: 10));
@@ -1339,7 +1377,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_recognition_from_only_passes_bound_to_repository()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -1353,7 +1391,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_recognition_to_only_passes_bound_to_repository()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -1367,7 +1405,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_recognition_both_bounds_pass_to_repository()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -1386,7 +1424,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_equal_recognition_bounds_are_accepted()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -1406,7 +1444,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_recognition_from_after_to_returns_ValidationFailed()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -1424,17 +1462,17 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_recognition_from_filters_inclusive_via_repository()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId,
+            accruals, workspaces, invoices, clock, workspaceId,
             recognitionDate: T0, description: "Earlier");
         var onBound = await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId,
+            accruals, workspaces, invoices, clock, workspaceId,
             recognitionDate: T1, description: "On bound");
         var later = await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId,
+            accruals, workspaces, invoices, clock, workspaceId,
             recognitionDate: T2, description: "Later");
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -1449,7 +1487,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_recognition_preserves_status_created_source_type_and_paging()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         using var cts = new CancellationTokenSource();
@@ -1483,45 +1521,45 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_recognition_composes_with_status_created_source_and_type()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
         var otherInvoiceId = Guid.Parse("33333333-3333-3333-3333-333333333333");
 
         clock.UtcNow = T0;
         await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId,
+            accruals, workspaces, invoices, clock, workspaceId,
             type: "Revenue",
             recognitionDate: T0,
             description: "Recognition out of range",
             sourceInvoiceId: SourceInvoiceId);
         clock.UtcNow = T1;
         var match = await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId,
+            accruals, workspaces, invoices, clock, workspaceId,
             type: "Revenue",
             recognitionDate: T1,
             description: "Match",
             sourceInvoiceId: SourceInvoiceId);
         clock.UtcNow = T2;
         await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId,
+            accruals, workspaces, invoices, clock, workspaceId,
             type: "Expense",
             recognitionDate: T1,
             description: "Wrong type",
             sourceInvoiceId: SourceInvoiceId);
         await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId,
+            accruals, workspaces, invoices, clock, workspaceId,
             type: "Revenue",
             recognitionDate: T1,
             description: "Wrong invoice",
             sourceInvoiceId: otherInvoiceId);
         await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId,
+            accruals, workspaces, invoices, clock, workspaceId,
             type: "Revenue",
             recognitionDate: T2,
             description: "Recognition after",
             sourceInvoiceId: SourceInvoiceId);
         var toRecognize = await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId,
+            accruals, workspaces, invoices, clock, workspaceId,
             type: "Revenue",
             recognitionDate: T1,
             description: "Wrong status",
@@ -1551,20 +1589,20 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_recognition_range_pages_after_filter()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         clock.UtcNow = T0;
         await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId,
+            accruals, workspaces, invoices, clock, workspaceId,
             recognitionDate: T0, description: "1");
         clock.UtcNow = T1;
         var mid = await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId,
+            accruals, workspaces, invoices, clock, workspaceId,
             recognitionDate: T1, description: "2");
         clock.UtcNow = T2;
         var newest = await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId,
+            accruals, workspaces, invoices, clock, workspaceId,
             recognitionDate: T1, description: "3");
 
         var page1 = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -1593,9 +1631,9 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_omitted_currency_passes_null_to_repository()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
-        await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, currency: "UAH");
+        await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceId, currency: "UAH");
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
             new GetAccrualsPagedQuery(workspaceId, Page: 1, PageSize: 10));
@@ -1608,7 +1646,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_currency_passes_normalized_code_to_repository()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -1625,7 +1663,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_currency_trims_and_uppercases_before_repository()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -1642,7 +1680,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_blank_currency_returns_ValidationFailed()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -1659,7 +1697,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_whitespace_currency_returns_ValidationFailed()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -1676,18 +1714,18 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_currency_filters_matching_accruals()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         clock.UtcNow = T0;
         await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId, currency: "EUR", description: "Other");
+            accruals, workspaces, invoices, clock, workspaceId, currency: "EUR", description: "Other");
         clock.UtcNow = T1;
         var olderMatch = await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId, currency: "USD", description: "Older");
+            accruals, workspaces, invoices, clock, workspaceId, currency: "USD", description: "Older");
         clock.UtcNow = T2;
         var newerMatch = await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId, currency: "USD", description: "Newer");
+            accruals, workspaces, invoices, clock, workspaceId, currency: "USD", description: "Newer");
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
             new GetAccrualsPagedQuery(
@@ -1706,9 +1744,9 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_currency_no_match_returns_empty_page()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
-        await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, currency: "UAH");
+        await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceId, currency: "UAH");
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
             new GetAccrualsPagedQuery(
@@ -1725,7 +1763,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_currency_with_status_created_source_type_and_recognition_forwards_all()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -1758,20 +1796,20 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_currency_composes_with_status()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         clock.UtcNow = T0;
         var draftMatch = await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId, currency: "USD", description: "Draft match");
+            accruals, workspaces, invoices, clock, workspaceId, currency: "USD", description: "Draft match");
         clock.UtcNow = T1;
         var toRecognize = await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId, currency: "USD", description: "Recognized");
+            accruals, workspaces, invoices, clock, workspaceId, currency: "USD", description: "Recognized");
         var recognized = await new RecognizeAccrualHandler(accruals, clock).HandleAsync(
             new RecognizeAccrualCommand(workspaceId, toRecognize.Id));
         Assert.True(recognized.IsSuccess);
         await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId, currency: "EUR", description: "Wrong currency");
+            accruals, workspaces, invoices, clock, workspaceId, currency: "EUR", description: "Wrong currency");
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
             new GetAccrualsPagedQuery(
@@ -1789,9 +1827,9 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_omitted_amount_bounds_pass_null_to_repository()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
-        await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, amount: 100m);
+        await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceId, amount: 100m);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
             new GetAccrualsPagedQuery(workspaceId, Page: 1, PageSize: 10));
@@ -1805,7 +1843,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_amount_from_only_passes_bound_to_repository()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -1819,7 +1857,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_amount_to_only_passes_bound_to_repository()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -1833,7 +1871,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_amount_both_bounds_pass_to_repository()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -1852,7 +1890,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_equal_amount_bounds_are_accepted()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -1872,7 +1910,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_amount_from_greater_than_to_returns_ValidationFailed()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -1890,18 +1928,18 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_amount_from_filters_inclusive_via_repository()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         clock.UtcNow = T0;
         await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId, amount: 10m, description: "Below");
+            accruals, workspaces, invoices, clock, workspaceId, amount: 10m, description: "Below");
         clock.UtcNow = T1;
         var onBound = await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId, amount: 50m, description: "On bound");
+            accruals, workspaces, invoices, clock, workspaceId, amount: 50m, description: "On bound");
         clock.UtcNow = T2;
         var above = await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId, amount: 100m, description: "Above");
+            accruals, workspaces, invoices, clock, workspaceId, amount: 100m, description: "Above");
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
             new GetAccrualsPagedQuery(workspaceId, Page: 1, PageSize: 10, AmountFrom: 50m));
@@ -1915,20 +1953,20 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_amount_composes_with_currency()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         clock.UtcNow = T0;
         var match = await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId,
+            accruals, workspaces, invoices, clock, workspaceId,
             amount: 50m, currency: "USD", description: "Match");
         clock.UtcNow = T1;
         await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId,
+            accruals, workspaces, invoices, clock, workspaceId,
             amount: 50m, currency: "EUR", description: "Wrong currency");
         clock.UtcNow = T2;
         await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId,
+            accruals, workspaces, invoices, clock, workspaceId,
             amount: 10m, currency: "USD", description: "Wrong amount");
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -1951,9 +1989,9 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_omitted_description_passes_null_to_repository()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
-        await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "Alpha");
+        await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceId, description: "Alpha");
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
             new GetAccrualsPagedQuery(workspaceId, Page: 1, PageSize: 10));
@@ -1966,7 +2004,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_description_passes_normalized_value_to_repository()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -1983,7 +2021,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_blank_description_returns_ValidationFailed()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -1996,7 +2034,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_overlength_description_returns_ValidationFailed()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
         var overlength = new string('x', Accrual.DescriptionMaxLength + 1);
 
@@ -2010,18 +2048,18 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_description_filters_exact_ordinal_via_repository()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         clock.UtcNow = T0;
         await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId, description: "Other");
+            accruals, workspaces, invoices, clock, workspaceId, description: "Other");
         clock.UtcNow = T1;
         var match = await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId, description: "Exact match");
+            accruals, workspaces, invoices, clock, workspaceId, description: "Exact match");
         clock.UtcNow = T2;
         await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId, description: "exact match");
+            accruals, workspaces, invoices, clock, workspaceId, description: "exact match");
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
             new GetAccrualsPagedQuery(
@@ -2039,20 +2077,20 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_description_composes_with_currency_and_status()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         clock.UtcNow = T0;
         var match = await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId,
+            accruals, workspaces, invoices, clock, workspaceId,
             amount: 50m, currency: "USD", description: "Target");
         clock.UtcNow = T1;
         await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId,
+            accruals, workspaces, invoices, clock, workspaceId,
             amount: 50m, currency: "EUR", description: "Target");
         clock.UtcNow = T2;
         await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId,
+            accruals, workspaces, invoices, clock, workspaceId,
             amount: 50m, currency: "USD", description: "Other");
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -2075,9 +2113,9 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_omitted_description_prefix_passes_null_to_repository()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
-        await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "Alpha");
+        await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceId, description: "Alpha");
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
             new GetAccrualsPagedQuery(workspaceId, Page: 1, PageSize: 10));
@@ -2090,7 +2128,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_description_prefix_passes_normalized_value_to_repository()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -2107,7 +2145,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_blank_description_prefix_returns_ValidationFailed()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -2120,7 +2158,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_overlength_description_prefix_returns_ValidationFailed()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
         var overlength = new string('x', Accrual.DescriptionMaxLength + 1);
 
@@ -2134,18 +2172,18 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_description_prefix_filters_ordinal_via_repository()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         clock.UtcNow = T0;
         var match = await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId, description: "Alpha");
+            accruals, workspaces, invoices, clock, workspaceId, description: "Alpha");
         clock.UtcNow = T1;
         await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId, description: "alpha");
+            accruals, workspaces, invoices, clock, workspaceId, description: "alpha");
         clock.UtcNow = T2;
         await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId, description: "Other");
+            accruals, workspaces, invoices, clock, workspaceId, description: "Other");
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
             new GetAccrualsPagedQuery(
@@ -2163,15 +2201,15 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_description_prefix_lowercase_matches_lowercase_only()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         clock.UtcNow = T0;
         await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId, description: "Alpha");
+            accruals, workspaces, invoices, clock, workspaceId, description: "Alpha");
         clock.UtcNow = T1;
         var match = await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId, description: "alpha");
+            accruals, workspaces, invoices, clock, workspaceId, description: "alpha");
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
             new GetAccrualsPagedQuery(
@@ -2188,15 +2226,15 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_description_exact_unchanged_when_prefix_omitted()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         clock.UtcNow = T0;
         var match = await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId, description: "Exact match");
+            accruals, workspaces, invoices, clock, workspaceId, description: "Exact match");
         clock.UtcNow = T1;
         await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId, description: "exact match");
+            accruals, workspaces, invoices, clock, workspaceId, description: "exact match");
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
             new GetAccrualsPagedQuery(
@@ -2215,18 +2253,18 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_description_exact_and_prefix_compose_under_and()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         clock.UtcNow = T0;
         var match = await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId, description: "Alpha");
+            accruals, workspaces, invoices, clock, workspaceId, description: "Alpha");
         clock.UtcNow = T1;
         await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId, description: "Alphabet");
+            accruals, workspaces, invoices, clock, workspaceId, description: "Alphabet");
         clock.UtcNow = T2;
         await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId, description: "Other");
+            accruals, workspaces, invoices, clock, workspaceId, description: "Other");
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
             new GetAccrualsPagedQuery(
@@ -2246,12 +2284,12 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_description_prefix_composes_with_reversal_reason()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         clock.UtcNow = T0;
         var match = await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId, description: "Alpha");
+            accruals, workspaces, invoices, clock, workspaceId, description: "Alpha");
         Assert.True((await new RecognizeAccrualHandler(accruals, clock).HandleAsync(
             new RecognizeAccrualCommand(workspaceId, match.Id))).IsSuccess);
         Assert.True((await new ReverseAccrualHandler(accruals, clock).HandleAsync(
@@ -2259,7 +2297,7 @@ public sealed class AccrualApplicationTests
 
         clock.UtcNow = T1;
         var wrongReason = await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId, description: "Alpine");
+            accruals, workspaces, invoices, clock, workspaceId, description: "Alpine");
         Assert.True((await new RecognizeAccrualHandler(accruals, clock).HandleAsync(
             new RecognizeAccrualCommand(workspaceId, wrongReason.Id))).IsSuccess);
         Assert.True((await new ReverseAccrualHandler(accruals, clock).HandleAsync(
@@ -2267,7 +2305,7 @@ public sealed class AccrualApplicationTests
 
         clock.UtcNow = T2;
         var wrongPrefix = await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId, description: "Beta");
+            accruals, workspaces, invoices, clock, workspaceId, description: "Beta");
         Assert.True((await new RecognizeAccrualHandler(accruals, clock).HandleAsync(
             new RecognizeAccrualCommand(workspaceId, wrongPrefix.Id))).IsSuccess);
         Assert.True((await new ReverseAccrualHandler(accruals, clock).HandleAsync(
@@ -2291,20 +2329,20 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_description_prefix_composes_with_currency_and_status()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         clock.UtcNow = T0;
         var match = await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId,
+            accruals, workspaces, invoices, clock, workspaceId,
             amount: 50m, currency: "USD", description: "Alpha");
         clock.UtcNow = T1;
         await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId,
+            accruals, workspaces, invoices, clock, workspaceId,
             amount: 50m, currency: "EUR", description: "Alpha");
         clock.UtcNow = T2;
         await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId,
+            accruals, workspaces, invoices, clock, workspaceId,
             amount: 50m, currency: "USD", description: "Beta");
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -2325,18 +2363,18 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_description_prefix_wildcard_characters_are_literal()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         clock.UtcNow = T0;
         var match = await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId, description: "Al%ha");
+            accruals, workspaces, invoices, clock, workspaceId, description: "Al%ha");
         clock.UtcNow = T1;
         await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId, description: "Alpha");
+            accruals, workspaces, invoices, clock, workspaceId, description: "Alpha");
         clock.UtcNow = T2;
         await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId, description: "Al_ha");
+            accruals, workspaces, invoices, clock, workspaceId, description: "Al_ha");
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
             new GetAccrualsPagedQuery(
@@ -2353,20 +2391,20 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_description_prefix_pages_after_filter()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         clock.UtcNow = T0;
         var first = await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId, description: "Alpha1");
+            accruals, workspaces, invoices, clock, workspaceId, description: "Alpha1");
         clock.UtcNow = T1;
         var second = await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId, description: "Alpha2");
+            accruals, workspaces, invoices, clock, workspaceId, description: "Alpha2");
         clock.UtcNow = T2;
         var third = await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId, description: "Alpha3");
+            accruals, workspaces, invoices, clock, workspaceId, description: "Alpha3");
         await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId, description: "Beta");
+            accruals, workspaces, invoices, clock, workspaceId, description: "Beta");
 
         var page1 = await new GetAccrualsPagedHandler(accruals).HandleAsync(
             new GetAccrualsPagedQuery(
@@ -2390,9 +2428,9 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_omitted_recognized_bounds_pass_null_to_repository()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
-        await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "Draft");
+        await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceId, description: "Draft");
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
             new GetAccrualsPagedQuery(workspaceId, Page: 1, PageSize: 10));
@@ -2406,7 +2444,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_recognized_from_only_passes_bound_to_repository()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -2420,7 +2458,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_recognized_to_only_passes_bound_to_repository()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -2434,7 +2472,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_recognized_both_bounds_pass_to_repository()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -2453,7 +2491,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_equal_recognized_bounds_are_accepted()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -2473,7 +2511,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_recognized_from_after_to_returns_ValidationFailed()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -2491,28 +2529,28 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_recognized_from_filters_inclusive_via_repository()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         clock.UtcNow = T0;
-        var early = await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "Early");
+        var early = await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceId, description: "Early");
         var earlyRecognized = await new RecognizeAccrualHandler(accruals, clock).HandleAsync(
             new RecognizeAccrualCommand(workspaceId, early.Id));
         Assert.True(earlyRecognized.IsSuccess);
 
         clock.UtcNow = T1;
-        var onBound = await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "On");
+        var onBound = await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceId, description: "On");
         var onBoundRecognized = await new RecognizeAccrualHandler(accruals, clock).HandleAsync(
             new RecognizeAccrualCommand(workspaceId, onBound.Id));
         Assert.True(onBoundRecognized.IsSuccess);
 
         clock.UtcNow = T2;
-        var late = await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "Late");
+        var late = await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceId, description: "Late");
         var lateRecognized = await new RecognizeAccrualHandler(accruals, clock).HandleAsync(
             new RecognizeAccrualCommand(workspaceId, late.Id));
         Assert.True(lateRecognized.IsSuccess);
 
-        await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "Draft");
+        await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceId, description: "Draft");
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
             new GetAccrualsPagedQuery(workspaceId, Page: 1, PageSize: 10, RecognizedFromUtc: T1));
@@ -2527,13 +2565,13 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_recognized_bound_excludes_null_recognized_at()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         clock.UtcNow = T1;
-        var draft = await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "Draft");
+        var draft = await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceId, description: "Draft");
         var toRecognize = await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId, description: "Recognized");
+            accruals, workspaces, invoices, clock, workspaceId, description: "Recognized");
         var recognized = await new RecognizeAccrualHandler(accruals, clock).HandleAsync(
             new RecognizeAccrualCommand(workspaceId, toRecognize.Id));
         Assert.True(recognized.IsSuccess);
@@ -2550,12 +2588,12 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_recognized_composes_with_description_and_is_independent_of_recognition_date()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         clock.UtcNow = T0;
         var match = await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId,
+            accruals, workspaces, invoices, clock, workspaceId,
             description: "Target",
             recognitionDate: RecognitionDate);
         var matchRecognized = await new RecognizeAccrualHandler(accruals, clock).HandleAsync(
@@ -2564,7 +2602,7 @@ public sealed class AccrualApplicationTests
 
         clock.UtcNow = T1;
         var wrongDescription = await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId,
+            accruals, workspaces, invoices, clock, workspaceId,
             description: "Other",
             recognitionDate: RecognitionDate);
         var wrongDescriptionRecognized = await new RecognizeAccrualHandler(accruals, clock).HandleAsync(
@@ -2573,7 +2611,7 @@ public sealed class AccrualApplicationTests
 
         clock.UtcNow = T2;
         await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId,
+            accruals, workspaces, invoices, clock, workspaceId,
             description: "Target",
             recognitionDate: RecognitionDateAlt);
 
@@ -2601,9 +2639,9 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_omitted_reversed_bounds_pass_null_to_repository()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
-        await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "Draft");
+        await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceId, description: "Draft");
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
             new GetAccrualsPagedQuery(workspaceId, Page: 1, PageSize: 10));
@@ -2617,7 +2655,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_reversed_from_only_passes_bound_to_repository()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -2631,7 +2669,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_reversed_to_only_passes_bound_to_repository()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -2645,7 +2683,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_equal_reversed_bounds_are_accepted()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -2665,7 +2703,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_reversed_from_after_to_returns_ValidationFailed()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -2683,31 +2721,31 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_reversed_from_filters_inclusive_via_repository()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         clock.UtcNow = T0;
-        var early = await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "Early");
+        var early = await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceId, description: "Early");
         Assert.True((await new RecognizeAccrualHandler(accruals, clock).HandleAsync(
             new RecognizeAccrualCommand(workspaceId, early.Id))).IsSuccess);
         Assert.True((await new ReverseAccrualHandler(accruals, clock).HandleAsync(
             new ReverseAccrualCommand(workspaceId, early.Id, "Early reverse"))).IsSuccess);
 
         clock.UtcNow = T1;
-        var onBound = await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "On");
+        var onBound = await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceId, description: "On");
         Assert.True((await new RecognizeAccrualHandler(accruals, clock).HandleAsync(
             new RecognizeAccrualCommand(workspaceId, onBound.Id))).IsSuccess);
         Assert.True((await new ReverseAccrualHandler(accruals, clock).HandleAsync(
             new ReverseAccrualCommand(workspaceId, onBound.Id, "On reverse"))).IsSuccess);
 
         clock.UtcNow = T2;
-        var late = await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "Late");
+        var late = await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceId, description: "Late");
         Assert.True((await new RecognizeAccrualHandler(accruals, clock).HandleAsync(
             new RecognizeAccrualCommand(workspaceId, late.Id))).IsSuccess);
         Assert.True((await new ReverseAccrualHandler(accruals, clock).HandleAsync(
             new ReverseAccrualCommand(workspaceId, late.Id, "Late reverse"))).IsSuccess);
 
-        await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "Draft");
+        await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceId, description: "Draft");
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
             new GetAccrualsPagedQuery(workspaceId, Page: 1, PageSize: 10, ReversedFromUtc: T1));
@@ -2722,18 +2760,18 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_reversed_bound_excludes_null_reversed_at()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         clock.UtcNow = T0;
-        var draft = await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "Draft");
+        var draft = await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceId, description: "Draft");
         var recognizedOnly = await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId, description: "Recognized");
+            accruals, workspaces, invoices, clock, workspaceId, description: "Recognized");
         Assert.True((await new RecognizeAccrualHandler(accruals, clock).HandleAsync(
             new RecognizeAccrualCommand(workspaceId, recognizedOnly.Id))).IsSuccess);
 
         clock.UtcNow = T1;
-        var reversed = await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "Reversed");
+        var reversed = await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceId, description: "Reversed");
         Assert.True((await new RecognizeAccrualHandler(accruals, clock).HandleAsync(
             new RecognizeAccrualCommand(workspaceId, reversed.Id))).IsSuccess);
         Assert.True((await new ReverseAccrualHandler(accruals, clock).HandleAsync(
@@ -2752,12 +2790,12 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_reversed_composes_with_recognized_and_description()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         clock.UtcNow = T0;
         var match = await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId, description: "Target");
+            accruals, workspaces, invoices, clock, workspaceId, description: "Target");
         Assert.True((await new RecognizeAccrualHandler(accruals, clock).HandleAsync(
             new RecognizeAccrualCommand(workspaceId, match.Id))).IsSuccess);
         clock.UtcNow = T1;
@@ -2766,7 +2804,7 @@ public sealed class AccrualApplicationTests
 
         clock.UtcNow = T0;
         var wrongDescription = await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId, description: "Other");
+            accruals, workspaces, invoices, clock, workspaceId, description: "Other");
         Assert.True((await new RecognizeAccrualHandler(accruals, clock).HandleAsync(
             new RecognizeAccrualCommand(workspaceId, wrongDescription.Id))).IsSuccess);
         clock.UtcNow = T1;
@@ -2775,7 +2813,7 @@ public sealed class AccrualApplicationTests
 
         clock.UtcNow = T0;
         var recognizedOnly = await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId, description: "Target");
+            accruals, workspaces, invoices, clock, workspaceId, description: "Target");
         Assert.True((await new RecognizeAccrualHandler(accruals, clock).HandleAsync(
             new RecognizeAccrualCommand(workspaceId, recognizedOnly.Id))).IsSuccess);
 
@@ -2802,9 +2840,9 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_omitted_reversal_reason_passes_null_to_repository()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
-        await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "Draft");
+        await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceId, description: "Draft");
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
             new GetAccrualsPagedQuery(workspaceId, Page: 1, PageSize: 10));
@@ -2817,7 +2855,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_reversal_reason_passes_normalized_value_to_repository()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -2834,7 +2872,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_blank_reversal_reason_returns_ValidationFailed()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
@@ -2847,7 +2885,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_overlength_reversal_reason_returns_ValidationFailed()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
         var overlength = new string('x', Accrual.ReversalReasonMaxLength + 1);
 
@@ -2861,31 +2899,31 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_reversal_reason_filters_exact_ordinal_via_repository()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         clock.UtcNow = T0;
-        var other = await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "A");
+        var other = await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceId, description: "A");
         Assert.True((await new RecognizeAccrualHandler(accruals, clock).HandleAsync(
             new RecognizeAccrualCommand(workspaceId, other.Id))).IsSuccess);
         Assert.True((await new ReverseAccrualHandler(accruals, clock).HandleAsync(
             new ReverseAccrualCommand(workspaceId, other.Id, "Other reason"))).IsSuccess);
 
         clock.UtcNow = T1;
-        var match = await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "B");
+        var match = await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceId, description: "B");
         Assert.True((await new RecognizeAccrualHandler(accruals, clock).HandleAsync(
             new RecognizeAccrualCommand(workspaceId, match.Id))).IsSuccess);
         Assert.True((await new ReverseAccrualHandler(accruals, clock).HandleAsync(
             new ReverseAccrualCommand(workspaceId, match.Id, "Exact reason"))).IsSuccess);
 
         clock.UtcNow = T2;
-        var caseVariant = await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "C");
+        var caseVariant = await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceId, description: "C");
         Assert.True((await new RecognizeAccrualHandler(accruals, clock).HandleAsync(
             new RecognizeAccrualCommand(workspaceId, caseVariant.Id))).IsSuccess);
         Assert.True((await new ReverseAccrualHandler(accruals, clock).HandleAsync(
             new ReverseAccrualCommand(workspaceId, caseVariant.Id, "exact reason"))).IsSuccess);
 
-        await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "Draft");
+        await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceId, description: "Draft");
 
         var result = await new GetAccrualsPagedHandler(accruals).HandleAsync(
             new GetAccrualsPagedQuery(
@@ -2903,25 +2941,25 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListPaged_reversal_reason_composes_with_reversed_range()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         clock.UtcNow = T1;
-        var match = await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "Match");
+        var match = await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceId, description: "Match");
         Assert.True((await new RecognizeAccrualHandler(accruals, clock).HandleAsync(
             new RecognizeAccrualCommand(workspaceId, match.Id))).IsSuccess);
         Assert.True((await new ReverseAccrualHandler(accruals, clock).HandleAsync(
             new ReverseAccrualCommand(workspaceId, match.Id, "Target"))).IsSuccess);
 
         clock.UtcNow = T0;
-        var wrongReason = await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "Wrong");
+        var wrongReason = await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceId, description: "Wrong");
         Assert.True((await new RecognizeAccrualHandler(accruals, clock).HandleAsync(
             new RecognizeAccrualCommand(workspaceId, wrongReason.Id))).IsSuccess);
         Assert.True((await new ReverseAccrualHandler(accruals, clock).HandleAsync(
             new ReverseAccrualCommand(workspaceId, wrongReason.Id, "Other"))).IsSuccess);
 
         clock.UtcNow = T2;
-        var outOfRange = await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "Late");
+        var outOfRange = await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceId, description: "Late");
         Assert.True((await new RecognizeAccrualHandler(accruals, clock).HandleAsync(
             new RecognizeAccrualCommand(workspaceId, outOfRange.Id))).IsSuccess);
         Assert.True((await new ReverseAccrualHandler(accruals, clock).HandleAsync(
@@ -2946,7 +2984,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task List_equal_created_at_orders_by_id_descending()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
         var workspace = new FinanceWorkspaceId(workspaceId);
         var lowerId = new AccrualId(Guid.Parse("11111111-1111-1111-1111-111111111111"));
@@ -2985,12 +3023,13 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task List_maps_accrual_dto_fields_including_nullable_source()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
         clock.UtcNow = T0;
         var created = await CreateAccrualAsync(
             accruals,
             workspaces,
+            invoices,
             clock,
             workspaceId,
             type: "Expense",
@@ -3024,7 +3063,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task List_rejects_empty_workspace_id()
     {
-        var (accruals, _, _) = CreateHarness();
+        var (accruals, _, _, _) = CreateHarness();
 
         var result = await new GetAccrualsHandler(accruals).HandleAsync(
             new GetAccrualsQuery(Guid.Empty));
@@ -3036,21 +3075,21 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListByInvoice_returns_all_matching_source_invoice_accruals()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
         var otherInvoiceId = Guid.Parse("33333333-3333-3333-3333-333333333333");
 
         clock.UtcNow = T0;
         var older = await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId, description: "Older", sourceInvoiceId: SourceInvoiceId);
+            accruals, workspaces, invoices, clock, workspaceId, description: "Older", sourceInvoiceId: SourceInvoiceId);
         clock.UtcNow = T1;
         var newer = await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId, description: "Newer", sourceInvoiceId: SourceInvoiceId);
+            accruals, workspaces, invoices, clock, workspaceId, description: "Newer", sourceInvoiceId: SourceInvoiceId);
         clock.UtcNow = T2;
         await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId, description: "Other invoice", sourceInvoiceId: otherInvoiceId);
+            accruals, workspaces, invoices, clock, workspaceId, description: "Other invoice", sourceInvoiceId: otherInvoiceId);
         await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceId, description: "Null source");
+            accruals, workspaces, invoices, clock, workspaceId, description: "Null source");
 
         var result = await new GetAccrualsByInvoiceHandler(accruals).HandleAsync(
             new GetAccrualsByInvoiceQuery(workspaceId, SourceInvoiceId));
@@ -3067,9 +3106,9 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListByInvoice_empty_returns_empty_list()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
-        await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, description: "Null source");
+        await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceId, description: "Null source");
 
         var result = await new GetAccrualsByInvoiceHandler(accruals).HandleAsync(
             new GetAccrualsByInvoiceQuery(workspaceId, SourceInvoiceId));
@@ -3082,7 +3121,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListByInvoice_excludes_other_workspace()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceA = await SeedWorkspaceAsync(workspaces, clock);
         var workspaceB = await SeedWorkspaceAsync(
             workspaces,
@@ -3092,9 +3131,19 @@ public sealed class AccrualApplicationTests
             "Other");
 
         await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceA, description: "A", sourceInvoiceId: SourceInvoiceId);
-        await CreateAccrualAsync(
-            accruals, workspaces, clock, workspaceB, description: "B", sourceInvoiceId: SourceInvoiceId);
+            accruals, workspaces, invoices, clock, workspaceA, description: "A", sourceInvoiceId: SourceInvoiceId);
+        // Same SourceInvoiceId Guid in another workspace (no Invoice row there) — list remains workspace-scoped.
+        await accruals.AddAsync(Accrual.Create(
+            AccrualId.New(),
+            new FinanceWorkspaceId(workspaceB),
+            AccrualType.Revenue,
+            10m,
+            new Currency("UAH"),
+            RecognitionDate,
+            "B",
+            new InvoiceId(SourceInvoiceId),
+            clock.UtcNow));
+        await accruals.SaveChangesAsync();
 
         var result = await new GetAccrualsByInvoiceHandler(accruals).HandleAsync(
             new GetAccrualsByInvoiceQuery(workspaceA, SourceInvoiceId));
@@ -3108,7 +3157,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListByInvoice_equal_created_at_orders_by_id_descending()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
         var workspace = new FinanceWorkspaceId(workspaceId);
         var sourceInvoiceId = new InvoiceId(SourceInvoiceId);
@@ -3148,12 +3197,13 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListByInvoice_maps_accrual_dto_fields()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
         clock.UtcNow = T0;
         var created = await CreateAccrualAsync(
             accruals,
             workspaces,
+            invoices,
             clock,
             workspaceId,
             type: "Expense",
@@ -3187,7 +3237,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListByInvoice_rejects_empty_workspace_id()
     {
-        var (accruals, _, _) = CreateHarness();
+        var (accruals, _, _, _) = CreateHarness();
 
         var result = await new GetAccrualsByInvoiceHandler(accruals).HandleAsync(
             new GetAccrualsByInvoiceQuery(Guid.Empty, SourceInvoiceId));
@@ -3199,7 +3249,7 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ListByInvoice_rejects_empty_invoice_id()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
 
         var result = await new GetAccrualsByInvoiceHandler(accruals).HandleAsync(
@@ -3212,9 +3262,9 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ChangeType_updates_and_saves_once()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
-        var created = await CreateAccrualAsync(accruals, workspaces, clock, workspaceId, type: "Revenue");
+        var created = await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceId, type: "Revenue");
         clock.UtcNow = T1;
         var savesBefore = accruals.SaveChangesCallCount;
 
@@ -3230,9 +3280,9 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ChangeAmount_updates_amount()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
-        var created = await CreateAccrualAsync(accruals, workspaces, clock, workspaceId);
+        var created = await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceId);
         clock.UtcNow = T1;
 
         var result = await new ChangeAccrualAmountHandler(accruals, clock).HandleAsync(
@@ -3246,9 +3296,9 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ChangeCurrency_updates_currency()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
-        var created = await CreateAccrualAsync(accruals, workspaces, clock, workspaceId);
+        var created = await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceId);
         clock.UtcNow = T1;
 
         var result = await new ChangeAccrualCurrencyHandler(accruals, clock).HandleAsync(
@@ -3261,9 +3311,9 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ChangeRecognitionDate_updates_date()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
-        var created = await CreateAccrualAsync(accruals, workspaces, clock, workspaceId);
+        var created = await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceId);
         clock.UtcNow = T1;
 
         var result = await new ChangeAccrualRecognitionDateHandler(accruals, clock).HandleAsync(
@@ -3276,9 +3326,9 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ChangeDescription_trims_and_updates()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
-        var created = await CreateAccrualAsync(accruals, workspaces, clock, workspaceId);
+        var created = await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceId);
         clock.UtcNow = T1;
 
         var result = await new ChangeAccrualDescriptionHandler(accruals, clock).HandleAsync(
@@ -3291,18 +3341,19 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task ChangeSourceInvoice_sets_and_clears()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
-        var created = await CreateAccrualAsync(accruals, workspaces, clock, workspaceId);
+        var created = await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceId);
+        await SeedInvoiceAsync(invoices, workspaceId, SourceInvoiceId, clock);
         clock.UtcNow = T1;
 
-        var set = await new ChangeAccrualSourceInvoiceHandler(accruals, clock).HandleAsync(
+        var set = await new ChangeAccrualSourceInvoiceHandler(accruals, invoices, clock).HandleAsync(
             new ChangeAccrualSourceInvoiceCommand(workspaceId, created.Id, SourceInvoiceId));
         Assert.True(set.IsSuccess);
         Assert.Equal(SourceInvoiceId, set.Value!.SourceInvoiceId);
 
         clock.UtcNow = T2;
-        var clear = await new ChangeAccrualSourceInvoiceHandler(accruals, clock).HandleAsync(
+        var clear = await new ChangeAccrualSourceInvoiceHandler(accruals, invoices, clock).HandleAsync(
             new ChangeAccrualSourceInvoiceCommand(workspaceId, created.Id, null));
         Assert.True(clear.IsSuccess);
         Assert.Null(clear.Value!.SourceInvoiceId);
@@ -3310,9 +3361,152 @@ public sealed class AccrualApplicationTests
     }
 
     [Fact]
+    public async Task Create_without_source_invoice_persists()
+    {
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        var result = await new CreateAccrualHandler(accruals, workspaces, invoices, clock).HandleAsync(
+            new CreateAccrualCommand(
+                workspaceId,
+                "Revenue",
+                10m,
+                "UAH",
+                RecognitionDate,
+                "Unlinked",
+                null));
+
+        Assert.True(result.IsSuccess);
+        Assert.Null(result.Value!.SourceInvoiceId);
+        Assert.Equal(1, accruals.AddCallCount);
+        Assert.Equal(1, accruals.SaveChangesCallCount);
+        Assert.Equal(0, invoices.GetByIdCallCount);
+    }
+
+    [Fact]
+    public async Task Create_with_existing_source_invoice_persists()
+    {
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        await SeedInvoiceAsync(invoices, workspaceId, SourceInvoiceId, clock);
+        var getByIdBefore = invoices.GetByIdCallCount;
+
+        var result = await new CreateAccrualHandler(accruals, workspaces, invoices, clock).HandleAsync(
+            new CreateAccrualCommand(
+                workspaceId,
+                "Expense",
+                20m,
+                "UAH",
+                RecognitionDate,
+                "Linked",
+                SourceInvoiceId));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(SourceInvoiceId, result.Value!.SourceInvoiceId);
+        Assert.Equal(getByIdBefore + 1, invoices.GetByIdCallCount);
+        Assert.Equal(1, accruals.AddCallCount);
+        Assert.Equal(1, accruals.SaveChangesCallCount);
+    }
+
+    [Fact]
+    public async Task Create_unknown_source_invoice_returns_NotFound_without_persist()
+    {
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+
+        var result = await new CreateAccrualHandler(accruals, workspaces, invoices, clock).HandleAsync(
+            new CreateAccrualCommand(
+                workspaceId,
+                "Revenue",
+                10m,
+                "UAH",
+                RecognitionDate,
+                "Missing source",
+                SourceInvoiceId));
+
+        Assert.Equal(ApplicationErrorKind.NotFound, result.ErrorKind);
+        Assert.Equal("Invoice was not found.", result.ErrorMessage);
+        Assert.Equal(0, accruals.AddCallCount);
+        Assert.Equal(0, accruals.SaveChangesCallCount);
+        Assert.Equal(1, invoices.GetByIdCallCount);
+    }
+
+    [Fact]
+    public async Task Create_cross_workspace_source_invoice_returns_NotFound_without_persist()
+    {
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
+        var workspaceA = await SeedWorkspaceAsync(workspaces, clock);
+        var workspaceB = await SeedWorkspaceAsync(
+            workspaces,
+            clock,
+            Guid.Parse("cccccccc-3333-3333-3333-333333333333"),
+            Guid.Parse("dddddddd-4444-4444-4444-444444444444"),
+            "Other");
+        await SeedInvoiceAsync(invoices, workspaceB, SourceInvoiceId, clock, "INV-B");
+
+        var result = await new CreateAccrualHandler(accruals, workspaces, invoices, clock).HandleAsync(
+            new CreateAccrualCommand(
+                workspaceA,
+                "Revenue",
+                10m,
+                "UAH",
+                RecognitionDate,
+                "Foreign source",
+                SourceInvoiceId));
+
+        Assert.Equal(ApplicationErrorKind.NotFound, result.ErrorKind);
+        Assert.Equal("Invoice was not found.", result.ErrorMessage);
+        Assert.Equal(0, accruals.AddCallCount);
+        Assert.Equal(0, accruals.SaveChangesCallCount);
+    }
+
+    [Fact]
+    public async Task ChangeSourceInvoice_unknown_returns_NotFound_without_save()
+    {
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        var created = await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceId);
+        clock.UtcNow = T1;
+        var savesBefore = accruals.SaveChangesCallCount;
+
+        var result = await new ChangeAccrualSourceInvoiceHandler(accruals, invoices, clock).HandleAsync(
+            new ChangeAccrualSourceInvoiceCommand(workspaceId, created.Id, SourceInvoiceId));
+
+        Assert.Equal(ApplicationErrorKind.NotFound, result.ErrorKind);
+        Assert.Equal("Invoice was not found.", result.ErrorMessage);
+        Assert.Equal(savesBefore, accruals.SaveChangesCallCount);
+        Assert.Null(accruals.FindById(created.Id)!.SourceInvoiceId);
+    }
+
+    [Fact]
+    public async Task ChangeSourceInvoice_cross_workspace_returns_NotFound_without_save()
+    {
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
+        var workspaceA = await SeedWorkspaceAsync(workspaces, clock);
+        var workspaceB = await SeedWorkspaceAsync(
+            workspaces,
+            clock,
+            Guid.Parse("cccccccc-3333-3333-3333-333333333333"),
+            Guid.Parse("dddddddd-4444-4444-4444-444444444444"),
+            "Other");
+        var created = await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceA);
+        await SeedInvoiceAsync(invoices, workspaceB, SourceInvoiceId, clock, "INV-B");
+        clock.UtcNow = T1;
+        var savesBefore = accruals.SaveChangesCallCount;
+
+        var result = await new ChangeAccrualSourceInvoiceHandler(accruals, invoices, clock).HandleAsync(
+            new ChangeAccrualSourceInvoiceCommand(workspaceA, created.Id, SourceInvoiceId));
+
+        Assert.Equal(ApplicationErrorKind.NotFound, result.ErrorKind);
+        Assert.Equal("Invoice was not found.", result.ErrorMessage);
+        Assert.Equal(savesBefore, accruals.SaveChangesCallCount);
+        Assert.Null(accruals.FindById(created.Id)!.SourceInvoiceId);
+    }
+
+    [Fact]
     public async Task Mutation_missing_aggregate_returns_NotFound_without_save()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
         var savesBefore = accruals.SaveChangesCallCount;
 
@@ -3326,9 +3520,9 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task Recognize_transitions_draft_and_uses_clock()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
-        var created = await CreateAccrualAsync(accruals, workspaces, clock, workspaceId);
+        var created = await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceId);
         clock.UtcNow = T1;
         var savesBefore = accruals.SaveChangesCallCount;
 
@@ -3345,9 +3539,9 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task Recognize_repeat_returns_Conflict_without_save()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
-        var recognized = await CreateRecognizedAsync(accruals, workspaces, clock, workspaceId);
+        var recognized = await CreateRecognizedAsync(accruals, workspaces, invoices, clock, workspaceId);
         clock.UtcNow = T2;
         var savesBefore = accruals.SaveChangesCallCount;
 
@@ -3361,9 +3555,9 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task Recognize_save_concurrency_conflict_returns_Conflict()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
-        var created = await CreateAccrualAsync(accruals, workspaces, clock, workspaceId);
+        var created = await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceId);
         clock.UtcNow = T1;
         accruals.ThrowOnSaveChanges = new InvalidOperationException(
             "The accrual was modified by another request. Reload and retry.");
@@ -3381,9 +3575,9 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task Mutation_after_recognize_returns_Conflict()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
-        var recognized = await CreateRecognizedAsync(accruals, workspaces, clock, workspaceId);
+        var recognized = await CreateRecognizedAsync(accruals, workspaces, invoices, clock, workspaceId);
         clock.UtcNow = T2;
         var savesBefore = accruals.SaveChangesCallCount;
 
@@ -3397,9 +3591,9 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task Reverse_transitions_recognized_and_trims_reason()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
-        var recognized = await CreateRecognizedAsync(accruals, workspaces, clock, workspaceId);
+        var recognized = await CreateRecognizedAsync(accruals, workspaces, invoices, clock, workspaceId);
         clock.UtcNow = T2;
 
         var result = await new ReverseAccrualHandler(accruals, clock).HandleAsync(
@@ -3415,9 +3609,9 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task Reverse_draft_returns_Conflict()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
-        var created = await CreateAccrualAsync(accruals, workspaces, clock, workspaceId);
+        var created = await CreateAccrualAsync(accruals, workspaces, invoices, clock, workspaceId);
         clock.UtcNow = T1;
         var savesBefore = accruals.SaveChangesCallCount;
 
@@ -3431,9 +3625,9 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task Reverse_repeat_returns_Conflict()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
-        var recognized = await CreateRecognizedAsync(accruals, workspaces, clock, workspaceId);
+        var recognized = await CreateRecognizedAsync(accruals, workspaces, invoices, clock, workspaceId);
         clock.UtcNow = T2;
         Assert.True((await new ReverseAccrualHandler(accruals, clock).HandleAsync(
             new ReverseAccrualCommand(workspaceId, recognized.Id, "First"))).IsSuccess);
@@ -3450,9 +3644,9 @@ public sealed class AccrualApplicationTests
     [Fact]
     public async Task Reverse_blank_reason_returns_ValidationFailed()
     {
-        var (accruals, workspaces, clock) = CreateHarness();
+        var (accruals, workspaces, invoices, clock) = CreateHarness();
         var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
-        var recognized = await CreateRecognizedAsync(accruals, workspaces, clock, workspaceId);
+        var recognized = await CreateRecognizedAsync(accruals, workspaces, invoices, clock, workspaceId);
         clock.UtcNow = T2;
         var savesBefore = accruals.SaveChangesCallCount;
 

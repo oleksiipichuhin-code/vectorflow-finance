@@ -102,9 +102,10 @@ F3A–F3F are published. Decimal precision policy for Debit/Credit remains an op
 | F4AI | Accrual Description Prefix Composition | Complete |
 | F4AJ | Accrual Optimistic Concurrency (UpdatedAt token) | Complete |
 | F4AK | Invoice Optimistic Concurrency (UpdatedAt token) | Complete |
+| F4AL | Accrual SourceInvoiceId Existence Validation | Complete |
 | F4Q+ | Later invoice and Accrual query enhancements | Planned |
 
-F4A–F4AK are published. F4AK Invoice Optimistic Concurrency marks Invoice `UpdatedAt` as an EF Core concurrency token (no schema/migration/API contract change); stale concurrent saves after issue/draft mutation race map `DbUpdateConcurrencyException` → Conflict/409 via repository + Application handlers; sequential invalid transitions remain domain Conflict. Accrual concurrency (F4AJ) and Invoice concurrency (F4AK) now share the same UpdatedAt-token posture. Remaining invoice query enhancements (other multi-field filters / full-text search), further Accrual text modes (contains/full-text), Invoice existence validation on SourceInvoiceId, and other deferred capabilities remain planned under F4Q+ or later slices. F4 as a whole remains incomplete.
+F4A–F4AL are published. F4AL validates optional Accrual `SourceInvoiceId` on create and draft change-source-invoice via workspace-scoped `IInvoiceRepository.GetByIdAsync` before SaveChanges (missing and cross-workspace → NotFound/`Invoice was not found.`; null clears without lookup; no schema/FK/migration; list/filter paths still do not require Invoice existence). F4AK Invoice Optimistic Concurrency marks Invoice `UpdatedAt` as an EF Core concurrency token (no schema/migration/API contract change); stale concurrent saves after issue/draft mutation race map `DbUpdateConcurrencyException` → Conflict/409 via repository + Application handlers; sequential invalid transitions remain domain Conflict. Accrual concurrency (F4AJ) and Invoice concurrency (F4AK) share the same UpdatedAt-token posture. Remaining invoice query enhancements (other multi-field filters / full-text search), further Accrual text modes (contains/full-text), and other deferred capabilities remain planned under F4Q+ or later slices. F4 as a whole remains incomplete.
 
 ## F5 sub-slices
 

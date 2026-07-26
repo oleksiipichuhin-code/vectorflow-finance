@@ -9,6 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using VectorFlow.Finance.Domain;
 using VectorFlow.Finance.Domain.Accruals;
+using VectorFlow.Finance.Domain.Invoices;
 using VectorFlow.Finance.Domain.Workspaces;
 using VectorFlow.Finance.Infrastructure.Persistence;
 using Xunit;
@@ -69,7 +70,7 @@ public sealed class AccrualEndpointTests : IAsyncLifetime
         var workspaceId = await CreateWorkspaceAsync(
             Guid.Parse("a1000000-0000-0000-0000-000000000001"),
             Guid.Parse("a2000000-0000-0000-0000-000000000001"));
-        var sourceInvoiceId = Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+        var sourceInvoiceId = await CreateInvoiceAsync(workspaceId, "INV-CREATE");
 
         var response = await _client.PostAsJsonAsync(
             $"/api/finance-workspaces/{workspaceId}/accruals",
@@ -104,6 +105,61 @@ public sealed class AccrualEndpointTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Create_unknown_source_invoice_returns_404()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("a1000000-0000-0000-0000-000000000101"),
+            Guid.Parse("a2000000-0000-0000-0000-000000000101"));
+        var unknownInvoiceId = Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+
+        var response = await _client.PostAsJsonAsync(
+            $"/api/finance-workspaces/{workspaceId}/accruals",
+            new
+            {
+                type = "Revenue",
+                amount = 10m,
+                currency = "UAH",
+                recognitionDateUtc = RecognitionDate,
+                description = "Missing source",
+                sourceInvoiceId = unknownInvoiceId
+            });
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        await AssertErrorAsync(response, "NotFound");
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("Invoice was not found.", document.RootElement.GetProperty("message").GetString());
+    }
+
+    [Fact]
+    public async Task Create_cross_workspace_source_invoice_returns_404()
+    {
+        var workspaceA = await CreateWorkspaceAsync(
+            Guid.Parse("a1000000-0000-0000-0000-000000000102"),
+            Guid.Parse("a2000000-0000-0000-0000-000000000102"));
+        var workspaceB = await CreateWorkspaceAsync(
+            Guid.Parse("a1000000-0000-0000-0000-000000000103"),
+            Guid.Parse("a2000000-0000-0000-0000-000000000103"));
+        var foreignInvoiceId = await CreateInvoiceAsync(workspaceB, "INV-FOREIGN");
+
+        var response = await _client.PostAsJsonAsync(
+            $"/api/finance-workspaces/{workspaceA}/accruals",
+            new
+            {
+                type = "Revenue",
+                amount = 10m,
+                currency = "UAH",
+                recognitionDateUtc = RecognitionDate,
+                description = "Foreign source",
+                sourceInvoiceId = foreignInvoiceId
+            });
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        await AssertErrorAsync(response, "NotFound");
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("Invoice was not found.", document.RootElement.GetProperty("message").GetString());
+    }
+
+    [Fact]
     public async Task List_returns_only_requested_workspace_newest_first()
     {
         var workspaceA = await CreateWorkspaceAsync(
@@ -115,7 +171,8 @@ public sealed class AccrualEndpointTests : IAsyncLifetime
 
         var older = await CreateAccrualAsync(workspaceA, "Revenue", 10m, "Older");
         await Task.Delay(20);
-        var newer = await CreateAccrualAsync(workspaceA, "Expense", 20m, "Newer", Guid.Parse("dddddddd-eeee-ffff-aaaa-bbbbbbbbbbbb"));
+        var sourceInvoiceId = await CreateInvoiceAsync(workspaceA, "INV-NEWER");
+        var newer = await CreateAccrualAsync(workspaceA, "Expense", 20m, "Newer", sourceInvoiceId);
         await CreateAccrualAsync(workspaceB, "Revenue", 30m, "Other");
 
         var response = await _client.GetAsync($"/api/finance-workspaces/{workspaceA}/accruals");
@@ -128,7 +185,7 @@ public sealed class AccrualEndpointTests : IAsyncLifetime
         Assert.Equal("Newer", document.RootElement[0].GetProperty("description").GetString());
         Assert.Equal("Expense", document.RootElement[0].GetProperty("type").GetString());
         Assert.Equal(
-            Guid.Parse("dddddddd-eeee-ffff-aaaa-bbbbbbbbbbbb"),
+            sourceInvoiceId,
             document.RootElement[0].GetProperty("sourceInvoiceId").GetGuid());
         Assert.Equal(JsonValueKind.Null, document.RootElement[1].GetProperty("sourceInvoiceId").ValueKind);
         Assert.True(document.RootElement[0].TryGetProperty("createdAtUtc", out _));
@@ -292,7 +349,7 @@ public sealed class AccrualEndpointTests : IAsyncLifetime
         var workspaceId = await CreateWorkspaceAsync(
             Guid.Parse("a1000000-0000-0000-0000-000000000056"),
             Guid.Parse("a2000000-0000-0000-0000-000000000056"));
-        var invoiceId = Guid.Parse("cccccccc-dddd-eeee-ffff-aaaaaaaaaaaa");
+        var invoiceId = await CreateInvoiceAsync(workspaceId, "INV-KEEP");
         var accrualId = await CreateAccrualAsync(workspaceId, "Revenue", 10m, "Keep", invoiceId);
 
         var list = await _client.GetAsync($"/api/finance-workspaces/{workspaceId}/accruals");
@@ -898,8 +955,8 @@ public sealed class AccrualEndpointTests : IAsyncLifetime
         var workspaceId = await CreateWorkspaceAsync(
             Guid.Parse("a1000000-0000-0000-0000-000000000040"),
             Guid.Parse("a2000000-0000-0000-0000-000000000040"));
-        var invoiceId = Guid.Parse("22222222-2222-2222-2222-222222222222");
-        var otherInvoiceId = Guid.Parse("33333333-3333-3333-3333-333333333333");
+        var invoiceId = await CreateInvoiceAsync(workspaceId, "INV-A");
+        var otherInvoiceId = await CreateInvoiceAsync(workspaceId, "INV-B");
 
         await CreateAccrualAsync(workspaceId, "Revenue", 10m, "Other", otherInvoiceId);
         var olderMatch = await CreateAccrualAsync(workspaceId, "Revenue", 20m, "Older match", invoiceId);
@@ -926,7 +983,7 @@ public sealed class AccrualEndpointTests : IAsyncLifetime
         var workspaceId = await CreateWorkspaceAsync(
             Guid.Parse("a1000000-0000-0000-0000-000000000041"),
             Guid.Parse("a2000000-0000-0000-0000-000000000041"));
-        var invoiceId = Guid.Parse("22222222-2222-2222-2222-222222222222");
+        var invoiceId = await CreateInvoiceAsync(workspaceId, "INV-SRC");
 
         await CreateAccrualAsync(workspaceId, "Revenue", 10m, "Linked", invoiceId);
         await CreateAccrualAsync(workspaceId, "Expense", 20m, "Unlinked", null);
@@ -976,7 +1033,7 @@ public sealed class AccrualEndpointTests : IAsyncLifetime
             "Revenue",
             10m,
             "Linked",
-            Guid.Parse("22222222-2222-2222-2222-222222222222"));
+            await CreateInvoiceAsync(workspaceId, "INV-LINKED"));
 
         var unknown = Guid.Parse("33333333-3333-3333-3333-333333333333");
         var response = await _client.GetAsync(
@@ -994,8 +1051,8 @@ public sealed class AccrualEndpointTests : IAsyncLifetime
         var workspaceId = await CreateWorkspaceAsync(
             Guid.Parse("a1000000-0000-0000-0000-000000000045"),
             Guid.Parse("a2000000-0000-0000-0000-000000000045"));
-        var invoiceId = Guid.Parse("22222222-2222-2222-2222-222222222222");
-        var otherInvoiceId = Guid.Parse("33333333-3333-3333-3333-333333333333");
+        var invoiceId = await CreateInvoiceAsync(workspaceId, "INV-A");
+        var otherInvoiceId = await CreateInvoiceAsync(workspaceId, "INV-B");
 
         await CreateAccrualAsync(workspaceId, "Revenue", 10m, "Other invoice", otherInvoiceId);
         var match = await CreateAccrualAsync(workspaceId, "Revenue", 20m, "Draft match", invoiceId);
@@ -1024,7 +1081,7 @@ public sealed class AccrualEndpointTests : IAsyncLifetime
         var workspaceId = await CreateWorkspaceAsync(
             Guid.Parse("a1000000-0000-0000-0000-000000000046"),
             Guid.Parse("a2000000-0000-0000-0000-000000000046"));
-        var invoiceId = Guid.Parse("22222222-2222-2222-2222-222222222222");
+        var invoiceId = await CreateInvoiceAsync(workspaceId, "INV-SRC");
 
         await CreateAccrualAsync(workspaceId, "Revenue", 10m, "1", invoiceId);
         await CreateAccrualAsync(workspaceId, "Revenue", 20m, "2", invoiceId);
@@ -1066,10 +1123,10 @@ public sealed class AccrualEndpointTests : IAsyncLifetime
         var workspaceB = await CreateWorkspaceAsync(
             Guid.Parse("b1000000-0000-0000-0000-000000000047"),
             Guid.Parse("b2000000-0000-0000-0000-000000000047"));
-        var invoiceId = Guid.Parse("22222222-2222-2222-2222-222222222222");
+        var invoiceId = await CreateInvoiceAsync(workspaceA, "INV-SRC");
 
         var inA = await CreateAccrualAsync(workspaceA, "Revenue", 10m, "A", invoiceId);
-        await CreateAccrualAsync(workspaceB, "Revenue", 999m, "B", invoiceId);
+        await SeedAccrualWithSourceInvoiceAsync(workspaceB, invoiceId, "B");
 
         var response = await _client.GetAsync(
             $"/api/finance-workspaces/{workspaceA}/accruals/paged?page=1&pageSize=10&sourceInvoiceId={invoiceId}");
@@ -1089,7 +1146,7 @@ public sealed class AccrualEndpointTests : IAsyncLifetime
             Guid.Parse("a1000000-0000-0000-0000-000000000048"),
             Guid.Parse("a2000000-0000-0000-0000-000000000048"));
         var unknownInvoiceId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
-        var accrualId = await CreateAccrualAsync(workspaceId, "Revenue", 10m, "Orphan", unknownInvoiceId);
+        var accrualId = await SeedAccrualWithSourceInvoiceAsync(workspaceId, unknownInvoiceId, "Orphan");
 
         var response = await _client.GetAsync(
             $"/api/finance-workspaces/{workspaceId}/accruals/paged?page=1&pageSize=10&sourceInvoiceId={unknownInvoiceId}");
@@ -1328,8 +1385,8 @@ public sealed class AccrualEndpointTests : IAsyncLifetime
         var workspaceId = await CreateWorkspaceAsync(
             Guid.Parse("a1000000-0000-0000-0000-000000000062"),
             Guid.Parse("a2000000-0000-0000-0000-000000000062"));
-        var invoiceId = Guid.Parse("22222222-2222-2222-2222-222222222222");
-        var otherInvoiceId = Guid.Parse("33333333-3333-3333-3333-333333333333");
+        var invoiceId = await CreateInvoiceAsync(workspaceId, "INV-A");
+        var otherInvoiceId = await CreateInvoiceAsync(workspaceId, "INV-B");
 
         var match = await CreateAccrualAsync(workspaceId, "Revenue", 10m, "Match", invoiceId);
         await CreateAccrualAsync(workspaceId, "Expense", 20m, "Wrong type", invoiceId);
@@ -1352,8 +1409,8 @@ public sealed class AccrualEndpointTests : IAsyncLifetime
         var workspaceId = await CreateWorkspaceAsync(
             Guid.Parse("a1000000-0000-0000-0000-000000000063"),
             Guid.Parse("a2000000-0000-0000-0000-000000000063"));
-        var invoiceId = Guid.Parse("22222222-2222-2222-2222-222222222222");
-        var otherInvoiceId = Guid.Parse("33333333-3333-3333-3333-333333333333");
+        var invoiceId = await CreateInvoiceAsync(workspaceId, "INV-A");
+        var otherInvoiceId = await CreateInvoiceAsync(workspaceId, "INV-B");
 
         await CreateAccrualAsync(workspaceId, "Revenue", 10m, "Other invoice", otherInvoiceId);
         var match = await CreateAccrualAsync(workspaceId, "Revenue", 20m, "Draft match", invoiceId);
@@ -1586,8 +1643,8 @@ public sealed class AccrualEndpointTests : IAsyncLifetime
         var workspaceId = await CreateWorkspaceAsync(
             Guid.Parse("a1000000-0000-0000-0000-000000000078"),
             Guid.Parse("a2000000-0000-0000-0000-000000000078"));
-        var invoiceId = Guid.Parse("22222222-2222-2222-2222-222222222222");
-        var otherInvoiceId = Guid.Parse("33333333-3333-3333-3333-333333333333");
+        var invoiceId = await CreateInvoiceAsync(workspaceId, "INV-A");
+        var otherInvoiceId = await CreateInvoiceAsync(workspaceId, "INV-B");
         var recognition = new DateTimeOffset(2026, 7, 20, 0, 0, 0, TimeSpan.Zero);
 
         var match = await CreateAccrualAsync(
@@ -2810,15 +2867,15 @@ public sealed class AccrualEndpointTests : IAsyncLifetime
         var workspaceB = await CreateWorkspaceAsync(
             Guid.Parse("b1000000-0000-0000-0000-000000000040"),
             Guid.Parse("b2000000-0000-0000-0000-000000000040"));
-        var invoiceId = Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
-        var otherInvoiceId = Guid.Parse("bbbbbbbb-cccc-dddd-eeee-ffffffffffff");
+        var invoiceId = await CreateInvoiceAsync(workspaceA, "INV-MATCH");
+        var otherInvoiceId = await CreateInvoiceAsync(workspaceA, "INV-OTHER");
 
         var older = await CreateAccrualAsync(workspaceA, "Revenue", 10m, "Older", invoiceId);
         await Task.Delay(20);
         var newer = await CreateAccrualAsync(workspaceA, "Expense", 20m, "Newer", invoiceId);
         await CreateAccrualAsync(workspaceA, "Revenue", 30m, "Other invoice", otherInvoiceId);
         await CreateAccrualAsync(workspaceA, "Expense", 40m, "Null source");
-        await CreateAccrualAsync(workspaceB, "Revenue", 50m, "Other workspace", invoiceId);
+        await SeedAccrualWithSourceInvoiceAsync(workspaceB, invoiceId, "Other workspace");
 
         var response = await _client.GetAsync(
             $"/api/finance-workspaces/{workspaceA}/accruals/by-invoice/{invoiceId}");
@@ -2902,7 +2959,7 @@ public sealed class AccrualEndpointTests : IAsyncLifetime
         var workspaceId = await CreateWorkspaceAsync(
             Guid.Parse("a1000000-0000-0000-0000-000000000044"),
             Guid.Parse("a2000000-0000-0000-0000-000000000044"));
-        var invoiceId = Guid.Parse("eeeeeeee-ffff-aaaa-bbbb-cccccccccccc");
+        var invoiceId = await CreateInvoiceAsync(workspaceId, "INV-AFTER");
         var accrualId = await CreateAccrualAsync(workspaceId, "Revenue", 40m, "After by-invoice", invoiceId);
 
         var byInvoice = await _client.GetAsync(
@@ -3221,7 +3278,7 @@ public sealed class AccrualEndpointTests : IAsyncLifetime
             Guid.Parse("a1000000-0000-0000-0000-000000000017"),
             Guid.Parse("a2000000-0000-0000-0000-000000000017"));
         var accrualId = await CreateAccrualAsync(workspaceId, "Revenue", 10m, "Source");
-        var sourceInvoiceId = Guid.Parse("bbbbbbbb-cccc-dddd-eeee-ffffffffffff");
+        var sourceInvoiceId = await CreateInvoiceAsync(workspaceId, "INV-CHANGE");
 
         var set = await _client.PostAsJsonAsync(
             $"/api/finance-workspaces/{workspaceId}/accruals/{accrualId}/change-source-invoice",
@@ -3259,7 +3316,7 @@ public sealed class AccrualEndpointTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Change_source_invoice_nonexistent_id_is_accepted()
+    public async Task Change_source_invoice_unknown_returns_404()
     {
         var workspaceId = await CreateWorkspaceAsync(
             Guid.Parse("a1000000-0000-0000-0000-000000000019"),
@@ -3271,9 +3328,32 @@ public sealed class AccrualEndpointTests : IAsyncLifetime
             $"/api/finance-workspaces/{workspaceId}/accruals/{accrualId}/change-source-invoice",
             new { sourceInvoiceId = fakeInvoiceId });
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        await AssertErrorAsync(response, "NotFound");
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        Assert.Equal(fakeInvoiceId, document.RootElement.GetProperty("sourceInvoiceId").GetGuid());
+        Assert.Equal("Invoice was not found.", document.RootElement.GetProperty("message").GetString());
+    }
+
+    [Fact]
+    public async Task Change_source_invoice_cross_workspace_returns_404()
+    {
+        var workspaceA = await CreateWorkspaceAsync(
+            Guid.Parse("a1000000-0000-0000-0000-000000000104"),
+            Guid.Parse("a2000000-0000-0000-0000-000000000104"));
+        var workspaceB = await CreateWorkspaceAsync(
+            Guid.Parse("a1000000-0000-0000-0000-000000000105"),
+            Guid.Parse("a2000000-0000-0000-0000-000000000105"));
+        var accrualId = await CreateAccrualAsync(workspaceA, "Revenue", 10m, "Foreign change");
+        var foreignInvoiceId = await CreateInvoiceAsync(workspaceB, "INV-FOREIGN-CHG");
+
+        var response = await _client.PostAsJsonAsync(
+            $"/api/finance-workspaces/{workspaceA}/accruals/{accrualId}/change-source-invoice",
+            new { sourceInvoiceId = foreignInvoiceId });
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        await AssertErrorAsync(response, "NotFound");
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("Invoice was not found.", document.RootElement.GetProperty("message").GetString());
     }
 
     [Fact]
@@ -3463,6 +3543,47 @@ public sealed class AccrualEndpointTests : IAsyncLifetime
         return document.RootElement.GetProperty("id").GetGuid();
     }
 
+    private async Task<Guid> CreateInvoiceAsync(
+        Guid workspaceId,
+        string documentNumber = "INV-SRC",
+        string counterpartyReference = "cp-src",
+        string currency = "UAH")
+    {
+        var response = await _client.PostAsJsonAsync(
+            $"/api/finance-workspaces/{workspaceId}/invoices",
+            new
+            {
+                documentNumber,
+                counterpartyReference,
+                currency
+            });
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        return document.RootElement.GetProperty("id").GetGuid();
+    }
+
+    private async Task<Guid> SeedAccrualWithSourceInvoiceAsync(
+        Guid workspaceId,
+        Guid sourceInvoiceId,
+        string description,
+        DateTimeOffset? createdAt = null)
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<FinanceDbContext>();
+        var accrual = Accrual.Create(
+            AccrualId.New(),
+            new FinanceWorkspaceId(workspaceId),
+            AccrualType.Revenue,
+            10m,
+            new Currency("UAH"),
+            RecognitionDate,
+            description,
+            new InvoiceId(sourceInvoiceId),
+            createdAt ?? DateTimeOffset.UtcNow);
+        db.Accruals.Add(accrual);
+        await db.SaveChangesAsync();
+        return accrual.Id.Value;
+    }
     private async Task<Guid> CreateAccrualAsync(
         Guid workspaceId,
         string type,

@@ -23,7 +23,7 @@ Accruals are distinct from invoices, payments, and general-ledger postings. Thos
 | `Currency` | Accrual currency (`Currency` value object) |
 | `RecognitionDate` | Required recognition calendar instant (`DateTimeOffset`); past and future allowed; immutable after recognition |
 | `Description` | Required trimmed text (max 500; same as invoice/journal line descriptions) |
-| `SourceInvoiceId` | Optional `InvoiceId`; existence is not validated in Domain |
+| `SourceInvoiceId` | Optional `InvoiceId`; Domain does not verify invoice existence (Application does on create/change) |
 | `Status` | `Draft`, `Recognized`, or `Reversed` |
 | `CreatedAt` / `UpdatedAt` | UTC-oriented timestamps (`DateTimeOffset`) |
 | `RecognizedAt` | Set once on recognize |
@@ -114,7 +114,7 @@ No integration events, message contracts, or ledger commands.
 - Valid `Currency`
 - Required recognition date (any `DateTimeOffset`; no timezone invention)
 - Required description (trim; max 500)
-- Optional `InvoiceId` only; Domain does not verify invoice existence
+- Optional `InvoiceId` only; Domain does not verify invoice existence (Application validates on create/change)
 - Lifecycle transitions as above
 - Monotonic `occurredAt` / transition timestamps relative to `CreatedAt` / `UpdatedAt`
 
@@ -135,12 +135,12 @@ No integration events, message contracts, or ledger commands.
 
 Application use cases over the F4F aggregate (no persistence implementation, no HTTP):
 
-- create accrual in an existing finance workspace;
+- create accrual in an existing finance workspace (optional `SourceInvoiceId` must refer to an Invoice in that workspace when provided);
 - get accrual by id (workspace-scoped);
 - list accruals for a finance workspace (CreatedAt descending, then AccrualId descending; empty list when none);
 - list accruals for a finance workspace with paging (`page`, `pageSize`, optional exact `status` of `Draft`, `Recognized`, or `Reversed`, optional inclusive `createdFromUtc` / `createdToUtc`, optional exact `sourceInvoiceId`, optional exact `type` of `Revenue` or `Expense`, optional inclusive `recognitionFromUtc` / `recognitionToUtc`, optional exact `currency`, optional inclusive `amountFrom` / `amountTo`, optional exact `description`, optional case-sensitive Ordinal `descriptionPrefix`, optional inclusive `recognizedFromUtc` / `recognizedToUtc`, optional inclusive `reversedFromUtc` / `reversedToUtc`, optional exact `reversalReason`; CreatedAt descending, then AccrualId descending; empty page when none; returns `items`, `page`, `pageSize`, `totalCount`);
 - list accruals by source invoice id within a finance workspace (CreatedAt descending, then AccrualId descending; empty list when none; multiple accruals may share one SourceInvoiceId; Invoice existence is not validated);
-- draft mutations: type, amount, currency, recognition date, description, source invoice (set/clear via nullable id);
+- draft mutations: type, amount, currency, recognition date, description, source invoice (set/clear via nullable id; when set, Application requires the Invoice to exist in the same finance workspace);
 - recognize accrual (`Draft` → `Recognized`);
 - reverse accrual (`Recognized` → `Reversed`).
 
@@ -152,11 +152,12 @@ Result mapping follows Invoice Application:
 - `ArgumentException` → ValidationFailed;
 - `InvalidOperationException` → Conflict;
 - missing / cross-workspace aggregate → NotFound;
-- missing finance workspace on create → NotFound.
+- missing finance workspace on create → NotFound;
+- missing / cross-workspace source invoice on create or change-source-invoice → NotFound (`Invoice was not found.`; same message, no existence leak).
 
 Timestamps come from `IClock.UtcNow` inside handlers (commands do not carry mutation timestamps). Create generates `AccrualId` via `AccrualId.New()`.
 
-Source invoice existence is **not** checked in Application (same posture as Domain). Recognize/Reverse do not post to the ledger.
+When `SourceInvoiceId` is provided (create or draft change), Application loads the Invoice via workspace-scoped `IInvoiceRepository.GetByIdAsync` before mutating the Accrual and before `SaveChanges`. Null clears the link without a lookup. Empty Guid remains ValidationFailed via `InvoiceId`. No Invoice status restriction, self-reference rule, or cycle rule. List / list-by-invoice / paged `sourceInvoiceId` filters still do **not** require Invoice existence (read-side positive match only). Recognize/Reverse do not post to the ledger.
 
 ## Persistence (F4H)
 
@@ -169,15 +170,15 @@ Accrual aggregates are stored via EF Core in Infrastructure:
 - lifecycle fields (`Status`, `RecognizedAt`, `ReversedAt`, `ReversalReason`, timestamps) round-trip faithfully through private-constructor materialization;
 - migration `AddAccruals` creates table `Accruals` with workspace FK (`Restrict`) and `IX_Accruals_FinanceWorkspaceId`;
 - `UpdatedAt` is an EF Core optimistic concurrency token (no extra column/migration): concurrent saves after a stale load fail with `DbUpdateConcurrencyException`, mapped by `AccrualRepository.SaveChangesAsync` to `InvalidOperationException` → Application Conflict (HTTP 409);
-- search, filters, Invoice existence validation, ledger posting, and payments remain later slices.
+- ledger posting and payments remain later slices.
 
-## HTTP surface (F4I / F4K / F4L / F4Q / F4R / F4S / F4T / F4V / F4W / F4Z / F4AA / F4AE / F4AF / F4AG / F4AH / F4AI / F4AJ)
+## HTTP surface (F4I / F4K / F4L / F4Q / F4R / F4S / F4T / F4V / F4W / F4Z / F4AA / F4AE / F4AF / F4AG / F4AH / F4AI / F4AJ / F4AL)
 
 Workspace-scoped Accrual HTTP API under `/api/finance-workspaces/{financeWorkspaceId}/accruals`:
 
 | Method | Route | Application use case | Success |
 |--------|-------|----------------------|---------|
-| POST | `/` | Create accrual | 201 |
+| POST | `/` | Create accrual (optional `sourceInvoiceId` must exist in workspace when provided) | 201 |
 | GET | `/` | List accruals for workspace (newest first) | 200 |
 | GET | `/paged?page={page}&pageSize={pageSize}&status={status?}&createdFromUtc={from?}&createdToUtc={to?}&sourceInvoiceId={invoiceId?}&type={type?}&recognitionFromUtc={recognitionFrom?}&recognitionToUtc={recognitionTo?}&currency={currency?}&amountFrom={amountFrom?}&amountTo={amountTo?}&description={description?}&descriptionPrefix={descriptionPrefix?}&recognizedFromUtc={recognizedFrom?}&recognizedToUtc={recognizedTo?}&reversedFromUtc={reversedFrom?}&reversedToUtc={reversedTo?}&reversalReason={reason?}` | List accruals for workspace (paged, newest first; optional status, CreatedAt range, source invoice id, type, RecognitionDate range, currency, Amount range, exact description, description prefix, RecognizedAt range, ReversedAt range, and exact reversal reason) | 200 |
 | GET | `/by-invoice/{invoiceId}` | List accruals by source invoice id (newest first) | 200 |
@@ -187,13 +188,13 @@ Workspace-scoped Accrual HTTP API under `/api/finance-workspaces/{financeWorkspa
 | POST | `/{accrualId}/change-currency` | Change currency | 200 |
 | POST | `/{accrualId}/change-recognition-date` | Change recognition date | 200 |
 | POST | `/{accrualId}/change-description` | Change description | 200 |
-| POST | `/{accrualId}/change-source-invoice` | Set or clear optional source invoice (`sourceInvoiceId` nullable) | 200 |
+| POST | `/{accrualId}/change-source-invoice` | Set or clear optional source invoice (`sourceInvoiceId` nullable; when set, Invoice must exist in workspace) | 200 |
 | POST | `/{accrualId}/recognize` | Recognize accrual | 200 |
 | POST | `/{accrualId}/reverse` | Reverse accrual | 200 |
 
 Status mapping via existing `ApplicationResultHttp`: ValidationFailed → 400, NotFound → 404 (missing or cross-workspace), Conflict → 409. Single-accrual responses use Application `AccrualDto`. List and list-by-invoice return a JSON array of `AccrualDto` (empty array when none; not 404). Paged list returns Application `PageResult<AccrualDto>` with `items`, `page`, `pageSize`, and `totalCount` (empty `items` when none; not 404). List, paged list, and list-by-invoice are read-only. Ordering: `CreatedAt` descending, then `AccrualId` descending. Paged list requires `page >= 1` and `1 <= pageSize <= 100` (same limits as Invoice F4N; omitted values bind as `0` and fail validation — no silent defaults); invalid paging is ValidationFailed. Optional paged query parameter `status` accepts exact Ordinal `Draft`, `Recognized`, or `Reversed` only; missing `status` means no status filter (F4Q all-status behavior); explicitly blank, whitespace, case variants, numeric values, or unknown names are ValidationFailed. Optional paged query parameters `createdFromUtc` and `createdToUtc` are nullable `DateTimeOffset` absolute instants; either bound alone is allowed; both omitted means no CreatedAt filter; equal bounds are valid and match that exact instant; when both are present and `createdFromUtc > createdToUtc`, validation fails. Optional paged query parameter `sourceInvoiceId` is a nullable Guid; missing means no SourceInvoiceId filter; when provided, empty Guid is ValidationFailed (`InvoiceId` parse, same as list-by-invoice) and only exact SourceInvoiceId matches are returned (positive filter only; no IS NULL / “unlinked only” mode; Invoice existence is not validated; no FK). Optional paged query parameter `type` accepts exact Ordinal `Revenue` or `Expense` only; missing `type` means no Type filter; explicitly blank, whitespace, case variants (`revenue` / `REVENUE`), numeric values, unknown names, or multi-value input are ValidationFailed (exact Ordinal, no trim; distinct from mutation-side case-insensitive `TryParseAccrualType`). Optional paged query parameters `recognitionFromUtc` and `recognitionToUtc` are nullable `DateTimeOffset` absolute instants filtering `RecognitionDate` (not `RecognizedAt`); either bound alone is allowed; both omitted means no RecognitionDate filter; equal bounds are valid and match that exact instant; when both are present and `recognitionFromUtc > recognitionToUtc`, validation fails; malformed date values fail ASP.NET binding with HTTP 400. Optional paged query parameter `currency` uses existing `Currency` trim + `ToUpperInvariant` normalization and blank/whitespace ValidationFailed posture; missing means no Currency filter; when provided, only exact Ordinal matches on the normalized stored `Accrual.Currency` code are returned (positive filter only; callers may supply lowercase codes because the value object uppercases; that is normalization, not a case-insensitive search mode; no partial/prefix/suffix/full-text mode; no new ISO allowlist; no multi-currency / conversion semantics). Optional paged query parameters `amountFrom` and `amountTo` are nullable `decimal` bounds filtering persisted `Amount`; either bound alone is allowed; both omitted means no Amount filter; equal bounds are valid and match that exact amount; when both are present and `amountFrom > amountTo`, validation fails (ValidationFailed → 400); malformed decimal values fail ASP.NET binding with HTTP 400. Optional paged query parameter `description` uses Domain Description trim/normalization and blank/overlength ValidationFailed posture (max 500); missing means no Description filter; when provided, only exact Ordinal matches on stored `Accrual.Description` are returned (positive filter only; no partial/prefix/suffix/case-insensitive/full-text mode). Optional paged query parameter `descriptionPrefix` uses the same Domain Description trim/normalization and blank/overlength ValidationFailed posture (max 500); missing means no Description prefix filter; when provided, only case-sensitive Ordinal prefix matches on stored `Accrual.Description` are returned (positive filter only; SQL-side `substr` equality, not LIKE/StartsWith; wildcard-like characters are literal; no contains/case-insensitive/full-text mode; composes under AND with exact `description` when both are present). Optional paged query parameters `recognizedFromUtc` and `recognizedToUtc` are nullable `DateTimeOffset` absolute instants filtering lifecycle `RecognizedAt` (not `RecognitionDate`); either bound alone is allowed; both omitted means no RecognizedAt filter (Draft with null RecognizedAt remain eligible subject to other filters); equal bounds are valid and match that exact instant; when both are present and `recognizedFromUtc > recognizedToUtc`, validation fails (ValidationFailed → 400); when any RecognizedAt bound is present, accruals with null `RecognizedAt` are excluded (no −∞/+∞ treatment and no implicit `status=Recognized`); filters remain independent of `status` and of RecognitionDate bounds and compose with AND; malformed date values fail ASP.NET binding with HTTP 400. Optional paged query parameters `reversedFromUtc` and `reversedToUtc` are nullable `DateTimeOffset` absolute instants filtering lifecycle `ReversedAt`; either bound alone is allowed; both omitted means no ReversedAt filter (Draft/Recognized with null ReversedAt remain eligible subject to other filters); equal bounds are valid and match that exact instant; when both are present and `reversedFromUtc > reversedToUtc`, validation fails (ValidationFailed → 400); when any ReversedAt bound is present, accruals with null `ReversedAt` are excluded (no −∞/+∞ treatment and no implicit `status=Reversed`); filters remain independent of `status`, RecognizedAt, and RecognitionDate bounds and compose with AND; malformed date values fail ASP.NET binding with HTTP 400. Optional paged query parameter `reversalReason` uses Domain ReversalReason trim/normalization and blank/overlength ValidationFailed posture (max 500); missing means no ReversalReason filter; when provided, only exact Ordinal matches on stored `Accrual.ReversalReason` are returned (positive filter only; null ReversalReason rows do not match; no partial/prefix/suffix/case-insensitive/full-text mode). Workspace, optional status, optional source-invoice, optional type, optional currency, optional description, optional description prefix, and optional reversal-reason filtering remain SQL predicates before materialization; optional inclusive CreatedAt, RecognitionDate, Amount, RecognizedAt, and ReversedAt bounds are applied in memory after a single materialization; `totalCount` is the full filtered count before paging; ordering and Skip/Take are in-memory because SQLite cannot translate DateTimeOffset comparisons or ORDER BY DateTimeOffset (Amount, RecognizedAt, and ReversedAt stay with the existing in-memory filter stage; no schema/index/migration change in F4AI). Paged list does not include contains/full-text Description matching, partial/full-text Type matching, or multi-value Type filtering. List-by-invoice filters by workspace and `SourceInvoiceId`; multiple accruals may share one source invoice; Invoice existence is not validated; there is no FK or uniqueness guarantee. Non-paged list and list-by-invoice do not include pagination or total-count metadata.
 
-Deferred: contains/full-text search modes, Invoice existence validation, ledger posting from Recognize/Reverse, compensating accruals, authorization redesign, background recognition jobs. Client-supplied expected-version / If-Match preconditions remain optional later hardening; server-side `UpdatedAt` concurrency token already rejects stale tracked saves.
+Deferred: contains/full-text search modes, ledger posting from Recognize/Reverse, compensating accruals, authorization redesign, background recognition jobs. Client-supplied expected-version / If-Match preconditions remain optional later hardening; server-side `UpdatedAt` concurrency token already rejects stale tracked saves. Source-invoice existence on create/change is Application-validated (F4AL); schema still has no Invoice FK.
 
 ## Notes on conventions adapted for F4F
 

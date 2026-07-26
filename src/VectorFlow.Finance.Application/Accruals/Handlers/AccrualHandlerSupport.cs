@@ -1,5 +1,7 @@
 using VectorFlow.Finance.Application.Abstractions;
+using VectorFlow.Finance.Application.Invoices;
 using VectorFlow.Finance.Domain.Accruals;
+using VectorFlow.Finance.Domain.Invoices;
 using VectorFlow.Finance.Domain.Workspaces;
 
 namespace VectorFlow.Finance.Application.Accruals.Handlers;
@@ -33,6 +35,29 @@ internal static class AccrualHandlerSupport
         }
 
         return ApplicationResult<Accrual>.Success(accrual);
+    }
+
+    /// <summary>
+    /// Loads a source invoice in the same finance workspace.
+    /// Missing and cross-workspace invoices both map to NotFound (no existence leak).
+    /// </summary>
+    public static async Task<ApplicationResult<Invoice>> LoadSourceInvoiceInWorkspaceAsync(
+        IInvoiceRepository invoiceRepository,
+        FinanceWorkspaceId financeWorkspaceId,
+        InvoiceId sourceInvoiceId,
+        CancellationToken cancellationToken)
+    {
+        var invoice = await invoiceRepository.GetByIdAsync(
+            financeWorkspaceId,
+            sourceInvoiceId,
+            cancellationToken);
+
+        if (invoice is null)
+        {
+            return ApplicationResult<Invoice>.NotFound("Invoice was not found.");
+        }
+
+        return ApplicationResult<Invoice>.Success(invoice);
     }
 
     public static bool TryParseAccrualType(string type, out AccrualType accrualType, out string? errorMessage)

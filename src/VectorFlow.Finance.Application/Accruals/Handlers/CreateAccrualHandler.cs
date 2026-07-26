@@ -1,5 +1,6 @@
 using VectorFlow.Finance.Application.Abstractions;
 using VectorFlow.Finance.Application.Accruals.Commands;
+using VectorFlow.Finance.Application.Invoices;
 using VectorFlow.Finance.Application.Workspaces;
 using VectorFlow.Finance.Domain;
 using VectorFlow.Finance.Domain.Accruals;
@@ -12,15 +13,18 @@ public sealed class CreateAccrualHandler
 {
     private readonly IAccrualRepository _accrualRepository;
     private readonly IFinanceWorkspaceRepository _workspaceRepository;
+    private readonly IInvoiceRepository _invoiceRepository;
     private readonly IClock _clock;
 
     public CreateAccrualHandler(
         IAccrualRepository accrualRepository,
         IFinanceWorkspaceRepository workspaceRepository,
+        IInvoiceRepository invoiceRepository,
         IClock clock)
     {
         _accrualRepository = accrualRepository;
         _workspaceRepository = workspaceRepository;
+        _invoiceRepository = invoiceRepository;
         _clock = clock;
     }
 
@@ -54,6 +58,20 @@ public sealed class CreateAccrualHandler
         if (workspace is null)
         {
             return ApplicationResult<AccrualDto>.NotFound("Finance workspace was not found.");
+        }
+
+        if (sourceInvoiceId is not null)
+        {
+            var sourceLoad = await AccrualHandlerSupport.LoadSourceInvoiceInWorkspaceAsync(
+                _invoiceRepository,
+                financeWorkspaceId,
+                sourceInvoiceId.Value,
+                cancellationToken);
+
+            if (!sourceLoad.IsSuccess)
+            {
+                return ApplicationResult<AccrualDto>.FromFailure(sourceLoad);
+            }
         }
 
         Accrual accrual;
