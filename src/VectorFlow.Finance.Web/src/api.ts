@@ -417,3 +417,59 @@ export function changeAccrualSourceInvoice(
     }
   );
 }
+
+export function changeAccrualDescription(
+  workspaceId: string,
+  accrualId: string,
+  description: string
+): Promise<Accrual> {
+  return requestJson<Accrual>(
+    `/api/finance-workspaces/${workspaceId}/accruals/${accrualId}/change-description`,
+    {
+      method: "POST",
+      body: JSON.stringify({ description })
+    }
+  );
+}
+
+export function changeAccrualRecognitionDate(
+  workspaceId: string,
+  accrualId: string,
+  recognitionDateUtc: string
+): Promise<Accrual> {
+  return requestJson<Accrual>(
+    `/api/finance-workspaces/${workspaceId}/accruals/${accrualId}/change-recognition-date`,
+    {
+      method: "POST",
+      body: JSON.stringify({ recognitionDateUtc })
+    }
+  );
+}
+
+export function changeAccrualType(
+  workspaceId: string,
+  accrualId: string,
+  type: string
+): Promise<Accrual> {
+  return requestJson<Accrual>(
+    `/api/finance-workspaces/${workspaceId}/accruals/${accrualId}/change-type`,
+    {
+      method: "POST",
+      body: JSON.stringify({ type })
+    }
+  );
+}
+
+export function changeAccrualCurrency(
+  workspaceId: string,
+  accrualId: string,
+  currency: string
+): Promise<Accrual> {
+  return requestJson<Accrual>(
+    `/api/finance-workspaces/${workspaceId}/accruals/${accrualId}/change-currency`,
+    {
+      method: "POST",
+      body: JSON.stringify({ currency })
+    }
+  );
+}

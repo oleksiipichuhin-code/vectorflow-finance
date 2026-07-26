@@ -1,7 +1,11 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import {
   changeAccrualAmount,
+  changeAccrualCurrency,
+  changeAccrualDescription,
+  changeAccrualRecognitionDate,
   changeAccrualSourceInvoice,
+  changeAccrualType,
   createAccrual,
   listAccrualsPaged,
   recognizeAccrual,
@@ -36,9 +40,17 @@ import {
   interpretAccrualSourceInvoiceEditError,
   type InvoicePickerSummary
 } from "./accrualSourceInvoice";
+import {
+  applyDraftAccrualEditorChanges,
+  canEditDraftAccrualDetails,
+  interpretDraftAccrualEditorError,
+  valuesFromAccrual,
+  type DraftAccrualEditorValues
+} from "./draftAccrualEditor";
 import { EMPTY_ACCRUAL_FILTERS } from "./urlState";
 import { ListLoadState } from "./components/ListLoadState";
 import { Panel, StatusMessage } from "./components/Panel";
+import { DraftAccrualEditor } from "./components/DraftAccrualEditor";
 import { formatDate, formatMoney } from "./format";
 import { SourceInvoicePicker } from "./SourceInvoicePicker";
 
@@ -113,6 +125,14 @@ export function AccrualsView({
   const [changingSourceInvoiceIds, setChangingSourceInvoiceIds] = useState<ReadonlySet<string>>(
     () => new Set()
   );
+  const [draftDetailsTarget, setDraftDetailsTarget] = useState<Accrual | null>(null);
+  const [draftDetailsBaseline, setDraftDetailsBaseline] =
+    useState<DraftAccrualEditorValues | null>(null);
+  const [draftDetailsError, setDraftDetailsError] = useState<string | null>(null);
+  const [draftDetailsSuccess, setDraftDetailsSuccess] = useState<string | null>(null);
+  const [editingDraftDetailsIds, setEditingDraftDetailsIds] = useState<ReadonlySet<string>>(
+    () => new Set()
+  );
   const [invoiceDisplayCache, setInvoiceDisplayCache] = useState<
     ReadonlyMap<string, InvoicePickerSummary>
   >(() => new Map());
@@ -123,6 +143,7 @@ export function AccrualsView({
   const reversingIdsRef = useRef<Set<string>>(new Set());
   const editingAmountIdsRef = useRef<Set<string>>(new Set());
   const changingSourceInvoiceIdsRef = useRef<Set<string>>(new Set());
+  const editingDraftDetailsIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (workspace) {
@@ -167,6 +188,12 @@ export function AccrualsView({
       setSourceInvoiceSuccess(null);
       changingSourceInvoiceIdsRef.current = new Set();
       setChangingSourceInvoiceIds(new Set());
+      setDraftDetailsTarget(null);
+      setDraftDetailsBaseline(null);
+      setDraftDetailsError(null);
+      setDraftDetailsSuccess(null);
+      editingDraftDetailsIdsRef.current = new Set();
+      setEditingDraftDetailsIds(new Set());
       setInvoiceDisplayCache(new Map());
       onDiscoveryChange?.(1, emptyFilters);
     }
@@ -290,6 +317,10 @@ export function AccrualsView({
     setSourceInvoiceError(null);
     setSourceInvoiceSuccess(null);
     setSourceInvoiceTarget(null);
+    setDraftDetailsError(null);
+    setDraftDetailsSuccess(null);
+    setDraftDetailsTarget(null);
+    setDraftDetailsBaseline(null);
 
     try {
       const created = await createAccrual(workspace.id, {
@@ -343,6 +374,10 @@ export function AccrualsView({
     setSourceInvoiceError(null);
     setSourceInvoiceSuccess(null);
     setSourceInvoiceTarget(null);
+    setDraftDetailsError(null);
+    setDraftDetailsSuccess(null);
+    setDraftDetailsTarget(null);
+    setDraftDetailsBaseline(null);
 
     try {
       const recognized = await recognizeAccrual(workspace.id, accrual.id);
@@ -385,6 +420,10 @@ export function AccrualsView({
     setSourceInvoiceError(null);
     setSourceInvoiceSuccess(null);
     setSourceInvoiceTarget(null);
+    setDraftDetailsError(null);
+    setDraftDetailsSuccess(null);
+    setDraftDetailsTarget(null);
+    setDraftDetailsBaseline(null);
     setReverseTarget(accrual);
     setReverseReason("");
   }
@@ -414,6 +453,10 @@ export function AccrualsView({
     setSourceInvoiceError(null);
     setSourceInvoiceSuccess(null);
     setSourceInvoiceTarget(null);
+    setDraftDetailsError(null);
+    setDraftDetailsSuccess(null);
+    setDraftDetailsTarget(null);
+    setDraftDetailsBaseline(null);
     setEditAmountError(null);
     setEditAmountSuccess(null);
     setEditAmountTarget(accrual);
@@ -449,6 +492,10 @@ export function AccrualsView({
     setEditAmountSuccess(null);
     setEditAmountTarget(null);
     setEditAmountValue("");
+    setDraftDetailsError(null);
+    setDraftDetailsSuccess(null);
+    setDraftDetailsTarget(null);
+    setDraftDetailsBaseline(null);
     setSourceInvoiceError(null);
     setSourceInvoiceSuccess(null);
     setSourceInvoiceTarget(accrual);
@@ -464,6 +511,125 @@ export function AccrualsView({
 
     setSourceInvoiceTarget(null);
     setSourceInvoiceError(null);
+  }
+
+  function beginEditDraftDetails(accrual: Accrual) {
+    if (
+      !canEditDraftAccrualDetails(accrual) ||
+      editingDraftDetailsIdsRef.current.has(accrual.id)
+    ) {
+      return;
+    }
+
+    const baseline = valuesFromAccrual(accrual);
+    setCreateSuccess(null);
+    setRecognizeSuccess(null);
+    setRecognizeError(null);
+    setReverseError(null);
+    setReverseSuccess(null);
+    setReverseTarget(null);
+    setReverseReason("");
+    setEditAmountError(null);
+    setEditAmountSuccess(null);
+    setEditAmountTarget(null);
+    setEditAmountValue("");
+    setSourceInvoiceError(null);
+    setSourceInvoiceSuccess(null);
+    setSourceInvoiceTarget(null);
+    setDraftDetailsError(null);
+    setDraftDetailsSuccess(null);
+    setDraftDetailsTarget(accrual);
+    setDraftDetailsBaseline(baseline);
+  }
+
+  function cancelEditDraftDetails() {
+    if (
+      draftDetailsTarget &&
+      editingDraftDetailsIdsRef.current.has(draftDetailsTarget.id)
+    ) {
+      return;
+    }
+
+    setDraftDetailsTarget(null);
+    setDraftDetailsBaseline(null);
+    setDraftDetailsError(null);
+  }
+
+  async function handleEditDraftDetails(values: DraftAccrualEditorValues) {
+    if (
+      !workspace ||
+      !draftDetailsTarget ||
+      !draftDetailsBaseline ||
+      !canEditDraftAccrualDetails(draftDetailsTarget)
+    ) {
+      return;
+    }
+
+    if (editingDraftDetailsIdsRef.current.has(draftDetailsTarget.id)) {
+      return;
+    }
+
+    const target = draftDetailsTarget;
+    const baseline = draftDetailsBaseline;
+    editingDraftDetailsIdsRef.current.add(target.id);
+    setEditingDraftDetailsIds(new Set(editingDraftDetailsIdsRef.current));
+    setCreateSuccess(null);
+    setRecognizeSuccess(null);
+    setRecognizeError(null);
+    setReverseError(null);
+    setReverseSuccess(null);
+    setEditAmountError(null);
+    setEditAmountSuccess(null);
+    setSourceInvoiceError(null);
+    setSourceInvoiceSuccess(null);
+    setDraftDetailsError(null);
+    setDraftDetailsSuccess(null);
+
+    try {
+      const updated = await applyDraftAccrualEditorChanges(
+        workspace.id,
+        target.id,
+        baseline,
+        values,
+        {
+          changeDescription: changeAccrualDescription,
+          changeRecognitionDate: changeAccrualRecognitionDate,
+          changeType: changeAccrualType,
+          changeCurrency: changeAccrualCurrency
+        }
+      );
+
+      setDraftDetailsTarget(null);
+      setDraftDetailsBaseline(null);
+
+      if (!updated) {
+        return;
+      }
+
+      setHighlightedId(updated.id);
+      setDraftDetailsSuccess(
+        `Деталі нарахування «${updated.description}» оновлено.`
+      );
+      await loadPage(workspace.id, page, appliedFilters);
+    } catch (editErr) {
+      const failure = interpretDraftAccrualEditorError(editErr);
+      setDraftDetailsError(failure.message);
+      if (!failure.keepEditorOpen) {
+        setDraftDetailsTarget(null);
+        setDraftDetailsBaseline(null);
+      }
+
+      if (failure.refreshList) {
+        try {
+          await loadPage(workspace.id, page, appliedFilters);
+        } catch {
+          // Keep the editor error; list refresh failure is secondary.
+        }
+      }
+    } finally {
+      editingDraftDetailsIdsRef.current.delete(target.id);
+      setEditingDraftDetailsIds(new Set(editingDraftDetailsIdsRef.current));
+    }
   }
 
   async function handleChangeSourceInvoice(
@@ -490,6 +656,10 @@ export function AccrualsView({
     setEditAmountSuccess(null);
     setSourceInvoiceError(null);
     setSourceInvoiceSuccess(null);
+    setDraftDetailsError(null);
+    setDraftDetailsSuccess(null);
+    setDraftDetailsTarget(null);
+    setDraftDetailsBaseline(null);
 
     try {
       const updated = await changeAccrualSourceInvoice(
@@ -569,6 +739,10 @@ export function AccrualsView({
     setSourceInvoiceError(null);
     setSourceInvoiceSuccess(null);
     setSourceInvoiceTarget(null);
+    setDraftDetailsError(null);
+    setDraftDetailsSuccess(null);
+    setDraftDetailsTarget(null);
+    setDraftDetailsBaseline(null);
 
     try {
       const updated = await changeAccrualAmount(workspace.id, target.id, amount);
@@ -637,6 +811,10 @@ export function AccrualsView({
     setSourceInvoiceError(null);
     setSourceInvoiceSuccess(null);
     setSourceInvoiceTarget(null);
+    setDraftDetailsError(null);
+    setDraftDetailsSuccess(null);
+    setDraftDetailsTarget(null);
+    setDraftDetailsBaseline(null);
 
     try {
       const reversed = await reverseAccrual(workspace.id, target.id, reason);
@@ -875,6 +1053,12 @@ export function AccrualsView({
         {sourceInvoiceSuccess ? (
           <StatusMessage tone="success">{sourceInvoiceSuccess}</StatusMessage>
         ) : null}
+        {draftDetailsError && !draftDetailsTarget ? (
+          <StatusMessage tone="error">{draftDetailsError}</StatusMessage>
+        ) : null}
+        {draftDetailsSuccess ? (
+          <StatusMessage tone="success">{draftDetailsSuccess}</StatusMessage>
+        ) : null}
         {reverseError ? <StatusMessage tone="error">{reverseError}</StatusMessage> : null}
         {reverseSuccess ? <StatusMessage tone="success">{reverseSuccess}</StatusMessage> : null}
 
@@ -917,6 +1101,18 @@ export function AccrualsView({
               </button>
             </div>
           </form>
+        ) : null}
+
+        {workspace && draftDetailsTarget && draftDetailsBaseline ? (
+          <DraftAccrualEditor
+            key={draftDetailsTarget.id}
+            accrualDescription={draftDetailsTarget.description}
+            initialValues={draftDetailsBaseline}
+            busy={editingDraftDetailsIds.has(draftDetailsTarget.id)}
+            formError={draftDetailsError}
+            onSave={(values) => void handleEditDraftDetails(values)}
+            onCancel={cancelEditDraftDetails}
+          />
         ) : null}
 
         {workspace && sourceInvoiceTarget ? (
@@ -1010,9 +1206,15 @@ export function AccrualsView({
                     const reverseBusy = reversingIds.has(accrual.id);
                     const editAmountBusy = editingAmountIds.has(accrual.id);
                     const sourceInvoiceBusy = changingSourceInvoiceIds.has(accrual.id);
+                    const draftDetailsBusy = editingDraftDetailsIds.has(accrual.id);
                     const rowBusy =
-                      recognizeBusy || reverseBusy || editAmountBusy || sourceInvoiceBusy;
+                      recognizeBusy ||
+                      reverseBusy ||
+                      editAmountBusy ||
+                      sourceInvoiceBusy ||
+                      draftDetailsBusy;
                     const showEditAmount = canEditAccrualAmount(accrual);
+                    const showEditDraftDetails = canEditDraftAccrualDetails(accrual);
                     const showSourceInvoice = canChangeAccrualSourceInvoice(accrual);
                     const showRecognize = canRecognizeAccrual(accrual);
                     const showReverse = canReverseAccrual(accrual);
@@ -1042,11 +1244,26 @@ export function AccrualsView({
                       </td>
                       <td className="cell-wrap">{accrual.reversalReason ?? "—"}</td>
                       <td>
-                        {showEditAmount ||
+                        {showEditDraftDetails ||
+                        showEditAmount ||
                         showSourceInvoice ||
                         showRecognize ||
                         showReverse ? (
                           <div className="filter-actions">
+                            {showEditDraftDetails ? (
+                              <button
+                                type="button"
+                                className="button-secondary"
+                                disabled={
+                                  rowBusy ||
+                                  loading ||
+                                  draftDetailsTarget?.id === accrual.id
+                                }
+                                onClick={() => beginEditDraftDetails(accrual)}
+                              >
+                                {draftDetailsBusy ? "Збереження…" : "Редагувати"}
+                              </button>
+                            ) : null}
                             {showEditAmount ? (
                               <button
                                 type="button"
