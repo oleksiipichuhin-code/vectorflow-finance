@@ -265,9 +265,10 @@ describe("line-add editor handoff / coordination policy", () => {
       "editHeader",
       "addLine",
       "editDueDate",
-      "issue"
+      "issue",
+      "createAccrual"
     ]);
-    assert.deepEqual(detailLifecycleActionsFor({ status: "Issued" }), []);
+    assert.deepEqual(detailLifecycleActionsFor({ status: "Issued" }), ["createAccrual"]);
     assert.equal(canAddInvoiceLineFromDetails({ status: "Draft" }), true);
     assert.equal(canAddInvoiceLineFromDetails({ status: "Issued" }), false);
   });

@@ -178,9 +178,10 @@ describe("due-date editor handoff / coordination policy", () => {
       "editHeader",
       "addLine",
       "editDueDate",
-      "issue"
+      "issue",
+      "createAccrual"
     ]);
-    assert.deepEqual(detailLifecycleActionsFor({ status: "Issued" }), []);
+    assert.deepEqual(detailLifecycleActionsFor({ status: "Issued" }), ["createAccrual"]);
   });
 
   it("row and detail launches share BeginEditorOptions shape", () => {

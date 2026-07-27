@@ -429,6 +429,18 @@ export function listAccrualsPaged(
   );
 }
 
+/** List accruals that reference a source invoice (newest first; empty array when none). */
+export function listAccrualsByInvoice(
+  workspaceId: string,
+  invoiceId: string,
+  signal?: AbortSignal
+): Promise<Accrual[]> {
+  return requestJson<Accrual[]>(
+    `/api/finance-workspaces/${workspaceId}/accruals/by-invoice/${invoiceId}`,
+    signal ? { signal } : undefined
+  );
+}
+
 export function getAccrual(
   workspaceId: string,
   accrualId: string,

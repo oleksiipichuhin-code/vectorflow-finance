@@ -4,13 +4,16 @@ import {
   changeInvoiceCounterparty,
   changeInvoiceCurrency,
   changeInvoiceDocumentNumber,
+  createAccrual,
   createInvoice,
   getInvoice,
   issueInvoice,
+  listAccrualsByInvoice,
   listInvoicesPaged,
   removeInvoiceLine,
   setInvoiceDueDate,
   updateInvoiceLine,
+  type Accrual,
   type FinanceWorkspace,
   type Invoice,
   type InvoiceLine
@@ -49,6 +52,16 @@ import {
   type DraftInvoiceHeaderEditorValues
 } from "./draftInvoiceHeaderEditor";
 import {
+  applyCreateAccrualFromInvoice,
+  canCreateAccrualFromInvoice,
+  initialCreateAccrualFromInvoiceValues,
+  interpretCreateAccrualFromInvoiceError,
+  interpretRelatedAccrualsLoadError,
+  shouldReloadRelatedAccrualsAfterCreate,
+  validateCreateAccrualFromInvoiceValues,
+  type CreateAccrualFromInvoiceValues
+} from "./invoiceAccrualBridge";
+import {
   applyDraftInvoiceLineAdd,
   canAddDraftInvoiceLine,
   initialDraftInvoiceLineAddInput,
@@ -80,6 +93,7 @@ type DraftInvoiceLineEditorTarget = {
   lineId: string;
   line: InvoiceLine;
 };
+import { CreateAccrualFromInvoiceEditor } from "./components/CreateAccrualFromInvoiceEditor";
 import { DraftInvoiceHeaderEditor } from "./components/DraftInvoiceHeaderEditor";
 import { InvoiceDetailPanel } from "./components/InvoiceDetailPanel";
 import { ListLoadState } from "./components/ListLoadState";
@@ -101,6 +115,8 @@ type InvoicesViewProps = {
     options?: InvoiceIdChangeOptions
   ) => void;
   onShowDraftInvoices?: () => void;
+  /** Cross-view handoff: open Accruals detail for a created/related accrual. */
+  onOpenAccrual?: (accrualId: string) => void;
 };
 
 const emptyFilters: InvoiceListFilters = { ...EMPTY_INVOICE_FILTERS };
@@ -117,7 +133,8 @@ export function InvoicesView({
   selectedInvoiceId = null,
   onDiscoveryChange,
   onSelectedInvoiceIdChange,
-  onShowDraftInvoices
+  onShowDraftInvoices,
+  onOpenAccrual
 }: InvoicesViewProps) {
   const [draftFilters, setDraftFilters] = useState<InvoiceListFilters>(() => ({
     ...emptyFilters,
@@ -166,6 +183,19 @@ export function InvoicesView({
   const [headerEditError, setHeaderEditError] = useState<string | null>(null);
   const [headerEditSuccess, setHeaderEditSuccess] = useState<string | null>(null);
   const [savingHeaderInvoiceId, setSavingHeaderInvoiceId] = useState<string | null>(null);
+  const [createAccrualTarget, setCreateAccrualTarget] = useState<Invoice | null>(null);
+  const [createAccrualBaseline, setCreateAccrualBaseline] =
+    useState<CreateAccrualFromInvoiceValues | null>(null);
+  const [createAccrualBusy, setCreateAccrualBusy] = useState(false);
+  const [createAccrualError, setCreateAccrualError] = useState<string | null>(null);
+  const [createAccrualSuccess, setCreateAccrualSuccess] = useState<string | null>(null);
+  const [savingCreateAccrualInvoiceId, setSavingCreateAccrualInvoiceId] = useState<
+    string | null
+  >(null);
+  const [createdAccrualId, setCreatedAccrualId] = useState<string | null>(null);
+  const [relatedAccruals, setRelatedAccruals] = useState<Accrual[]>([]);
+  const [relatedAccrualsLoading, setRelatedAccrualsLoading] = useState(false);
+  const [relatedAccrualsError, setRelatedAccrualsError] = useState<string | null>(null);
   const [lineAddTarget, setLineAddTarget] = useState<Invoice | null>(null);
   const [lineAddQuantity, setLineAddQuantity] = useState("1");
   const [lineAddUnitPrice, setLineAddUnitPrice] = useState("");
@@ -210,6 +240,10 @@ export function InvoicesView({
   const savingDueDateInvoiceIdRef = useRef<string | null>(null);
   const headerEditBusyRef = useRef(false);
   const savingHeaderInvoiceIdRef = useRef<string | null>(null);
+  const createAccrualBusyRef = useRef(false);
+  const savingCreateAccrualInvoiceIdRef = useRef<string | null>(null);
+  const relatedAccrualsAbortRef = useRef<AbortController | null>(null);
+  const relatedAccrualsRequestSeq = useRef(0);
   const lineAddBusyRef = useRef(false);
   const savingLineInvoiceIdRef = useRef<string | null>(null);
   const lineUpdateBusyRef = useRef(false);
@@ -222,6 +256,7 @@ export function InvoicesView({
       issueBusyRef.current ||
       dueDateEditBusyRef.current ||
       headerEditBusyRef.current ||
+      createAccrualBusyRef.current ||
       lineAddBusyRef.current ||
       lineUpdateBusyRef.current ||
       lineRemoveBusyRef.current
@@ -262,6 +297,14 @@ export function InvoicesView({
       setHeaderEditBaseline(null);
       setHeaderEditError(null);
       setHeaderEditSuccess(null);
+      setCreateAccrualTarget(null);
+      setCreateAccrualBaseline(null);
+      setCreateAccrualError(null);
+      setCreateAccrualSuccess(null);
+      setCreatedAccrualId(null);
+      setRelatedAccruals([]);
+      setRelatedAccrualsLoading(false);
+      setRelatedAccrualsError(null);
       setLineAddTarget(null);
       resetLineAddForm();
       setLineAddError(null);
@@ -484,6 +527,8 @@ export function InvoicesView({
     clearLineRemoveEditor();
     setHeaderEditError(null);
     setHeaderEditSuccess(null);
+    setCreateAccrualSuccess(null);
+    clearCreateAccrualEditor();
     if (!options.preserveDetail) {
       dismissDetailFromUrl();
     }
@@ -498,6 +543,58 @@ export function InvoicesView({
     }
 
     clearHeaderEditor();
+  }
+
+  function clearCreateAccrualEditor() {
+    setCreateAccrualTarget(null);
+    setCreateAccrualBaseline(null);
+    setCreateAccrualError(null);
+  }
+
+  function beginCreateAccrual(invoice: Invoice, options: BeginEditorOptions = {}) {
+    if (!canCreateAccrualFromInvoice(invoice) || isAnyInvoiceMutationBusy()) {
+      return;
+    }
+
+    if (createAccrualTarget?.id === invoice.id) {
+      return;
+    }
+
+    setCreateSuccess(null);
+    setIssueError(null);
+    setIssueSuccess(null);
+    setIssueTarget(null);
+    setDueDateEditError(null);
+    setDueDateEditSuccess(null);
+    setDueDateEditTarget(null);
+    setDueDateEditValue("");
+    setLineAddError(null);
+    setLineAddSuccess(null);
+    setLineAddTarget(null);
+    resetLineAddForm();
+    setLineUpdateSuccess(null);
+    clearLineUpdateEditor();
+    setLineRemoveSuccess(null);
+    clearLineRemoveEditor();
+    setHeaderEditSuccess(null);
+    clearHeaderEditor();
+    setCreateAccrualError(null);
+    setCreateAccrualSuccess(null);
+    setCreatedAccrualId(null);
+    if (!options.preserveDetail) {
+      dismissDetailFromUrl();
+    }
+
+    setCreateAccrualTarget(invoice);
+    setCreateAccrualBaseline(initialCreateAccrualFromInvoiceValues(invoice));
+  }
+
+  function cancelCreateAccrual() {
+    if (createAccrualBusyRef.current) {
+      return;
+    }
+
+    clearCreateAccrualEditor();
   }
 
   function beginIssue(invoice: Invoice, options: BeginEditorOptions = {}) {
@@ -526,6 +623,8 @@ export function InvoicesView({
     clearLineRemoveEditor();
     setHeaderEditSuccess(null);
     clearHeaderEditor();
+    setCreateAccrualSuccess(null);
+    clearCreateAccrualEditor();
     if (!options.preserveDetail) {
       dismissDetailFromUrl();
     }
@@ -577,6 +676,8 @@ export function InvoicesView({
     clearLineRemoveEditor();
     setHeaderEditSuccess(null);
     clearHeaderEditor();
+    setCreateAccrualSuccess(null);
+    clearCreateAccrualEditor();
     setDueDateEditError(null);
     setDueDateEditSuccess(null);
     if (!options.preserveDetail) {
@@ -620,6 +721,8 @@ export function InvoicesView({
     clearLineRemoveEditor();
     setHeaderEditSuccess(null);
     clearHeaderEditor();
+    setCreateAccrualSuccess(null);
+    clearCreateAccrualEditor();
     setLineAddError(null);
     setLineAddSuccess(null);
     if (!options.preserveDetail) {
@@ -677,6 +780,8 @@ export function InvoicesView({
     clearLineRemoveEditor();
     setHeaderEditSuccess(null);
     clearHeaderEditor();
+    setCreateAccrualSuccess(null);
+    clearCreateAccrualEditor();
     setLineUpdateError(null);
     setLineUpdateSuccess(null);
     if (!options.preserveDetail) {
@@ -735,6 +840,8 @@ export function InvoicesView({
     clearLineUpdateEditor();
     setHeaderEditSuccess(null);
     clearHeaderEditor();
+    setCreateAccrualSuccess(null);
+    clearCreateAccrualEditor();
     setLineRemoveError(null);
     setLineRemoveSuccess(null);
     if (!options.preserveDetail) {
@@ -754,11 +861,15 @@ export function InvoicesView({
 
   function clearDetailPanel() {
     detailAbortRef.current?.abort();
+    relatedAccrualsAbortRef.current?.abort();
     setDetailTargetId(null);
     setDetailInvoice(null);
     setDetailLoading(false);
     setDetailError(null);
     setDetailErrorRetryable(false);
+    setRelatedAccruals([]);
+    setRelatedAccrualsLoading(false);
+    setRelatedAccrualsError(null);
   }
 
   function dismissDetailFromUrl(options: InvoiceIdChangeOptions = {}) {
@@ -797,6 +908,10 @@ export function InvoicesView({
       headerEditBusyRef.current &&
       (headerEditTarget?.id === detailTargetId ||
         savingHeaderInvoiceIdRef.current === detailTargetId);
+    const createAccrualPending =
+      createAccrualBusyRef.current &&
+      (createAccrualTarget?.id === detailTargetId ||
+        savingCreateAccrualInvoiceIdRef.current === detailTargetId);
 
     return Boolean(
       issuePending ||
@@ -804,7 +919,8 @@ export function InvoicesView({
         lineAddPending ||
         lineUpdatePending ||
         lineRemovePending ||
-        headerEditPending
+        headerEditPending ||
+        createAccrualPending
     );
   }
 
@@ -820,6 +936,7 @@ export function InvoicesView({
     clearLineUpdateEditor();
     clearLineRemoveEditor();
     clearHeaderEditor();
+    clearCreateAccrualEditor();
   }
 
   function closeDetailPanel() {
@@ -847,6 +964,51 @@ export function InvoicesView({
     await loadInvoiceDetail(workspace.id, invoiceId);
   }
 
+  async function loadRelatedAccruals(workspaceId: string, invoiceId: string) {
+    relatedAccrualsAbortRef.current?.abort();
+    const controller = new AbortController();
+    relatedAccrualsAbortRef.current = controller;
+    const seq = ++relatedAccrualsRequestSeq.current;
+
+    setRelatedAccrualsLoading(true);
+    setRelatedAccrualsError(null);
+
+    try {
+      const items = await listAccrualsByInvoice(workspaceId, invoiceId, controller.signal);
+      if (seq !== relatedAccrualsRequestSeq.current) {
+        return;
+      }
+
+      setRelatedAccruals(items);
+      setRelatedAccrualsLoading(false);
+      setRelatedAccrualsError(null);
+    } catch (loadError) {
+      if (seq !== relatedAccrualsRequestSeq.current) {
+        return;
+      }
+
+      if (loadError instanceof DOMException && loadError.name === "AbortError") {
+        return;
+      }
+
+      const failure = interpretRelatedAccrualsLoadError(loadError);
+      setRelatedAccruals([]);
+      setRelatedAccrualsLoading(false);
+      setRelatedAccrualsError(failure.message);
+    }
+  }
+
+  async function refreshRelatedAccrualsAfterCreate(sourceInvoiceId: string) {
+    if (
+      !workspace ||
+      !shouldReloadRelatedAccrualsAfterCreate(detailTargetId, sourceInvoiceId)
+    ) {
+      return;
+    }
+
+    await loadRelatedAccruals(workspace.id, sourceInvoiceId);
+  }
+
   async function loadInvoiceDetail(
     workspaceId: string,
     invoiceId: string,
@@ -862,6 +1024,8 @@ export function InvoicesView({
     setDetailLoading(true);
     setDetailError(null);
     setDetailErrorRetryable(false);
+    setRelatedAccruals([]);
+    setRelatedAccrualsError(null);
 
     try {
       const invoice = await getInvoice(workspaceId, invoiceId, controller.signal);
@@ -873,6 +1037,7 @@ export function InvoicesView({
       setDetailLoading(false);
       setDetailError(null);
       setDetailErrorRetryable(false);
+      void loadRelatedAccruals(workspaceId, invoiceId);
     } catch (loadError) {
       if (seq !== detailRequestSeq.current) {
         return;
@@ -885,6 +1050,9 @@ export function InvoicesView({
       const failure = interpretInvoiceDetailLoadError(loadError);
       if (failure.clearInvoiceData) {
         setDetailInvoice(null);
+        setRelatedAccruals([]);
+        setRelatedAccrualsLoading(false);
+        setRelatedAccrualsError(null);
       }
 
       setDetailLoading(false);
@@ -1226,6 +1394,8 @@ export function InvoicesView({
     clearLineUpdateEditor();
     setLineRemoveSuccess(null);
     clearLineRemoveEditor();
+    setCreateAccrualSuccess(null);
+    clearCreateAccrualEditor();
 
     try {
       const updated = await applyDraftInvoiceHeaderEditorChanges(
@@ -1274,6 +1444,89 @@ export function InvoicesView({
       savingHeaderInvoiceIdRef.current = null;
       setSavingHeaderInvoiceId(null);
       setHeaderEditBusy(false);
+    }
+  }
+
+  async function handleSaveCreateAccrual(values: CreateAccrualFromInvoiceValues) {
+    if (
+      !workspace ||
+      !createAccrualTarget ||
+      !createAccrualBaseline ||
+      !canCreateAccrualFromInvoice(createAccrualTarget) ||
+      createAccrualBusyRef.current
+    ) {
+      return;
+    }
+
+    const validationError = validateCreateAccrualFromInvoiceValues(values);
+    if (validationError) {
+      setCreateAccrualError(validationError);
+      return;
+    }
+
+    const target = createAccrualTarget;
+    createAccrualBusyRef.current = true;
+    savingCreateAccrualInvoiceIdRef.current = target.id;
+    setSavingCreateAccrualInvoiceId(target.id);
+    setCreateAccrualBusy(true);
+    setCreateAccrualError(null);
+    setCreateAccrualSuccess(null);
+    setCreatedAccrualId(null);
+    setCreateSuccess(null);
+    setIssueError(null);
+    setIssueSuccess(null);
+    setIssueTarget(null);
+    setDueDateEditError(null);
+    setDueDateEditSuccess(null);
+    setDueDateEditTarget(null);
+    setDueDateEditValue("");
+    setLineAddError(null);
+    setLineAddSuccess(null);
+    setLineAddTarget(null);
+    resetLineAddForm();
+    setLineUpdateSuccess(null);
+    clearLineUpdateEditor();
+    setLineRemoveSuccess(null);
+    clearLineRemoveEditor();
+    setHeaderEditSuccess(null);
+    clearHeaderEditor();
+
+    try {
+      const created = await applyCreateAccrualFromInvoice(
+        workspace.id,
+        target,
+        values,
+        { createAccrual }
+      );
+
+      setCreateAccrualTarget(null);
+      setCreateAccrualBaseline(null);
+      setCreatedAccrualId(created.id);
+      setCreateAccrualSuccess(
+        `Чернетку нарахування «${created.description}» створено з рахунком «${target.documentNumber}».`
+      );
+      await refreshRelatedAccrualsAfterCreate(target.id);
+    } catch (createErr) {
+      const failure = interpretCreateAccrualFromInvoiceError(createErr);
+      setCreateAccrualError(failure.message);
+      if (!failure.keepFormOpen) {
+        setCreateAccrualTarget(null);
+        setCreateAccrualBaseline(null);
+      }
+
+      if (failure.refreshInvoice) {
+        try {
+          await loadPage(workspace.id, page, appliedFilters);
+          await refreshDetailAfterEditorFailure(target.id);
+        } catch {
+          // Keep the create error; invoice refresh failure is secondary.
+        }
+      }
+    } finally {
+      createAccrualBusyRef.current = false;
+      savingCreateAccrualInvoiceIdRef.current = null;
+      setSavingCreateAccrualInvoiceId(null);
+      setCreateAccrualBusy(false);
     }
   }
 
@@ -1753,6 +2006,23 @@ export function InvoicesView({
         {headerEditSuccess ? (
           <StatusMessage tone="success">{headerEditSuccess}</StatusMessage>
         ) : null}
+        {createAccrualError && !createAccrualTarget ? (
+          <StatusMessage tone="error">{createAccrualError}</StatusMessage>
+        ) : null}
+        {createAccrualSuccess ? (
+          <div className="state-actions">
+            <StatusMessage tone="success">{createAccrualSuccess}</StatusMessage>
+            {createdAccrualId && onOpenAccrual ? (
+              <button
+                type="button"
+                className="button-secondary"
+                onClick={() => onOpenAccrual(createdAccrualId)}
+              >
+                Відкрити нарахування
+              </button>
+            ) : null}
+          </div>
+        ) : null}
         {issueError ? <StatusMessage tone="error">{issueError}</StatusMessage> : null}
         {issueSuccess ? <StatusMessage tone="success">{issueSuccess}</StatusMessage> : null}
 
@@ -1765,6 +2035,18 @@ export function InvoicesView({
             formError={headerEditError}
             onSave={(values) => void handleSaveHeaderEdit(values)}
             onCancel={cancelHeaderEdit}
+          />
+        ) : null}
+
+        {workspace && createAccrualTarget && createAccrualBaseline ? (
+          <CreateAccrualFromInvoiceEditor
+            key={`create-accrual-${createAccrualTarget.id}`}
+            documentNumberLabel={createAccrualTarget.documentNumber}
+            initialValues={createAccrualBaseline}
+            busy={createAccrualBusy}
+            formError={createAccrualError}
+            onSave={(values) => void handleSaveCreateAccrual(values)}
+            onCancel={cancelCreateAccrual}
           />
         ) : null}
 
@@ -2051,8 +2333,24 @@ export function InvoicesView({
               (issuingInvoiceId === detailTargetId || issueTarget?.id === detailTargetId)
             }
             issueOpen={Boolean(issueTarget && issueTarget.id === detailTargetId)}
+            createAccrualBusy={
+              createAccrualBusy &&
+              (savingCreateAccrualInvoiceId === detailTargetId ||
+                createAccrualTarget?.id === detailTargetId)
+            }
+            createAccrualOpen={Boolean(
+              createAccrualTarget && createAccrualTarget.id === detailTargetId
+            )}
+            relatedAccruals={relatedAccruals}
+            relatedAccrualsLoading={relatedAccrualsLoading}
+            relatedAccrualsError={relatedAccrualsError}
             onClose={closeDetailPanel}
             onRetry={retryInvoiceDetail}
+            onRetryRelatedAccruals={() => {
+              if (workspace && detailTargetId) {
+                void loadRelatedAccruals(workspace.id, detailTargetId);
+              }
+            }}
             onEditHeader={(invoice) => beginHeaderEdit(invoice, { preserveDetail: true })}
             onAddLine={(invoice) => beginLineAdd(invoice, { preserveDetail: true })}
             onUpdateLine={(invoice, lineId) =>
@@ -2065,6 +2363,10 @@ export function InvoicesView({
               beginDueDateEdit(invoice, { preserveDetail: true })
             }
             onIssue={(invoice) => beginIssue(invoice, { preserveDetail: true })}
+            onCreateAccrual={(invoice) =>
+              beginCreateAccrual(invoice, { preserveDetail: true })
+            }
+            onOpenAccrual={onOpenAccrual}
           />
         ) : null}
 
@@ -2133,6 +2435,7 @@ export function InvoicesView({
                               className="button-secondary"
                               disabled={
                                 headerEditBusy ||
+                                createAccrualBusy ||
                                 lineAddBusy ||
                                 lineUpdateBusy ||
                                 lineRemoveBusy ||
@@ -2154,6 +2457,7 @@ export function InvoicesView({
                               className="button-secondary"
                               disabled={
                                 headerEditBusy ||
+                                createAccrualBusy ||
                                 lineAddBusy ||
                                 lineUpdateBusy ||
                                 lineRemoveBusy ||
@@ -2175,6 +2479,7 @@ export function InvoicesView({
                               className="button-secondary"
                               disabled={
                                 headerEditBusy ||
+                                createAccrualBusy ||
                                 dueDateEditBusy ||
                                 lineAddBusy ||
                                 lineUpdateBusy ||
@@ -2196,6 +2501,7 @@ export function InvoicesView({
                               className="button-secondary"
                               disabled={
                                 headerEditBusy ||
+                                createAccrualBusy ||
                                 issueBusy ||
                                 dueDateEditBusy ||
                                 lineAddBusy ||
@@ -2209,7 +2515,32 @@ export function InvoicesView({
                               Виставити
                             </button>
                           ) : null}
-                          {!canViewInvoiceDetails(invoice) && !isDraftInvoice(invoice) ? (
+                          {canCreateAccrualFromInvoice(invoice) ? (
+                            <button
+                              type="button"
+                              className="button-secondary"
+                              disabled={
+                                headerEditBusy ||
+                                createAccrualBusy ||
+                                issueBusy ||
+                                dueDateEditBusy ||
+                                lineAddBusy ||
+                                lineUpdateBusy ||
+                                lineRemoveBusy ||
+                                loading ||
+                                createAccrualTarget?.id === invoice.id
+                              }
+                              onClick={() => beginCreateAccrual(invoice)}
+                            >
+                              {createAccrualBusy &&
+                              savingCreateAccrualInvoiceId === invoice.id
+                                ? "Створення…"
+                                : "Створити нарахування"}
+                            </button>
+                          ) : null}
+                          {!canViewInvoiceDetails(invoice) &&
+                          !isDraftInvoice(invoice) &&
+                          !canCreateAccrualFromInvoice(invoice) ? (
                             <span className="meta">—</span>
                           ) : null}
                         </div>

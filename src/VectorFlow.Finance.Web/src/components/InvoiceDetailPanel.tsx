@@ -1,7 +1,8 @@
-import type { Invoice } from "../api";
+import type { Accrual, Invoice } from "../api";
 import {
   buildInvoiceDetailFields,
   canAddInvoiceLineFromDetails,
+  canCreateAccrualFromInvoiceDetails,
   canEditInvoiceDueDateFromDetails,
   canEditInvoiceHeaderFromDetails,
   canIssueInvoiceFromDetails,
@@ -9,6 +10,11 @@ import {
   canUpdateInvoiceLineFromDetails,
   detailLifecycleActionsFor
 } from "../invoiceDetail";
+import {
+  buildRelatedAccrualRowView,
+  type RelatedAccrualRowView
+} from "../invoiceAccrualBridge";
+import { formatDate, formatMoney } from "../format";
 import { StatusMessage } from "./Panel";
 
 type InvoiceDetailPanelProps = {
@@ -29,14 +35,22 @@ type InvoiceDetailPanelProps = {
   dueDateEditOpen?: boolean;
   issueBusy?: boolean;
   issueOpen?: boolean;
+  createAccrualBusy?: boolean;
+  createAccrualOpen?: boolean;
+  relatedAccruals?: Accrual[];
+  relatedAccrualsLoading?: boolean;
+  relatedAccrualsError?: string | null;
   onClose: () => void;
   onRetry: () => void;
+  onRetryRelatedAccruals?: () => void;
   onEditHeader?: (invoice: Invoice) => void;
   onAddLine?: (invoice: Invoice) => void;
   onUpdateLine?: (invoice: Invoice, lineId: string) => void;
   onRemoveLine?: (invoice: Invoice, lineId: string) => void;
   onEditDueDate?: (invoice: Invoice) => void;
   onIssue?: (invoice: Invoice) => void;
+  onCreateAccrual?: (invoice: Invoice) => void;
+  onOpenAccrual?: (accrualId: string) => void;
 };
 
 export function InvoiceDetailPanel({
@@ -57,14 +71,22 @@ export function InvoiceDetailPanel({
   dueDateEditOpen = false,
   issueBusy = false,
   issueOpen = false,
+  createAccrualBusy = false,
+  createAccrualOpen = false,
+  relatedAccruals = [],
+  relatedAccrualsLoading = false,
+  relatedAccrualsError = null,
   onClose,
   onRetry,
+  onRetryRelatedAccruals,
   onEditHeader,
   onAddLine,
   onUpdateLine,
   onRemoveLine,
   onEditDueDate,
-  onIssue
+  onIssue,
+  onCreateAccrual,
+  onOpenAccrual
 }: InvoiceDetailPanelProps) {
   const fields = invoice ? buildInvoiceDetailFields(invoice) : null;
   const lifecycleActions = invoice ? detailLifecycleActionsFor(invoice) : [];
@@ -88,13 +110,19 @@ export function InvoiceDetailPanel({
     canIssueInvoiceFromDetails(invoice) &&
     lifecycleActions.includes("issue") &&
     Boolean(onIssue);
+  const showCreateAccrual =
+    invoice !== null &&
+    canCreateAccrualFromInvoiceDetails(invoice) &&
+    lifecycleActions.includes("createAccrual") &&
+    Boolean(onCreateAccrual);
   const showLineManage =
     invoice !== null &&
     canUpdateInvoiceLineFromDetails(invoice) &&
     canRemoveInvoiceLineFromDetails(invoice) &&
     Boolean(onUpdateLine) &&
     Boolean(onRemoveLine);
-  const showActions = showEditHeader || showAddLine || showEditDueDate || showIssue;
+  const showActions =
+    showEditHeader || showAddLine || showEditDueDate || showIssue || showCreateAccrual;
   const actionsDisabled =
     closeDisabled ||
     headerEditBusy ||
@@ -108,7 +136,13 @@ export function InvoiceDetailPanel({
     dueDateEditBusy ||
     dueDateEditOpen ||
     issueBusy ||
-    issueOpen;
+    issueOpen ||
+    createAccrualBusy ||
+    createAccrualOpen;
+
+  const relatedRows: RelatedAccrualRowView[] = relatedAccruals.map((accrual) =>
+    buildRelatedAccrualRowView(accrual, formatMoney, formatDate)
+  );
 
   return (
     <section
@@ -235,6 +269,63 @@ export function InvoiceDetailPanel({
             <p className="meta">Рядків немає.</p>
           )}
 
+          <div className="table-wrap" aria-labelledby="invoice-related-accruals-heading">
+            <p className="meta" id="invoice-related-accruals-heading">
+              Повʼязані нарахування
+            </p>
+            {relatedAccrualsLoading ? (
+              <StatusMessage>Завантаження нарахувань…</StatusMessage>
+            ) : null}
+            {!relatedAccrualsLoading && relatedAccrualsError ? (
+              <div className="state-actions" role="alert">
+                <StatusMessage tone="error">{relatedAccrualsError}</StatusMessage>
+                {onRetryRelatedAccruals ? (
+                  <button type="button" onClick={onRetryRelatedAccruals}>
+                    Спробувати знову
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+            {!relatedAccrualsLoading && !relatedAccrualsError && relatedRows.length === 0 ? (
+              <p className="meta">Повʼязаних нарахувань немає.</p>
+            ) : null}
+            {!relatedAccrualsLoading && !relatedAccrualsError && relatedRows.length > 0 ? (
+              <table>
+                <thead>
+                  <tr>
+                    <th>Опис</th>
+                    <th>Статус</th>
+                    <th>Сума</th>
+                    <th>Дата визнання</th>
+                    {onOpenAccrual ? <th>Дія</th> : null}
+                  </tr>
+                </thead>
+                <tbody>
+                  {relatedRows.map((row) => (
+                    <tr key={row.id}>
+                      <td className="cell-wrap">{row.description}</td>
+                      <td>{row.status}</td>
+                      <td>{row.amountDisplay}</td>
+                      <td>{row.recognitionDateDisplay}</td>
+                      {onOpenAccrual ? (
+                        <td>
+                          <button
+                            type="button"
+                            className="button-secondary"
+                            disabled={actionsDisabled}
+                            onClick={() => onOpenAccrual(row.id)}
+                          >
+                            Відкрити
+                          </button>
+                        </td>
+                      ) : null}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : null}
+          </div>
+
           {showActions ? (
             <div className="filter-actions invoice-detail-actions">
               <p className="meta">Дії</p>
@@ -276,6 +367,16 @@ export function InvoiceDetailPanel({
                   onClick={() => onIssue?.(invoice)}
                 >
                   {issueBusy ? "Виставлення…" : "Виставити"}
+                </button>
+              ) : null}
+              {showCreateAccrual ? (
+                <button
+                  type="button"
+                  className="button-secondary"
+                  disabled={actionsDisabled}
+                  onClick={() => onCreateAccrual?.(invoice)}
+                >
+                  {createAccrualBusy ? "Створення…" : "Створити нарахування"}
                 </button>
               ) : null}
             </div>

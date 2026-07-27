@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   buildInvoiceDetailFields,
   canAddInvoiceLineFromDetails,
+  canCreateAccrualFromInvoiceDetails,
   canEditInvoiceDueDateFromDetails,
   canEditInvoiceHeaderFromDetails,
   canIssueInvoiceFromDetails,
@@ -18,6 +19,7 @@ import {
 import { canAddDraftInvoiceLine } from "./draftInvoiceLineAddEditor.ts";
 import { canEditDraftInvoiceDueDate } from "./draftInvoiceDueDateEditor.ts";
 import { canEditDraftInvoiceHeader } from "./draftInvoiceHeaderEditor.ts";
+import { canCreateAccrualFromInvoice } from "./invoiceAccrualBridge.ts";
 import { isDraftInvoice } from "./invoiceIssue.ts";
 import type { Invoice } from "./api.ts";
 
@@ -171,14 +173,15 @@ describe("invoice detail deep-link coordination", () => {
 });
 
 describe("detailLifecycleActionsFor / issue handoff policy", () => {
-  it("shows editHeader, addLine, editDueDate and issue actions only for Draft", () => {
+  it("shows draft mutations plus createAccrual; Issued keeps createAccrual", () => {
     assert.deepEqual(detailLifecycleActionsFor({ status: "Draft" }), [
       "editHeader",
       "addLine",
       "editDueDate",
-      "issue"
+      "issue",
+      "createAccrual"
     ]);
-    assert.deepEqual(detailLifecycleActionsFor({ status: "Issued" }), []);
+    assert.deepEqual(detailLifecycleActionsFor({ status: "Issued" }), ["createAccrual"]);
     assert.equal(canEditInvoiceHeaderFromDetails({ status: "Draft" }), true);
     assert.equal(canEditInvoiceHeaderFromDetails({ status: "Issued" }), false);
     assert.equal(canAddInvoiceLineFromDetails({ status: "Draft" }), true);
@@ -187,6 +190,8 @@ describe("detailLifecycleActionsFor / issue handoff policy", () => {
     assert.equal(canEditInvoiceDueDateFromDetails({ status: "Issued" }), false);
     assert.equal(canIssueInvoiceFromDetails({ status: "Draft" }), true);
     assert.equal(canIssueInvoiceFromDetails({ status: "Issued" }), false);
+    assert.equal(canCreateAccrualFromInvoiceDetails({ status: "Draft" }), true);
+    assert.equal(canCreateAccrualFromInvoiceDetails({ status: "Issued" }), true);
   });
 
   it("reuses the same draft eligibility as the row action", () => {
@@ -212,6 +217,14 @@ describe("detailLifecycleActionsFor / issue handoff policy", () => {
     );
     assert.equal(canAddInvoiceLineFromDetails(draft), canAddDraftInvoiceLine(draft));
     assert.equal(canAddInvoiceLineFromDetails(issued), canAddDraftInvoiceLine(issued));
+    assert.equal(
+      canCreateAccrualFromInvoiceDetails(draft),
+      canCreateAccrualFromInvoice(draft)
+    );
+    assert.equal(
+      canCreateAccrualFromInvoiceDetails(issued),
+      canCreateAccrualFromInvoice(issued)
+    );
     assert.equal(canUpdateInvoiceLineFromDetails(draft), true);
     assert.equal(canUpdateInvoiceLineFromDetails(issued), false);
     assert.equal(canRemoveInvoiceLineFromDetails(draft), true);
@@ -223,7 +236,8 @@ describe("detailLifecycleActionsFor / issue handoff policy", () => {
       "editHeader",
       "addLine",
       "editDueDate",
-      "issue"
+      "issue",
+      "createAccrual"
     ]);
   });
 

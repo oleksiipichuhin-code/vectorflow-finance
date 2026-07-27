@@ -4,6 +4,7 @@ import { canEditDraftInvoiceDueDate } from "./draftInvoiceDueDateEditor.ts";
 import { canEditDraftInvoiceHeader } from "./draftInvoiceHeaderEditor.ts";
 import { canRemoveDraftInvoiceLine } from "./draftInvoiceLineRemoveEditor.ts";
 import { canUpdateDraftInvoiceLine } from "./draftInvoiceLineUpdateEditor.ts";
+import { canCreateAccrualFromInvoice } from "./invoiceAccrualBridge.ts";
 import { isDraftInvoice } from "./invoiceIssue.ts";
 import { formatDate, formatMoney } from "./format.ts";
 
@@ -21,7 +22,8 @@ export type InvoiceDetailLifecycleAction =
   | "editHeader"
   | "addLine"
   | "editDueDate"
-  | "issue";
+  | "issue"
+  | "createAccrual";
 
 export function detailLifecycleActionsFor(
   invoice: Pick<Invoice, "status">
@@ -38,6 +40,9 @@ export function detailLifecycleActionsFor(
   }
   if (isDraftInvoice(invoice)) {
     actions.push("issue");
+  }
+  if (canCreateAccrualFromInvoice(invoice)) {
+    actions.push("createAccrual");
   }
   return actions;
 }
@@ -62,6 +67,12 @@ export function canEditInvoiceDueDateFromDetails(
 
 export function canIssueInvoiceFromDetails(invoice: Pick<Invoice, "status">): boolean {
   return detailLifecycleActionsFor(invoice).includes("issue");
+}
+
+export function canCreateAccrualFromInvoiceDetails(
+  invoice: Pick<Invoice, "status">
+): boolean {
+  return detailLifecycleActionsFor(invoice).includes("createAccrual");
 }
 
 /** Per-line Draft controls in the detail line table — not invoice-level lifecycle actions. */
