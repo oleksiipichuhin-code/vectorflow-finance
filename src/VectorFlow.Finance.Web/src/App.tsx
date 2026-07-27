@@ -274,6 +274,22 @@ export default function App() {
     [workspace]
   );
 
+  const openInvoiceDetail = useCallback(
+    (nextInvoiceId: string) => {
+      if (!workspace) {
+        setView("workspace");
+        return;
+      }
+
+      setDiscovery(createEmptyDiscovery());
+      setAccrualId(null);
+      setInvoiceId(nextInvoiceId);
+      setListEpoch((value) => value + 1);
+      setView("invoices");
+    },
+    [workspace]
+  );
+
   const handleCopyLink = useCallback(async () => {
     const search = buildUrlSearch({
       view,
@@ -410,6 +426,7 @@ export default function App() {
           selectedAccrualId={accrualId}
           onDiscoveryChange={handleAccrualDiscoveryChange}
           onSelectedAccrualIdChange={handleAccrualIdChange}
+          onOpenInvoice={openInvoiceDetail}
         />
       ) : null}
     </main>

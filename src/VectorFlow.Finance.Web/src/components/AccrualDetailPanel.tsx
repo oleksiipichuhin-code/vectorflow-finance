@@ -3,7 +3,9 @@ import {
   buildAccrualDetailFields,
   canEditAccrualFromDetails,
   canManageAccrualLifecycleFromDetails,
+  canOpenSourceInvoiceFromDetails,
   detailLifecycleActionsFor,
+  sourceInvoiceIdForOpen,
   type SourceInvoiceDetailView
 } from "../accrualDetail";
 import { StatusMessage } from "./Panel";
@@ -27,6 +29,8 @@ type AccrualDetailPanelProps = {
   onEditSourceInvoice?: (accrual: Accrual) => void;
   onRecognize?: (accrual: Accrual) => void;
   onReverse?: (accrual: Accrual) => void;
+  /** Cross-view handoff: open Invoices detail for the linked source invoice. */
+  onOpenInvoice?: (invoiceId: string) => void;
 };
 
 export function AccrualDetailPanel({
@@ -46,7 +50,8 @@ export function AccrualDetailPanel({
   onEditAmount,
   onEditSourceInvoice,
   onRecognize,
-  onReverse
+  onReverse,
+  onOpenInvoice
 }: AccrualDetailPanelProps) {
   const fields = accrual ? buildAccrualDetailFields(accrual) : null;
   const showEditActions =
@@ -64,6 +69,12 @@ export function AccrualDetailPanel({
     canManageAccrualLifecycleFromDetails(accrual) &&
     lifecycleActions.includes("reverse") &&
     Boolean(onReverse);
+  const openSourceInvoiceId = accrual ? sourceInvoiceIdForOpen(accrual) : null;
+  const showOpenSourceInvoice =
+    accrual !== null &&
+    canOpenSourceInvoiceFromDetails(accrual) &&
+    openSourceInvoiceId !== null &&
+    Boolean(onOpenInvoice);
   const showActions = showEditActions || showRecognize || showReverse;
 
   return (
@@ -136,6 +147,18 @@ export function AccrualDetailPanel({
                       onClick={onRetrySourceInvoice}
                     >
                       Спробувати знову
+                    </button>
+                  </span>
+                ) : null}
+                {showOpenSourceInvoice && openSourceInvoiceId ? (
+                  <span className="state-actions">
+                    <button
+                      type="button"
+                      className="button-secondary"
+                      disabled={editActionsDisabled}
+                      onClick={() => onOpenInvoice?.(openSourceInvoiceId)}
+                    >
+                      Відкрити рахунок
                     </button>
                   </span>
                 ) : null}

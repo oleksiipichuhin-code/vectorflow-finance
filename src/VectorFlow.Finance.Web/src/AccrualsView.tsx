@@ -90,6 +90,8 @@ type AccrualsViewProps = {
     accrualId: string | null,
     options?: AccrualIdChangeOptions
   ) => void;
+  /** Cross-view handoff: open Invoices detail for a linked source invoice. */
+  onOpenInvoice?: (invoiceId: string) => void;
 };
 
 const emptyFilters: AccrualListFilters = { ...EMPTY_ACCRUAL_FILTERS };
@@ -104,7 +106,8 @@ export function AccrualsView({
   initialFilters = emptyFilters,
   selectedAccrualId = null,
   onDiscoveryChange,
-  onSelectedAccrualIdChange
+  onSelectedAccrualIdChange,
+  onOpenInvoice
 }: AccrualsViewProps) {
   const [draftFilters, setDraftFilters] = useState<AccrualListFilters>(() => ({
     ...emptyFilters,
@@ -1730,6 +1733,7 @@ export function AccrualsView({
               void handleRecognizeAccrual(accrual, { preserveDetail: true })
             }
             onReverse={(accrual) => beginReverse(accrual, { preserveDetail: true })}
+            onOpenInvoice={onOpenInvoice}
           />
         ) : null}
         {workspace ? (

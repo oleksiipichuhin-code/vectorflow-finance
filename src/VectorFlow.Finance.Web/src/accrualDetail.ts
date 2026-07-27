@@ -263,3 +263,20 @@ export function shouldLoadSourceInvoice(
 ): sourceInvoiceId is string {
   return typeof sourceInvoiceId === "string" && sourceInvoiceId.length > 0;
 }
+
+/**
+ * Accrual → Invoice reverse link: open when the Accrual DTO carries a source id.
+ * Does not invent eligibility beyond the linked identifier already returned by GET Accrual.
+ */
+export function canOpenSourceInvoiceFromDetails(
+  accrual: Pick<Accrual, "sourceInvoiceId">
+): boolean {
+  return shouldLoadSourceInvoice(accrual.sourceInvoiceId);
+}
+
+/** Resolve the invoiceId for cross-view handoff (view=invoices&invoiceId=…). */
+export function sourceInvoiceIdForOpen(
+  accrual: Pick<Accrual, "sourceInvoiceId">
+): string | null {
+  return shouldLoadSourceInvoice(accrual.sourceInvoiceId) ? accrual.sourceInvoiceId : null;
+}

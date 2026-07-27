@@ -409,3 +409,52 @@ describe("invoice detail deep-link URL policy", () => {
     );
   });
 });
+
+describe("accrual → invoice reverse-link URL handoff", () => {
+  const workspaceId = "11111111-1111-1111-1111-111111111111";
+  const accrualId = "a1111111-1111-1111-1111-111111111111";
+  const invoiceId = "b1111111-1111-1111-1111-111111111111";
+
+  it("handoff target is invoices view with invoiceId and without accrualId", () => {
+    const afterHandoff = {
+      view: "invoices" as const,
+      workspaceId,
+      accrualId: null,
+      invoiceId,
+      discovery: {
+        page: 1,
+        invoiceFilters: { ...EMPTY_INVOICE_FILTERS },
+        accrualFilters: { ...EMPTY_ACCRUAL_FILTERS }
+      }
+    };
+
+    const search = buildUrlSearch(afterHandoff);
+    assert.match(search, /view=invoices/);
+    assert.match(search, new RegExp(`invoiceId=${invoiceId}`));
+    assert.equal(search.includes("accrualId"), false);
+
+    const parsed = parseUrlSearch(search);
+    assert.equal(parsed.view, "invoices");
+    assert.equal(parsed.invoiceId, invoiceId);
+    assert.equal(parsed.accrualId, null);
+  });
+
+  it("return via related accrual restores accruals view with accrualId", () => {
+    const returnState = {
+      view: "accruals" as const,
+      workspaceId,
+      accrualId,
+      invoiceId: null,
+      discovery: {
+        page: 1,
+        invoiceFilters: { ...EMPTY_INVOICE_FILTERS },
+        accrualFilters: { ...EMPTY_ACCRUAL_FILTERS }
+      }
+    };
+
+    const search = buildUrlSearch(returnState);
+    assert.match(search, /view=accruals/);
+    assert.match(search, new RegExp(`accrualId=${accrualId}`));
+    assert.equal(search.includes("invoiceId"), false);
+  });
+});

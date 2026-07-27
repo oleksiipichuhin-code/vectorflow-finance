@@ -4,6 +4,7 @@ import {
   buildAccrualDetailFields,
   canEditAccrualFromDetails,
   canManageAccrualLifecycleFromDetails,
+  canOpenSourceInvoiceFromDetails,
   canViewAccrualDetails,
   DETAIL_RELOAD_AFTER_MUTATION_FAILED_MESSAGE,
   detailEditActionsFor,
@@ -14,6 +15,7 @@ import {
   shouldReloadDetailAfterMutation,
   sourceInvoiceDetailFromInvoice,
   sourceInvoiceDetailNone,
+  sourceInvoiceIdForOpen,
   type BeginEditorOptions
 } from "./accrualDetail.ts";
 import type { Accrual, Invoice } from "./api.ts";
@@ -134,6 +136,8 @@ describe("buildAccrualDetailFields", () => {
 describe("source invoice detail helpers", () => {
   it("shows no-selection state when sourceInvoiceId is null", () => {
     assert.equal(shouldLoadSourceInvoice(null), false);
+    assert.equal(canOpenSourceInvoiceFromDetails({ sourceInvoiceId: null }), false);
+    assert.equal(sourceInvoiceIdForOpen({ sourceInvoiceId: null }), null);
     const view = sourceInvoiceDetailNone();
     assert.equal(view.kind, "none");
     if (view.kind === "none") {
@@ -157,6 +161,8 @@ describe("source invoice detail helpers", () => {
     };
 
     assert.equal(shouldLoadSourceInvoice(invoice.id), true);
+    assert.equal(canOpenSourceInvoiceFromDetails({ sourceInvoiceId: invoice.id }), true);
+    assert.equal(sourceInvoiceIdForOpen({ sourceInvoiceId: invoice.id }), invoice.id);
     const view = sourceInvoiceDetailFromInvoice(invoice);
     assert.equal(view.kind, "ready");
     if (view.kind === "ready") {
@@ -165,6 +171,39 @@ describe("source invoice detail helpers", () => {
       assert.match(view.display, /10\.00 UAH/);
       assert.match(view.display, /ACME/);
     }
+  });
+
+  it("open-source handoff uses Accrual sourceInvoiceId for any viewable status", () => {
+    const invoiceId = "i1111111-1111-1111-1111-111111111111";
+    for (const status of ["Draft", "Recognized", "Reversed"] as const) {
+      const accrual = sampleAccrual({ status, sourceInvoiceId: invoiceId });
+      assert.equal(canViewAccrualDetails(accrual), true);
+      assert.equal(canOpenSourceInvoiceFromDetails(accrual), true);
+      assert.equal(sourceInvoiceIdForOpen(accrual), invoiceId);
+    }
+  });
+
+  it("Accrual and Invoice deep-links stay isolated by param names", () => {
+    const invoiceParam = "invoiceId";
+    const accrualParam = "accrualId";
+    assert.notEqual(invoiceParam, accrualParam);
+  });
+
+  it("open invoice callback receives source invoice id without mutation", () => {
+    const invoiceId = "i1111111-1111-1111-1111-111111111111";
+    const accrual = sampleAccrual({ sourceInvoiceId: invoiceId });
+    let mutationCount = 0;
+    const opened: string[] = [];
+    const onOpenInvoice = (id: string) => {
+      opened.push(id);
+    };
+    const resolved = sourceInvoiceIdForOpen(accrual);
+    assert.equal(resolved, invoiceId);
+    if (resolved && canOpenSourceInvoiceFromDetails(accrual)) {
+      onOpenInvoice(resolved);
+    }
+    assert.equal(mutationCount, 0);
+    assert.deepEqual(opened, [invoiceId]);
   });
 });
 
