@@ -254,6 +254,42 @@ export function addInvoiceLine(
   );
 }
 
+export function updateInvoiceLine(
+  workspaceId: string,
+  invoiceId: string,
+  lineId: string,
+  input: {
+    quantity: number;
+    unitPrice: number;
+    description?: string | null;
+  }
+): Promise<Invoice> {
+  return requestJson<Invoice>(
+    `/api/finance-workspaces/${workspaceId}/invoices/${invoiceId}/lines/${lineId}`,
+    {
+      method: "PUT",
+      body: JSON.stringify({
+        quantity: input.quantity,
+        unitPrice: input.unitPrice,
+        description: input.description ?? null
+      })
+    }
+  );
+}
+
+export function removeInvoiceLine(
+  workspaceId: string,
+  invoiceId: string,
+  lineId: string
+): Promise<Invoice> {
+  return requestJson<Invoice>(
+    `/api/finance-workspaces/${workspaceId}/invoices/${invoiceId}/lines/${lineId}`,
+    {
+      method: "DELETE"
+    }
+  );
+}
+
 export function issueInvoice(workspaceId: string, invoiceId: string): Promise<Invoice> {
   return requestJson<Invoice>(
     `/api/finance-workspaces/${workspaceId}/invoices/${invoiceId}/issue`,

@@ -5,9 +5,12 @@ import {
   getInvoice,
   issueInvoice,
   listInvoicesPaged,
+  removeInvoiceLine,
   setInvoiceDueDate,
+  updateInvoiceLine,
   type FinanceWorkspace,
-  type Invoice
+  type Invoice,
+  type InvoiceLine
 } from "./api";
 import {
   EMPTY_INVOICE_FILTERS,
@@ -42,12 +45,31 @@ import {
   interpretDraftInvoiceLineAddError
 } from "./draftInvoiceLineAddEditor";
 import {
+  applyDraftInvoiceLineUpdate,
+  canUpdateDraftInvoiceLine,
+  findInvoiceLine,
+  initialDraftInvoiceLineUpdateInput,
+  interpretDraftInvoiceLineUpdateError
+} from "./draftInvoiceLineUpdateEditor";
+import {
+  applyDraftInvoiceLineRemove,
+  canRemoveDraftInvoiceLine,
+  draftInvoiceLineConfirmationLabel,
+  interpretDraftInvoiceLineRemoveError
+} from "./draftInvoiceLineRemoveEditor";
+import {
   defaultDueDateInputValue,
   getInvoiceIssueReadiness,
   interpretInvoiceIssueError,
   isDraftInvoice,
   toDueDateUtcIso
 } from "./invoiceIssue";
+
+type DraftInvoiceLineEditorTarget = {
+  invoice: Invoice;
+  lineId: string;
+  line: InvoiceLine;
+};
 import { InvoiceDetailPanel } from "./components/InvoiceDetailPanel";
 import { ListLoadState } from "./components/ListLoadState";
 import { Panel, StatusMessage } from "./components/Panel";
@@ -134,6 +156,25 @@ export function InvoicesView({
   const [lineAddError, setLineAddError] = useState<string | null>(null);
   const [lineAddSuccess, setLineAddSuccess] = useState<string | null>(null);
   const [savingLineInvoiceId, setSavingLineInvoiceId] = useState<string | null>(null);
+  const [lineUpdateTarget, setLineUpdateTarget] =
+    useState<DraftInvoiceLineEditorTarget | null>(null);
+  const [lineUpdateQuantity, setLineUpdateQuantity] = useState("1");
+  const [lineUpdateUnitPrice, setLineUpdateUnitPrice] = useState("");
+  const [lineUpdateDescription, setLineUpdateDescription] = useState("");
+  const [lineUpdateBusy, setLineUpdateBusy] = useState(false);
+  const [lineUpdateError, setLineUpdateError] = useState<string | null>(null);
+  const [lineUpdateSuccess, setLineUpdateSuccess] = useState<string | null>(null);
+  const [savingLineUpdateInvoiceId, setSavingLineUpdateInvoiceId] = useState<string | null>(
+    null
+  );
+  const [lineRemoveTarget, setLineRemoveTarget] =
+    useState<DraftInvoiceLineEditorTarget | null>(null);
+  const [lineRemoveBusy, setLineRemoveBusy] = useState(false);
+  const [lineRemoveError, setLineRemoveError] = useState<string | null>(null);
+  const [lineRemoveSuccess, setLineRemoveSuccess] = useState<string | null>(null);
+  const [savingLineRemoveInvoiceId, setSavingLineRemoveInvoiceId] = useState<string | null>(
+    null
+  );
   const [detailTargetId, setDetailTargetId] = useState<string | null>(null);
   const [detailInvoice, setDetailInvoice] = useState<Invoice | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -151,6 +192,20 @@ export function InvoicesView({
   const savingDueDateInvoiceIdRef = useRef<string | null>(null);
   const lineAddBusyRef = useRef(false);
   const savingLineInvoiceIdRef = useRef<string | null>(null);
+  const lineUpdateBusyRef = useRef(false);
+  const savingLineUpdateInvoiceIdRef = useRef<string | null>(null);
+  const lineRemoveBusyRef = useRef(false);
+  const savingLineRemoveInvoiceIdRef = useRef<string | null>(null);
+
+  function isAnyInvoiceMutationBusy(): boolean {
+    return (
+      issueBusyRef.current ||
+      dueDateEditBusyRef.current ||
+      lineAddBusyRef.current ||
+      lineUpdateBusyRef.current ||
+      lineRemoveBusyRef.current
+    );
+  }
 
   useEffect(() => {
     if (workspace) {
@@ -186,6 +241,13 @@ export function InvoicesView({
       resetLineAddForm();
       setLineAddError(null);
       setLineAddSuccess(null);
+      setLineUpdateTarget(null);
+      resetLineUpdateForm();
+      setLineUpdateError(null);
+      setLineUpdateSuccess(null);
+      setLineRemoveTarget(null);
+      setLineRemoveError(null);
+      setLineRemoveSuccess(null);
       dismissDetailFromUrl({ replace: true });
       onDiscoveryChange?.(1, emptyFilters);
     }
@@ -296,6 +358,10 @@ export function InvoicesView({
     setDueDateEditSuccess(null);
     setLineAddError(null);
     setLineAddSuccess(null);
+    setLineUpdateError(null);
+    setLineUpdateSuccess(null);
+    setLineRemoveError(null);
+    setLineRemoveSuccess(null);
     dismissDetailFromUrl();
 
     try {
@@ -315,6 +381,9 @@ export function InvoicesView({
       setDueDateEditValue("");
       setLineAddTarget(null);
       resetLineAddForm();
+      setLineUpdateTarget(null);
+      resetLineUpdateForm();
+      setLineRemoveTarget(null);
       setCreateSuccess(
         `Чернетку рахунка «${created.documentNumber}» створено. Запис показано у списку нижче.`
       );
@@ -336,13 +405,25 @@ export function InvoicesView({
     setLineAddDescription(initial.description);
   }
 
+  function resetLineUpdateForm() {
+    setLineUpdateQuantity("1");
+    setLineUpdateUnitPrice("");
+    setLineUpdateDescription("");
+  }
+
+  function clearLineUpdateEditor() {
+    setLineUpdateTarget(null);
+    resetLineUpdateForm();
+    setLineUpdateError(null);
+  }
+
+  function clearLineRemoveEditor() {
+    setLineRemoveTarget(null);
+    setLineRemoveError(null);
+  }
+
   function beginIssue(invoice: Invoice, options: BeginEditorOptions = {}) {
-    if (
-      !isDraftInvoice(invoice) ||
-      issueBusyRef.current ||
-      dueDateEditBusyRef.current ||
-      lineAddBusyRef.current
-    ) {
+    if (!isDraftInvoice(invoice) || isAnyInvoiceMutationBusy()) {
       return;
     }
 
@@ -361,6 +442,10 @@ export function InvoicesView({
     setLineAddSuccess(null);
     setLineAddTarget(null);
     resetLineAddForm();
+    setLineUpdateSuccess(null);
+    clearLineUpdateEditor();
+    setLineRemoveSuccess(null);
+    clearLineRemoveEditor();
     if (!options.preserveDetail) {
       dismissDetailFromUrl();
     }
@@ -390,12 +475,7 @@ export function InvoicesView({
   }
 
   function beginDueDateEdit(invoice: Invoice, options: BeginEditorOptions = {}) {
-    if (
-      !canEditDraftInvoiceDueDate(invoice) ||
-      dueDateEditBusyRef.current ||
-      issueBusyRef.current ||
-      lineAddBusyRef.current
-    ) {
+    if (!canEditDraftInvoiceDueDate(invoice) || isAnyInvoiceMutationBusy()) {
       return;
     }
 
@@ -411,6 +491,10 @@ export function InvoicesView({
     setLineAddSuccess(null);
     setLineAddTarget(null);
     resetLineAddForm();
+    setLineUpdateSuccess(null);
+    clearLineUpdateEditor();
+    setLineRemoveSuccess(null);
+    clearLineRemoveEditor();
     setDueDateEditError(null);
     setDueDateEditSuccess(null);
     if (!options.preserveDetail) {
@@ -432,12 +516,7 @@ export function InvoicesView({
   }
 
   function beginLineAdd(invoice: Invoice, options: BeginEditorOptions = {}) {
-    if (
-      !canAddDraftInvoiceLine(invoice) ||
-      lineAddBusyRef.current ||
-      issueBusyRef.current ||
-      dueDateEditBusyRef.current
-    ) {
+    if (!canAddDraftInvoiceLine(invoice) || isAnyInvoiceMutationBusy()) {
       return;
     }
 
@@ -453,6 +532,10 @@ export function InvoicesView({
     setDueDateEditSuccess(null);
     setDueDateEditTarget(null);
     setDueDateEditValue("");
+    setLineUpdateSuccess(null);
+    clearLineUpdateEditor();
+    setLineRemoveSuccess(null);
+    clearLineRemoveEditor();
     setLineAddError(null);
     setLineAddSuccess(null);
     if (!options.preserveDetail) {
@@ -471,6 +554,114 @@ export function InvoicesView({
     setLineAddTarget(null);
     resetLineAddForm();
     setLineAddError(null);
+  }
+
+  function beginLineUpdate(
+    invoice: Invoice,
+    lineId: string,
+    options: BeginEditorOptions = {}
+  ) {
+    if (!canUpdateDraftInvoiceLine(invoice) || isAnyInvoiceMutationBusy()) {
+      return;
+    }
+
+    const line = findInvoiceLine(invoice, lineId);
+    if (!line) {
+      return;
+    }
+
+    if (
+      lineUpdateTarget?.invoice.id === invoice.id &&
+      lineUpdateTarget.lineId === lineId
+    ) {
+      return;
+    }
+
+    setCreateSuccess(null);
+    setIssueError(null);
+    setIssueSuccess(null);
+    setIssueTarget(null);
+    setDueDateEditError(null);
+    setDueDateEditSuccess(null);
+    setDueDateEditTarget(null);
+    setDueDateEditValue("");
+    setLineAddError(null);
+    setLineAddSuccess(null);
+    setLineAddTarget(null);
+    resetLineAddForm();
+    setLineRemoveSuccess(null);
+    clearLineRemoveEditor();
+    setLineUpdateError(null);
+    setLineUpdateSuccess(null);
+    if (!options.preserveDetail) {
+      dismissDetailFromUrl();
+    }
+
+    const initial = initialDraftInvoiceLineUpdateInput(line);
+    setLineUpdateTarget({ invoice, lineId, line });
+    setLineUpdateQuantity(initial.quantity);
+    setLineUpdateUnitPrice(initial.unitPrice);
+    setLineUpdateDescription(initial.description);
+  }
+
+  function cancelLineUpdate() {
+    if (lineUpdateBusyRef.current) {
+      return;
+    }
+
+    clearLineUpdateEditor();
+  }
+
+  function beginLineRemove(
+    invoice: Invoice,
+    lineId: string,
+    options: BeginEditorOptions = {}
+  ) {
+    if (!canRemoveDraftInvoiceLine(invoice) || isAnyInvoiceMutationBusy()) {
+      return;
+    }
+
+    const line = findInvoiceLine(invoice, lineId);
+    if (!line) {
+      return;
+    }
+
+    if (
+      lineRemoveTarget?.invoice.id === invoice.id &&
+      lineRemoveTarget.lineId === lineId
+    ) {
+      return;
+    }
+
+    setCreateSuccess(null);
+    setIssueError(null);
+    setIssueSuccess(null);
+    setIssueTarget(null);
+    setDueDateEditError(null);
+    setDueDateEditSuccess(null);
+    setDueDateEditTarget(null);
+    setDueDateEditValue("");
+    setLineAddError(null);
+    setLineAddSuccess(null);
+    setLineAddTarget(null);
+    resetLineAddForm();
+    setLineUpdateSuccess(null);
+    clearLineUpdateEditor();
+    setLineRemoveError(null);
+    setLineRemoveSuccess(null);
+    if (!options.preserveDetail) {
+      dismissDetailFromUrl();
+    }
+
+    setLineRemoveTarget({ invoice, lineId, line });
+  }
+
+  function cancelLineRemove() {
+    if (lineRemoveBusyRef.current) {
+      return;
+    }
+
+    clearLineRemoveEditor();
   }
 
   function clearDetailPanel() {
@@ -506,8 +697,22 @@ export function InvoicesView({
       lineAddBusyRef.current &&
       (lineAddTarget?.id === detailTargetId ||
         savingLineInvoiceIdRef.current === detailTargetId);
+    const lineUpdatePending =
+      lineUpdateBusyRef.current &&
+      (lineUpdateTarget?.invoice.id === detailTargetId ||
+        savingLineUpdateInvoiceIdRef.current === detailTargetId);
+    const lineRemovePending =
+      lineRemoveBusyRef.current &&
+      (lineRemoveTarget?.invoice.id === detailTargetId ||
+        savingLineRemoveInvoiceIdRef.current === detailTargetId);
 
-    return Boolean(issuePending || dueDatePending || lineAddPending);
+    return Boolean(
+      issuePending ||
+        dueDatePending ||
+        lineAddPending ||
+        lineUpdatePending ||
+        lineRemovePending
+    );
   }
 
   function closeOpenEditorsForDetailClose() {
@@ -519,6 +724,8 @@ export function InvoicesView({
     setLineAddTarget(null);
     resetLineAddForm();
     setLineAddError(null);
+    clearLineUpdateEditor();
+    clearLineRemoveEditor();
   }
 
   function closeDetailPanel() {
@@ -634,6 +841,10 @@ export function InvoicesView({
     setLineAddError(null);
     setLineAddTarget(null);
     resetLineAddForm();
+    setLineUpdateSuccess(null);
+    clearLineUpdateEditor();
+    setLineRemoveSuccess(null);
+    clearLineRemoveEditor();
 
     void loadInvoiceDetail(workspace.id, selectedInvoiceId);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on selection + workspace
@@ -660,6 +871,10 @@ export function InvoicesView({
     setLineAddError(null);
     setLineAddTarget(null);
     resetLineAddForm();
+    setLineUpdateSuccess(null);
+    clearLineUpdateEditor();
+    setLineRemoveSuccess(null);
+    clearLineRemoveEditor();
     onSelectedInvoiceIdChange?.(invoice.id);
   }
 
@@ -696,6 +911,10 @@ export function InvoicesView({
     setLineAddSuccess(null);
     setLineAddTarget(null);
     resetLineAddForm();
+    setLineUpdateSuccess(null);
+    clearLineUpdateEditor();
+    setLineRemoveSuccess(null);
+    clearLineRemoveEditor();
 
     try {
       const readiness = getInvoiceIssueReadiness(invoice);
@@ -830,6 +1049,10 @@ export function InvoicesView({
     setLineAddSuccess(null);
     setLineAddTarget(null);
     resetLineAddForm();
+    setLineUpdateSuccess(null);
+    clearLineUpdateEditor();
+    setLineRemoveSuccess(null);
+    clearLineRemoveEditor();
 
     try {
       const updated = await applyDraftInvoiceDueDateChange(
@@ -896,6 +1119,10 @@ export function InvoicesView({
     setDueDateEditSuccess(null);
     setDueDateEditTarget(null);
     setDueDateEditValue("");
+    setLineUpdateSuccess(null);
+    clearLineUpdateEditor();
+    setLineRemoveSuccess(null);
+    clearLineRemoveEditor();
 
     try {
       const updated = await applyDraftInvoiceLineAdd(
@@ -935,6 +1162,146 @@ export function InvoicesView({
       savingLineInvoiceIdRef.current = null;
       setSavingLineInvoiceId(null);
       setLineAddBusy(false);
+    }
+  }
+
+  async function handleSaveLineUpdate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (
+      !workspace ||
+      !lineUpdateTarget ||
+      !canUpdateDraftInvoiceLine(lineUpdateTarget.invoice) ||
+      lineUpdateBusyRef.current
+    ) {
+      return;
+    }
+
+    const target = lineUpdateTarget;
+    lineUpdateBusyRef.current = true;
+    savingLineUpdateInvoiceIdRef.current = target.invoice.id;
+    setSavingLineUpdateInvoiceId(target.invoice.id);
+    setLineUpdateBusy(true);
+    setLineUpdateError(null);
+    setLineUpdateSuccess(null);
+    setCreateSuccess(null);
+    setIssueError(null);
+    setIssueSuccess(null);
+    setIssueTarget(null);
+    setDueDateEditError(null);
+    setDueDateEditSuccess(null);
+    setDueDateEditTarget(null);
+    setDueDateEditValue("");
+    setLineAddError(null);
+    setLineAddSuccess(null);
+    setLineAddTarget(null);
+    resetLineAddForm();
+    setLineRemoveSuccess(null);
+    clearLineRemoveEditor();
+
+    try {
+      const updated = await applyDraftInvoiceLineUpdate(
+        workspace.id,
+        target.invoice.id,
+        target.lineId,
+        {
+          quantity: lineUpdateQuantity,
+          unitPrice: lineUpdateUnitPrice,
+          description: lineUpdateDescription
+        },
+        updateInvoiceLine
+      );
+      clearLineUpdateEditor();
+      setHighlightedId(updated.id);
+      setLineUpdateSuccess(`Рядок оновлено в рахунку «${updated.documentNumber}».`);
+      await loadPage(workspace.id, page, appliedFilters);
+      await refreshDetailAfterMutation(updated.id);
+    } catch (updateErr) {
+      const failure = interpretDraftInvoiceLineUpdateError(updateErr);
+      setLineUpdateError(failure.message);
+      if (!failure.keepEditorOpen) {
+        clearLineUpdateEditor();
+      }
+
+      if (failure.refreshList) {
+        try {
+          await loadPage(workspace.id, page, appliedFilters);
+          await refreshDetailAfterEditorFailure(target.invoice.id);
+        } catch {
+          // Keep the line-update error; list refresh failure is secondary.
+        }
+      }
+    } finally {
+      lineUpdateBusyRef.current = false;
+      savingLineUpdateInvoiceIdRef.current = null;
+      setSavingLineUpdateInvoiceId(null);
+      setLineUpdateBusy(false);
+    }
+  }
+
+  async function handleConfirmLineRemove() {
+    if (
+      !workspace ||
+      !lineRemoveTarget ||
+      !canRemoveDraftInvoiceLine(lineRemoveTarget.invoice) ||
+      lineRemoveBusyRef.current
+    ) {
+      return;
+    }
+
+    const target = lineRemoveTarget;
+    lineRemoveBusyRef.current = true;
+    savingLineRemoveInvoiceIdRef.current = target.invoice.id;
+    setSavingLineRemoveInvoiceId(target.invoice.id);
+    setLineRemoveBusy(true);
+    setLineRemoveError(null);
+    setLineRemoveSuccess(null);
+    setCreateSuccess(null);
+    setIssueError(null);
+    setIssueSuccess(null);
+    setIssueTarget(null);
+    setDueDateEditError(null);
+    setDueDateEditSuccess(null);
+    setDueDateEditTarget(null);
+    setDueDateEditValue("");
+    setLineAddError(null);
+    setLineAddSuccess(null);
+    setLineAddTarget(null);
+    resetLineAddForm();
+    setLineUpdateSuccess(null);
+    clearLineUpdateEditor();
+
+    try {
+      const updated = await applyDraftInvoiceLineRemove(
+        workspace.id,
+        target.invoice.id,
+        target.lineId,
+        removeInvoiceLine
+      );
+      clearLineRemoveEditor();
+      setHighlightedId(updated.id);
+      setLineRemoveSuccess(`Рядок видалено з рахунка «${updated.documentNumber}».`);
+      await loadPage(workspace.id, page, appliedFilters);
+      await refreshDetailAfterMutation(updated.id);
+    } catch (removeErr) {
+      const failure = interpretDraftInvoiceLineRemoveError(removeErr);
+      setLineRemoveError(failure.message);
+      if (!failure.keepConfirmationOpen) {
+        clearLineRemoveEditor();
+      }
+
+      if (failure.refreshList) {
+        try {
+          await loadPage(workspace.id, page, appliedFilters);
+          await refreshDetailAfterEditorFailure(target.invoice.id);
+        } catch {
+          // Keep the line-remove error; list refresh failure is secondary.
+        }
+      }
+    } finally {
+      lineRemoveBusyRef.current = false;
+      savingLineRemoveInvoiceIdRef.current = null;
+      setSavingLineRemoveInvoiceId(null);
+      setLineRemoveBusy(false);
     }
   }
 
@@ -1172,6 +1539,18 @@ export function InvoicesView({
         {createSuccess ? <StatusMessage tone="success">{createSuccess}</StatusMessage> : null}
         {lineAddError ? <StatusMessage tone="error">{lineAddError}</StatusMessage> : null}
         {lineAddSuccess ? <StatusMessage tone="success">{lineAddSuccess}</StatusMessage> : null}
+        {lineUpdateError ? (
+          <StatusMessage tone="error">{lineUpdateError}</StatusMessage>
+        ) : null}
+        {lineUpdateSuccess ? (
+          <StatusMessage tone="success">{lineUpdateSuccess}</StatusMessage>
+        ) : null}
+        {lineRemoveError ? (
+          <StatusMessage tone="error">{lineRemoveError}</StatusMessage>
+        ) : null}
+        {lineRemoveSuccess ? (
+          <StatusMessage tone="success">{lineRemoveSuccess}</StatusMessage>
+        ) : null}
         {dueDateEditError ? (
           <StatusMessage tone="error">{dueDateEditError}</StatusMessage>
         ) : null}
@@ -1232,6 +1611,86 @@ export function InvoicesView({
               </button>
             </div>
           </form>
+        ) : null}
+
+        {workspace && lineUpdateTarget ? (
+          <form
+            className="create-form issue-prepare-form"
+            onSubmit={(event) => void handleSaveLineUpdate(event)}
+          >
+            <p className="meta">
+              Зміна рядка {draftInvoiceLineConfirmationLabel(lineUpdateTarget.line)}:{" "}
+              <span className="mono">{lineUpdateTarget.invoice.documentNumber}</span>
+            </p>
+            <label>
+              Кількість
+              <input
+                value={lineUpdateQuantity}
+                onChange={(event) => setLineUpdateQuantity(event.target.value)}
+                inputMode="decimal"
+                required
+                disabled={lineUpdateBusy}
+              />
+            </label>
+            <label>
+              Ціна
+              <input
+                value={lineUpdateUnitPrice}
+                onChange={(event) => setLineUpdateUnitPrice(event.target.value)}
+                inputMode="decimal"
+                required
+                disabled={lineUpdateBusy}
+              />
+            </label>
+            <label>
+              Опис рядка
+              <input
+                value={lineUpdateDescription}
+                onChange={(event) => setLineUpdateDescription(event.target.value)}
+                placeholder="Послуга або товар"
+                disabled={lineUpdateBusy}
+              />
+            </label>
+            <div className="filter-actions">
+              <button type="submit" disabled={lineUpdateBusy || loading}>
+                {lineUpdateBusy ? "Збереження…" : "Зберегти рядок"}
+              </button>
+              <button
+                type="button"
+                className="button-secondary"
+                disabled={lineUpdateBusy}
+                onClick={cancelLineUpdate}
+              >
+                Скасувати
+              </button>
+            </div>
+          </form>
+        ) : null}
+
+        {workspace && lineRemoveTarget ? (
+          <div className="create-form issue-prepare-form" role="group" aria-label="Підтвердження видалення рядка">
+            <p className="meta">
+              Видалити рядок {draftInvoiceLineConfirmationLabel(lineRemoveTarget.line)} з рахунка{" "}
+              <span className="mono">{lineRemoveTarget.invoice.documentNumber}</span>?
+            </p>
+            <div className="filter-actions">
+              <button
+                type="button"
+                disabled={lineRemoveBusy || loading}
+                onClick={() => void handleConfirmLineRemove()}
+              >
+                {lineRemoveBusy ? "Видалення…" : "Підтвердити видалення"}
+              </button>
+              <button
+                type="button"
+                className="button-secondary"
+                disabled={lineRemoveBusy}
+                onClick={cancelLineRemove}
+              >
+                Скасувати
+              </button>
+            </div>
+          </div>
         ) : null}
 
         {workspace && dueDateEditTarget ? (
@@ -1347,6 +1806,22 @@ export function InvoicesView({
                 lineAddTarget?.id === detailTargetId)
             }
             lineAddOpen={Boolean(lineAddTarget && lineAddTarget.id === detailTargetId)}
+            lineUpdateBusy={
+              lineUpdateBusy &&
+              (savingLineUpdateInvoiceId === detailTargetId ||
+                lineUpdateTarget?.invoice.id === detailTargetId)
+            }
+            lineUpdateOpen={Boolean(
+              lineUpdateTarget && lineUpdateTarget.invoice.id === detailTargetId
+            )}
+            lineRemoveBusy={
+              lineRemoveBusy &&
+              (savingLineRemoveInvoiceId === detailTargetId ||
+                lineRemoveTarget?.invoice.id === detailTargetId)
+            }
+            lineRemoveOpen={Boolean(
+              lineRemoveTarget && lineRemoveTarget.invoice.id === detailTargetId
+            )}
             dueDateEditBusy={
               dueDateEditBusy &&
               (savingDueDateInvoiceId === detailTargetId ||
@@ -1363,6 +1838,12 @@ export function InvoicesView({
             onClose={closeDetailPanel}
             onRetry={retryInvoiceDetail}
             onAddLine={(invoice) => beginLineAdd(invoice, { preserveDetail: true })}
+            onUpdateLine={(invoice, lineId) =>
+              beginLineUpdate(invoice, lineId, { preserveDetail: true })
+            }
+            onRemoveLine={(invoice, lineId) =>
+              beginLineRemove(invoice, lineId, { preserveDetail: true })
+            }
             onEditDueDate={(invoice) =>
               beginDueDateEdit(invoice, { preserveDetail: true })
             }
@@ -1435,6 +1916,8 @@ export function InvoicesView({
                               className="button-secondary"
                               disabled={
                                 lineAddBusy ||
+                                lineUpdateBusy ||
+                                lineRemoveBusy ||
                                 dueDateEditBusy ||
                                 issueBusy ||
                                 loading ||
@@ -1454,6 +1937,8 @@ export function InvoicesView({
                               disabled={
                                 dueDateEditBusy ||
                                 lineAddBusy ||
+                                lineUpdateBusy ||
+                                lineRemoveBusy ||
                                 issueBusy ||
                                 loading ||
                                 dueDateEditTarget?.id === invoice.id
@@ -1473,6 +1958,8 @@ export function InvoicesView({
                                 issueBusy ||
                                 dueDateEditBusy ||
                                 lineAddBusy ||
+                                lineUpdateBusy ||
+                                lineRemoveBusy ||
                                 loading ||
                                 issueTarget?.id === invoice.id
                               }

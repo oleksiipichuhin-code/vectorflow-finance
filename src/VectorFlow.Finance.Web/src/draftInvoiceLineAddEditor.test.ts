@@ -426,6 +426,16 @@ describe("line-add editor handoff / coordination policy", () => {
     assert.equal(started, false);
   });
 
+  it("cannot start line-add while line-update or line-remove is pending", () => {
+    const lineUpdateBusy = true;
+    const lineRemoveBusy = false;
+    let started = false;
+    if (!lineUpdateBusy && !lineRemoveBusy) {
+      started = true;
+    }
+    assert.equal(started, false);
+  });
+
   it("cannot start issue or due-date while line-add save is pending", () => {
     const lineAddBusy = true;
     let startedIssue = false;

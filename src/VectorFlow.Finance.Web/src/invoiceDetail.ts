@@ -1,6 +1,8 @@
 import type { Invoice, InvoiceLine } from "./api.ts";
 import { canAddDraftInvoiceLine } from "./draftInvoiceLineAddEditor.ts";
 import { canEditDraftInvoiceDueDate } from "./draftInvoiceDueDateEditor.ts";
+import { canRemoveDraftInvoiceLine } from "./draftInvoiceLineRemoveEditor.ts";
+import { canUpdateDraftInvoiceLine } from "./draftInvoiceLineUpdateEditor.ts";
 import { isDraftInvoice } from "./invoiceIssue.ts";
 import { formatDate, formatMoney } from "./format.ts";
 
@@ -46,6 +48,19 @@ export function canEditInvoiceDueDateFromDetails(
 
 export function canIssueInvoiceFromDetails(invoice: Pick<Invoice, "status">): boolean {
   return detailLifecycleActionsFor(invoice).includes("issue");
+}
+
+/** Per-line Draft controls in the detail line table — not invoice-level lifecycle actions. */
+export function canUpdateInvoiceLineFromDetails(
+  invoice: Pick<Invoice, "status">
+): boolean {
+  return canUpdateDraftInvoiceLine(invoice);
+}
+
+export function canRemoveInvoiceLineFromDetails(
+  invoice: Pick<Invoice, "status">
+): boolean {
+  return canRemoveDraftInvoiceLine(invoice);
 }
 
 export type BeginEditorOptions = {
@@ -148,6 +163,7 @@ export function interpretInvoiceDetailLoadError(error: unknown): InvoiceDetailLo
 }
 
 export type InvoiceDetailLineView = {
+  id: string;
   sequence: number;
   descriptionDisplay: string;
   quantityDisplay: string;
@@ -175,6 +191,7 @@ function formatQuantity(value: number): string {
 
 function toLineView(line: InvoiceLine, currency: string): InvoiceDetailLineView {
   return {
+    id: line.id,
     sequence: line.sequence,
     descriptionDisplay: line.description?.trim() ? line.description : "—",
     quantityDisplay: formatQuantity(line.quantity),

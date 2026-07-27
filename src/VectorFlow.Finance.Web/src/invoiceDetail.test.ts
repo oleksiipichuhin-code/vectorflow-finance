@@ -5,6 +5,8 @@ import {
   canAddInvoiceLineFromDetails,
   canEditInvoiceDueDateFromDetails,
   canIssueInvoiceFromDetails,
+  canRemoveInvoiceLineFromDetails,
+  canUpdateInvoiceLineFromDetails,
   canViewInvoiceDetails,
   DETAIL_RELOAD_AFTER_MUTATION_FAILED_MESSAGE,
   detailLifecycleActionsFor,
@@ -110,8 +112,10 @@ describe("buildInvoiceDetailFields", () => {
       })
     );
     assert.equal(fields.lines.length, 2);
+    assert.equal(fields.lines[0]!.id, "l1");
     assert.equal(fields.lines[0]!.sequence, 1);
     assert.equal(fields.lines[0]!.descriptionDisplay, "—");
+    assert.equal(fields.lines[1]!.id, "l2");
     assert.equal(fields.lines[1]!.descriptionDisplay, "Second");
   });
 
@@ -195,6 +199,18 @@ describe("detailLifecycleActionsFor / issue handoff policy", () => {
     );
     assert.equal(canAddInvoiceLineFromDetails(draft), canAddDraftInvoiceLine(draft));
     assert.equal(canAddInvoiceLineFromDetails(issued), canAddDraftInvoiceLine(issued));
+    assert.equal(canUpdateInvoiceLineFromDetails(draft), true);
+    assert.equal(canUpdateInvoiceLineFromDetails(issued), false);
+    assert.equal(canRemoveInvoiceLineFromDetails(draft), true);
+    assert.equal(canRemoveInvoiceLineFromDetails(issued), false);
+  });
+
+  it("keeps line update/remove off invoice-level lifecycle actions", () => {
+    assert.deepEqual(detailLifecycleActionsFor({ status: "Draft" }), [
+      "addLine",
+      "editDueDate",
+      "issue"
+    ]);
   });
 
   it("row and detail launches share BeginEditorOptions shape", () => {

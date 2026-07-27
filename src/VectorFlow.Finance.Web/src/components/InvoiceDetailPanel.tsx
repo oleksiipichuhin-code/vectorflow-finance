@@ -4,6 +4,8 @@ import {
   canAddInvoiceLineFromDetails,
   canEditInvoiceDueDateFromDetails,
   canIssueInvoiceFromDetails,
+  canRemoveInvoiceLineFromDetails,
+  canUpdateInvoiceLineFromDetails,
   detailLifecycleActionsFor
 } from "../invoiceDetail";
 import { StatusMessage } from "./Panel";
@@ -16,6 +18,10 @@ type InvoiceDetailPanelProps = {
   closeDisabled?: boolean;
   lineAddBusy?: boolean;
   lineAddOpen?: boolean;
+  lineUpdateBusy?: boolean;
+  lineUpdateOpen?: boolean;
+  lineRemoveBusy?: boolean;
+  lineRemoveOpen?: boolean;
   dueDateEditBusy?: boolean;
   dueDateEditOpen?: boolean;
   issueBusy?: boolean;
@@ -23,6 +29,8 @@ type InvoiceDetailPanelProps = {
   onClose: () => void;
   onRetry: () => void;
   onAddLine?: (invoice: Invoice) => void;
+  onUpdateLine?: (invoice: Invoice, lineId: string) => void;
+  onRemoveLine?: (invoice: Invoice, lineId: string) => void;
   onEditDueDate?: (invoice: Invoice) => void;
   onIssue?: (invoice: Invoice) => void;
 };
@@ -35,6 +43,10 @@ export function InvoiceDetailPanel({
   closeDisabled = false,
   lineAddBusy = false,
   lineAddOpen = false,
+  lineUpdateBusy = false,
+  lineUpdateOpen = false,
+  lineRemoveBusy = false,
+  lineRemoveOpen = false,
   dueDateEditBusy = false,
   dueDateEditOpen = false,
   issueBusy = false,
@@ -42,6 +54,8 @@ export function InvoiceDetailPanel({
   onClose,
   onRetry,
   onAddLine,
+  onUpdateLine,
+  onRemoveLine,
   onEditDueDate,
   onIssue
 }: InvoiceDetailPanelProps) {
@@ -62,11 +76,21 @@ export function InvoiceDetailPanel({
     canIssueInvoiceFromDetails(invoice) &&
     lifecycleActions.includes("issue") &&
     Boolean(onIssue);
+  const showLineManage =
+    invoice !== null &&
+    canUpdateInvoiceLineFromDetails(invoice) &&
+    canRemoveInvoiceLineFromDetails(invoice) &&
+    Boolean(onUpdateLine) &&
+    Boolean(onRemoveLine);
   const showActions = showAddLine || showEditDueDate || showIssue;
   const actionsDisabled =
     closeDisabled ||
     lineAddBusy ||
     lineAddOpen ||
+    lineUpdateBusy ||
+    lineUpdateOpen ||
+    lineRemoveBusy ||
+    lineRemoveOpen ||
     dueDateEditBusy ||
     dueDateEditOpen ||
     issueBusy ||
@@ -155,16 +179,39 @@ export function InvoiceDetailPanel({
                     <th>Кількість</th>
                     <th>Ціна</th>
                     <th>Сума</th>
+                    {showLineManage ? <th>Дія</th> : null}
                   </tr>
                 </thead>
                 <tbody>
                   {fields.lines.map((line) => (
-                    <tr key={`${line.sequence}-${line.descriptionDisplay}`}>
+                    <tr key={line.id}>
                       <td>{line.sequence}</td>
                       <td className="cell-wrap">{line.descriptionDisplay}</td>
                       <td>{line.quantityDisplay}</td>
                       <td>{line.unitPriceDisplay}</td>
                       <td>{line.lineAmountDisplay}</td>
+                      {showLineManage ? (
+                        <td>
+                          <div className="filter-actions">
+                            <button
+                              type="button"
+                              className="button-secondary"
+                              disabled={actionsDisabled}
+                              onClick={() => onUpdateLine?.(invoice, line.id)}
+                            >
+                              {lineUpdateBusy ? "Збереження…" : "Змінити"}
+                            </button>
+                            <button
+                              type="button"
+                              className="button-secondary"
+                              disabled={actionsDisabled}
+                              onClick={() => onRemoveLine?.(invoice, line.id)}
+                            >
+                              {lineRemoveBusy ? "Видалення…" : "Видалити"}
+                            </button>
+                          </div>
+                        </td>
+                      ) : null}
                     </tr>
                   ))}
                 </tbody>
