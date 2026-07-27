@@ -4,6 +4,7 @@ import {
   buildInvoiceDetailFields,
   canAddInvoiceLineFromDetails,
   canEditInvoiceDueDateFromDetails,
+  canEditInvoiceHeaderFromDetails,
   canIssueInvoiceFromDetails,
   canRemoveInvoiceLineFromDetails,
   canUpdateInvoiceLineFromDetails,
@@ -16,6 +17,7 @@ import {
 } from "./invoiceDetail.ts";
 import { canAddDraftInvoiceLine } from "./draftInvoiceLineAddEditor.ts";
 import { canEditDraftInvoiceDueDate } from "./draftInvoiceDueDateEditor.ts";
+import { canEditDraftInvoiceHeader } from "./draftInvoiceHeaderEditor.ts";
 import { isDraftInvoice } from "./invoiceIssue.ts";
 import type { Invoice } from "./api.ts";
 
@@ -169,13 +171,16 @@ describe("invoice detail deep-link coordination", () => {
 });
 
 describe("detailLifecycleActionsFor / issue handoff policy", () => {
-  it("shows addLine, editDueDate and issue actions only for Draft", () => {
+  it("shows editHeader, addLine, editDueDate and issue actions only for Draft", () => {
     assert.deepEqual(detailLifecycleActionsFor({ status: "Draft" }), [
+      "editHeader",
       "addLine",
       "editDueDate",
       "issue"
     ]);
     assert.deepEqual(detailLifecycleActionsFor({ status: "Issued" }), []);
+    assert.equal(canEditInvoiceHeaderFromDetails({ status: "Draft" }), true);
+    assert.equal(canEditInvoiceHeaderFromDetails({ status: "Issued" }), false);
     assert.equal(canAddInvoiceLineFromDetails({ status: "Draft" }), true);
     assert.equal(canAddInvoiceLineFromDetails({ status: "Issued" }), false);
     assert.equal(canEditInvoiceDueDateFromDetails({ status: "Draft" }), true);
@@ -189,6 +194,14 @@ describe("detailLifecycleActionsFor / issue handoff policy", () => {
     const issued = sampleInvoice({ status: "Issued" });
     assert.equal(canIssueInvoiceFromDetails(draft), isDraftInvoice(draft));
     assert.equal(canIssueInvoiceFromDetails(issued), isDraftInvoice(issued));
+    assert.equal(
+      canEditInvoiceHeaderFromDetails(draft),
+      canEditDraftInvoiceHeader(draft)
+    );
+    assert.equal(
+      canEditInvoiceHeaderFromDetails(issued),
+      canEditDraftInvoiceHeader(issued)
+    );
     assert.equal(
       canEditInvoiceDueDateFromDetails(draft),
       canEditDraftInvoiceDueDate(draft)
@@ -207,6 +220,7 @@ describe("detailLifecycleActionsFor / issue handoff policy", () => {
 
   it("keeps line update/remove off invoice-level lifecycle actions", () => {
     assert.deepEqual(detailLifecycleActionsFor({ status: "Draft" }), [
+      "editHeader",
       "addLine",
       "editDueDate",
       "issue"

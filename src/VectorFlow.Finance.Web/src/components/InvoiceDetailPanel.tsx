@@ -3,6 +3,7 @@ import {
   buildInvoiceDetailFields,
   canAddInvoiceLineFromDetails,
   canEditInvoiceDueDateFromDetails,
+  canEditInvoiceHeaderFromDetails,
   canIssueInvoiceFromDetails,
   canRemoveInvoiceLineFromDetails,
   canUpdateInvoiceLineFromDetails,
@@ -16,6 +17,8 @@ type InvoiceDetailPanelProps = {
   error: string | null;
   errorRetryable: boolean;
   closeDisabled?: boolean;
+  headerEditBusy?: boolean;
+  headerEditOpen?: boolean;
   lineAddBusy?: boolean;
   lineAddOpen?: boolean;
   lineUpdateBusy?: boolean;
@@ -28,6 +31,7 @@ type InvoiceDetailPanelProps = {
   issueOpen?: boolean;
   onClose: () => void;
   onRetry: () => void;
+  onEditHeader?: (invoice: Invoice) => void;
   onAddLine?: (invoice: Invoice) => void;
   onUpdateLine?: (invoice: Invoice, lineId: string) => void;
   onRemoveLine?: (invoice: Invoice, lineId: string) => void;
@@ -41,6 +45,8 @@ export function InvoiceDetailPanel({
   error,
   errorRetryable,
   closeDisabled = false,
+  headerEditBusy = false,
+  headerEditOpen = false,
   lineAddBusy = false,
   lineAddOpen = false,
   lineUpdateBusy = false,
@@ -53,6 +59,7 @@ export function InvoiceDetailPanel({
   issueOpen = false,
   onClose,
   onRetry,
+  onEditHeader,
   onAddLine,
   onUpdateLine,
   onRemoveLine,
@@ -61,6 +68,11 @@ export function InvoiceDetailPanel({
 }: InvoiceDetailPanelProps) {
   const fields = invoice ? buildInvoiceDetailFields(invoice) : null;
   const lifecycleActions = invoice ? detailLifecycleActionsFor(invoice) : [];
+  const showEditHeader =
+    invoice !== null &&
+    canEditInvoiceHeaderFromDetails(invoice) &&
+    lifecycleActions.includes("editHeader") &&
+    Boolean(onEditHeader);
   const showAddLine =
     invoice !== null &&
     canAddInvoiceLineFromDetails(invoice) &&
@@ -82,9 +94,11 @@ export function InvoiceDetailPanel({
     canRemoveInvoiceLineFromDetails(invoice) &&
     Boolean(onUpdateLine) &&
     Boolean(onRemoveLine);
-  const showActions = showAddLine || showEditDueDate || showIssue;
+  const showActions = showEditHeader || showAddLine || showEditDueDate || showIssue;
   const actionsDisabled =
     closeDisabled ||
+    headerEditBusy ||
+    headerEditOpen ||
     lineAddBusy ||
     lineAddOpen ||
     lineUpdateBusy ||
@@ -224,6 +238,16 @@ export function InvoiceDetailPanel({
           {showActions ? (
             <div className="filter-actions invoice-detail-actions">
               <p className="meta">Дії</p>
+              {showEditHeader ? (
+                <button
+                  type="button"
+                  className="button-secondary"
+                  disabled={actionsDisabled}
+                  onClick={() => onEditHeader?.(invoice)}
+                >
+                  {headerEditBusy ? "Збереження…" : "Змінити реквізити"}
+                </button>
+              ) : null}
               {showAddLine ? (
                 <button
                   type="button"

@@ -1,6 +1,9 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import {
   addInvoiceLine,
+  changeInvoiceCounterparty,
+  changeInvoiceCurrency,
+  changeInvoiceDocumentNumber,
   createInvoice,
   getInvoice,
   issueInvoice,
@@ -39,6 +42,13 @@ import {
   interpretDraftInvoiceDueDateEditError
 } from "./draftInvoiceDueDateEditor";
 import {
+  applyDraftInvoiceHeaderEditorChanges,
+  canEditDraftInvoiceHeader,
+  interpretDraftInvoiceHeaderEditorError,
+  valuesFromInvoice,
+  type DraftInvoiceHeaderEditorValues
+} from "./draftInvoiceHeaderEditor";
+import {
   applyDraftInvoiceLineAdd,
   canAddDraftInvoiceLine,
   initialDraftInvoiceLineAddInput,
@@ -70,6 +80,7 @@ type DraftInvoiceLineEditorTarget = {
   lineId: string;
   line: InvoiceLine;
 };
+import { DraftInvoiceHeaderEditor } from "./components/DraftInvoiceHeaderEditor";
 import { InvoiceDetailPanel } from "./components/InvoiceDetailPanel";
 import { ListLoadState } from "./components/ListLoadState";
 import { Panel, StatusMessage } from "./components/Panel";
@@ -148,6 +159,13 @@ export function InvoicesView({
   const [dueDateEditError, setDueDateEditError] = useState<string | null>(null);
   const [dueDateEditSuccess, setDueDateEditSuccess] = useState<string | null>(null);
   const [savingDueDateInvoiceId, setSavingDueDateInvoiceId] = useState<string | null>(null);
+  const [headerEditTarget, setHeaderEditTarget] = useState<Invoice | null>(null);
+  const [headerEditBaseline, setHeaderEditBaseline] =
+    useState<DraftInvoiceHeaderEditorValues | null>(null);
+  const [headerEditBusy, setHeaderEditBusy] = useState(false);
+  const [headerEditError, setHeaderEditError] = useState<string | null>(null);
+  const [headerEditSuccess, setHeaderEditSuccess] = useState<string | null>(null);
+  const [savingHeaderInvoiceId, setSavingHeaderInvoiceId] = useState<string | null>(null);
   const [lineAddTarget, setLineAddTarget] = useState<Invoice | null>(null);
   const [lineAddQuantity, setLineAddQuantity] = useState("1");
   const [lineAddUnitPrice, setLineAddUnitPrice] = useState("");
@@ -190,6 +208,8 @@ export function InvoicesView({
   const issuingInvoiceIdRef = useRef<string | null>(null);
   const dueDateEditBusyRef = useRef(false);
   const savingDueDateInvoiceIdRef = useRef<string | null>(null);
+  const headerEditBusyRef = useRef(false);
+  const savingHeaderInvoiceIdRef = useRef<string | null>(null);
   const lineAddBusyRef = useRef(false);
   const savingLineInvoiceIdRef = useRef<string | null>(null);
   const lineUpdateBusyRef = useRef(false);
@@ -201,6 +221,7 @@ export function InvoicesView({
     return (
       issueBusyRef.current ||
       dueDateEditBusyRef.current ||
+      headerEditBusyRef.current ||
       lineAddBusyRef.current ||
       lineUpdateBusyRef.current ||
       lineRemoveBusyRef.current
@@ -237,6 +258,10 @@ export function InvoicesView({
       setDueDateEditValue("");
       setDueDateEditError(null);
       setDueDateEditSuccess(null);
+      setHeaderEditTarget(null);
+      setHeaderEditBaseline(null);
+      setHeaderEditError(null);
+      setHeaderEditSuccess(null);
       setLineAddTarget(null);
       resetLineAddForm();
       setLineAddError(null);
@@ -362,6 +387,8 @@ export function InvoicesView({
     setLineUpdateSuccess(null);
     setLineRemoveError(null);
     setLineRemoveSuccess(null);
+    setHeaderEditError(null);
+    setHeaderEditSuccess(null);
     dismissDetailFromUrl();
 
     try {
@@ -384,6 +411,8 @@ export function InvoicesView({
       setLineUpdateTarget(null);
       resetLineUpdateForm();
       setLineRemoveTarget(null);
+      setHeaderEditTarget(null);
+      setHeaderEditBaseline(null);
       setCreateSuccess(
         `Чернетку рахунка «${created.documentNumber}» створено. Запис показано у списку нижче.`
       );
@@ -422,6 +451,55 @@ export function InvoicesView({
     setLineRemoveError(null);
   }
 
+  function clearHeaderEditor() {
+    setHeaderEditTarget(null);
+    setHeaderEditBaseline(null);
+    setHeaderEditError(null);
+  }
+
+  function beginHeaderEdit(invoice: Invoice, options: BeginEditorOptions = {}) {
+    if (!canEditDraftInvoiceHeader(invoice) || isAnyInvoiceMutationBusy()) {
+      return;
+    }
+
+    if (headerEditTarget?.id === invoice.id) {
+      return;
+    }
+
+    setCreateSuccess(null);
+    setIssueError(null);
+    setIssueSuccess(null);
+    setIssueTarget(null);
+    setDueDateEditError(null);
+    setDueDateEditSuccess(null);
+    setDueDateEditTarget(null);
+    setDueDateEditValue("");
+    setLineAddError(null);
+    setLineAddSuccess(null);
+    setLineAddTarget(null);
+    resetLineAddForm();
+    setLineUpdateSuccess(null);
+    clearLineUpdateEditor();
+    setLineRemoveSuccess(null);
+    clearLineRemoveEditor();
+    setHeaderEditError(null);
+    setHeaderEditSuccess(null);
+    if (!options.preserveDetail) {
+      dismissDetailFromUrl();
+    }
+
+    setHeaderEditTarget(invoice);
+    setHeaderEditBaseline(valuesFromInvoice(invoice));
+  }
+
+  function cancelHeaderEdit() {
+    if (headerEditBusyRef.current) {
+      return;
+    }
+
+    clearHeaderEditor();
+  }
+
   function beginIssue(invoice: Invoice, options: BeginEditorOptions = {}) {
     if (!isDraftInvoice(invoice) || isAnyInvoiceMutationBusy()) {
       return;
@@ -446,6 +524,8 @@ export function InvoicesView({
     clearLineUpdateEditor();
     setLineRemoveSuccess(null);
     clearLineRemoveEditor();
+    setHeaderEditSuccess(null);
+    clearHeaderEditor();
     if (!options.preserveDetail) {
       dismissDetailFromUrl();
     }
@@ -495,6 +575,8 @@ export function InvoicesView({
     clearLineUpdateEditor();
     setLineRemoveSuccess(null);
     clearLineRemoveEditor();
+    setHeaderEditSuccess(null);
+    clearHeaderEditor();
     setDueDateEditError(null);
     setDueDateEditSuccess(null);
     if (!options.preserveDetail) {
@@ -536,6 +618,8 @@ export function InvoicesView({
     clearLineUpdateEditor();
     setLineRemoveSuccess(null);
     clearLineRemoveEditor();
+    setHeaderEditSuccess(null);
+    clearHeaderEditor();
     setLineAddError(null);
     setLineAddSuccess(null);
     if (!options.preserveDetail) {
@@ -591,6 +675,8 @@ export function InvoicesView({
     resetLineAddForm();
     setLineRemoveSuccess(null);
     clearLineRemoveEditor();
+    setHeaderEditSuccess(null);
+    clearHeaderEditor();
     setLineUpdateError(null);
     setLineUpdateSuccess(null);
     if (!options.preserveDetail) {
@@ -647,6 +733,8 @@ export function InvoicesView({
     resetLineAddForm();
     setLineUpdateSuccess(null);
     clearLineUpdateEditor();
+    setHeaderEditSuccess(null);
+    clearHeaderEditor();
     setLineRemoveError(null);
     setLineRemoveSuccess(null);
     if (!options.preserveDetail) {
@@ -705,13 +793,18 @@ export function InvoicesView({
       lineRemoveBusyRef.current &&
       (lineRemoveTarget?.invoice.id === detailTargetId ||
         savingLineRemoveInvoiceIdRef.current === detailTargetId);
+    const headerEditPending =
+      headerEditBusyRef.current &&
+      (headerEditTarget?.id === detailTargetId ||
+        savingHeaderInvoiceIdRef.current === detailTargetId);
 
     return Boolean(
       issuePending ||
         dueDatePending ||
         lineAddPending ||
         lineUpdatePending ||
-        lineRemovePending
+        lineRemovePending ||
+        headerEditPending
     );
   }
 
@@ -726,6 +819,7 @@ export function InvoicesView({
     setLineAddError(null);
     clearLineUpdateEditor();
     clearLineRemoveEditor();
+    clearHeaderEditor();
   }
 
   function closeDetailPanel() {
@@ -915,6 +1009,8 @@ export function InvoicesView({
     clearLineUpdateEditor();
     setLineRemoveSuccess(null);
     clearLineRemoveEditor();
+    setHeaderEditSuccess(null);
+    clearHeaderEditor();
 
     try {
       const readiness = getInvoiceIssueReadiness(invoice);
@@ -1053,6 +1149,8 @@ export function InvoicesView({
     clearLineUpdateEditor();
     setLineRemoveSuccess(null);
     clearLineRemoveEditor();
+    setHeaderEditSuccess(null);
+    clearHeaderEditor();
 
     try {
       const updated = await applyDraftInvoiceDueDateChange(
@@ -1093,6 +1191,92 @@ export function InvoicesView({
     }
   }
 
+  async function handleSaveHeaderEdit(values: DraftInvoiceHeaderEditorValues) {
+    if (
+      !workspace ||
+      !headerEditTarget ||
+      !headerEditBaseline ||
+      !canEditDraftInvoiceHeader(headerEditTarget) ||
+      headerEditBusyRef.current
+    ) {
+      return;
+    }
+
+    const target = headerEditTarget;
+    const baseline = headerEditBaseline;
+    headerEditBusyRef.current = true;
+    savingHeaderInvoiceIdRef.current = target.id;
+    setSavingHeaderInvoiceId(target.id);
+    setHeaderEditBusy(true);
+    setHeaderEditError(null);
+    setHeaderEditSuccess(null);
+    setCreateSuccess(null);
+    setIssueError(null);
+    setIssueSuccess(null);
+    setIssueTarget(null);
+    setDueDateEditError(null);
+    setDueDateEditSuccess(null);
+    setDueDateEditTarget(null);
+    setDueDateEditValue("");
+    setLineAddError(null);
+    setLineAddSuccess(null);
+    setLineAddTarget(null);
+    resetLineAddForm();
+    setLineUpdateSuccess(null);
+    clearLineUpdateEditor();
+    setLineRemoveSuccess(null);
+    clearLineRemoveEditor();
+
+    try {
+      const updated = await applyDraftInvoiceHeaderEditorChanges(
+        workspace.id,
+        target.id,
+        baseline,
+        values,
+        {
+          changeDocumentNumber: changeInvoiceDocumentNumber,
+          changeCounterparty: changeInvoiceCounterparty,
+          changeCurrency: changeInvoiceCurrency
+        }
+      );
+
+      setHeaderEditTarget(null);
+      setHeaderEditBaseline(null);
+
+      if (!updated) {
+        return;
+      }
+
+      setHighlightedId(updated.id);
+      setHeaderEditSuccess(
+        `Реквізити рахунка «${updated.documentNumber}» оновлено.`
+      );
+      await loadPage(workspace.id, page, appliedFilters);
+      await refreshDetailAfterMutation(updated.id);
+    } catch (editErr) {
+      const failure = interpretDraftInvoiceHeaderEditorError(editErr);
+      setHeaderEditError(failure.message);
+      if (!failure.keepEditorOpen) {
+        setHeaderEditTarget(null);
+        setHeaderEditBaseline(null);
+      }
+
+      if (failure.refreshList) {
+        try {
+          await loadPage(workspace.id, page, appliedFilters);
+          await refreshDetailAfterEditorFailure(target.id);
+        } catch {
+          // Keep the header error; list refresh failure is secondary.
+        }
+      }
+    } finally {
+      headerEditBusyRef.current = false;
+      savingHeaderInvoiceIdRef.current = null;
+      setSavingHeaderInvoiceId(null);
+      setHeaderEditBusy(false);
+    }
+  }
+
   async function handleSaveLineAdd(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (
@@ -1123,6 +1307,8 @@ export function InvoicesView({
     clearLineUpdateEditor();
     setLineRemoveSuccess(null);
     clearLineRemoveEditor();
+    setHeaderEditSuccess(null);
+    clearHeaderEditor();
 
     try {
       const updated = await applyDraftInvoiceLineAdd(
@@ -1197,6 +1383,8 @@ export function InvoicesView({
     resetLineAddForm();
     setLineRemoveSuccess(null);
     clearLineRemoveEditor();
+    setHeaderEditSuccess(null);
+    clearHeaderEditor();
 
     try {
       const updated = await applyDraftInvoiceLineUpdate(
@@ -1269,6 +1457,8 @@ export function InvoicesView({
     resetLineAddForm();
     setLineUpdateSuccess(null);
     clearLineUpdateEditor();
+    setHeaderEditSuccess(null);
+    clearHeaderEditor();
 
     try {
       const updated = await applyDraftInvoiceLineRemove(
@@ -1557,8 +1747,26 @@ export function InvoicesView({
         {dueDateEditSuccess ? (
           <StatusMessage tone="success">{dueDateEditSuccess}</StatusMessage>
         ) : null}
+        {headerEditError && !headerEditTarget ? (
+          <StatusMessage tone="error">{headerEditError}</StatusMessage>
+        ) : null}
+        {headerEditSuccess ? (
+          <StatusMessage tone="success">{headerEditSuccess}</StatusMessage>
+        ) : null}
         {issueError ? <StatusMessage tone="error">{issueError}</StatusMessage> : null}
         {issueSuccess ? <StatusMessage tone="success">{issueSuccess}</StatusMessage> : null}
+
+        {workspace && headerEditTarget && headerEditBaseline ? (
+          <DraftInvoiceHeaderEditor
+            key={headerEditTarget.id}
+            documentNumberLabel={headerEditTarget.documentNumber}
+            initialValues={headerEditBaseline}
+            busy={headerEditBusy}
+            formError={headerEditError}
+            onSave={(values) => void handleSaveHeaderEdit(values)}
+            onCancel={cancelHeaderEdit}
+          />
+        ) : null}
 
         {workspace && lineAddTarget ? (
           <form
@@ -1800,6 +2008,14 @@ export function InvoicesView({
             error={detailError}
             errorRetryable={detailErrorRetryable}
             closeDisabled={detailLoading || isDetailRelatedPending()}
+            headerEditBusy={
+              headerEditBusy &&
+              (savingHeaderInvoiceId === detailTargetId ||
+                headerEditTarget?.id === detailTargetId)
+            }
+            headerEditOpen={Boolean(
+              headerEditTarget && headerEditTarget.id === detailTargetId
+            )}
             lineAddBusy={
               lineAddBusy &&
               (savingLineInvoiceId === detailTargetId ||
@@ -1837,6 +2053,7 @@ export function InvoicesView({
             issueOpen={Boolean(issueTarget && issueTarget.id === detailTargetId)}
             onClose={closeDetailPanel}
             onRetry={retryInvoiceDetail}
+            onEditHeader={(invoice) => beginHeaderEdit(invoice, { preserveDetail: true })}
             onAddLine={(invoice) => beginLineAdd(invoice, { preserveDetail: true })}
             onUpdateLine={(invoice, lineId) =>
               beginLineUpdate(invoice, lineId, { preserveDetail: true })
@@ -1910,11 +2127,33 @@ export function InvoicesView({
                                 : "Деталі"}
                             </button>
                           ) : null}
+                          {canEditDraftInvoiceHeader(invoice) ? (
+                            <button
+                              type="button"
+                              className="button-secondary"
+                              disabled={
+                                headerEditBusy ||
+                                lineAddBusy ||
+                                lineUpdateBusy ||
+                                lineRemoveBusy ||
+                                dueDateEditBusy ||
+                                issueBusy ||
+                                loading ||
+                                headerEditTarget?.id === invoice.id
+                              }
+                              onClick={() => beginHeaderEdit(invoice)}
+                            >
+                              {headerEditBusy && savingHeaderInvoiceId === invoice.id
+                                ? "Збереження…"
+                                : "Змінити реквізити"}
+                            </button>
+                          ) : null}
                           {canAddDraftInvoiceLine(invoice) ? (
                             <button
                               type="button"
                               className="button-secondary"
                               disabled={
+                                headerEditBusy ||
                                 lineAddBusy ||
                                 lineUpdateBusy ||
                                 lineRemoveBusy ||
@@ -1935,6 +2174,7 @@ export function InvoicesView({
                               type="button"
                               className="button-secondary"
                               disabled={
+                                headerEditBusy ||
                                 dueDateEditBusy ||
                                 lineAddBusy ||
                                 lineUpdateBusy ||
@@ -1955,6 +2195,7 @@ export function InvoicesView({
                               type="button"
                               className="button-secondary"
                               disabled={
+                                headerEditBusy ||
                                 issueBusy ||
                                 dueDateEditBusy ||
                                 lineAddBusy ||

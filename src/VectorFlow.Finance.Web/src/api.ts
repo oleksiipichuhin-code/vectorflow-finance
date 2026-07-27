@@ -218,6 +218,48 @@ export function createInvoice(
   });
 }
 
+export function changeInvoiceDocumentNumber(
+  workspaceId: string,
+  invoiceId: string,
+  documentNumber: string
+): Promise<Invoice> {
+  return requestJson<Invoice>(
+    `/api/finance-workspaces/${workspaceId}/invoices/${invoiceId}/change-document-number`,
+    {
+      method: "POST",
+      body: JSON.stringify({ documentNumber })
+    }
+  );
+}
+
+export function changeInvoiceCounterparty(
+  workspaceId: string,
+  invoiceId: string,
+  counterpartyReference: string
+): Promise<Invoice> {
+  return requestJson<Invoice>(
+    `/api/finance-workspaces/${workspaceId}/invoices/${invoiceId}/change-counterparty`,
+    {
+      method: "POST",
+      body: JSON.stringify({ counterpartyReference })
+    }
+  );
+}
+
+export function changeInvoiceCurrency(
+  workspaceId: string,
+  invoiceId: string,
+  currency: string
+): Promise<Invoice> {
+  return requestJson<Invoice>(
+    `/api/finance-workspaces/${workspaceId}/invoices/${invoiceId}/change-currency`,
+    {
+      method: "POST",
+      body: JSON.stringify({ currency })
+    }
+  );
+}
+
 export function setInvoiceDueDate(
   workspaceId: string,
   invoiceId: string,

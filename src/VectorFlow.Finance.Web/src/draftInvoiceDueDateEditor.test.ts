@@ -175,6 +175,7 @@ describe("interpretDraftInvoiceDueDateEditError", () => {
 describe("due-date editor handoff / coordination policy", () => {
   it("exposes editDueDate lifecycle action only for Draft", () => {
     assert.deepEqual(detailLifecycleActionsFor({ status: "Draft" }), [
+      "editHeader",
       "addLine",
       "editDueDate",
       "issue"

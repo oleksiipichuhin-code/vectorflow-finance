@@ -1,6 +1,7 @@
 import type { Invoice, InvoiceLine } from "./api.ts";
 import { canAddDraftInvoiceLine } from "./draftInvoiceLineAddEditor.ts";
 import { canEditDraftInvoiceDueDate } from "./draftInvoiceDueDateEditor.ts";
+import { canEditDraftInvoiceHeader } from "./draftInvoiceHeaderEditor.ts";
 import { canRemoveDraftInvoiceLine } from "./draftInvoiceLineRemoveEditor.ts";
 import { canUpdateDraftInvoiceLine } from "./draftInvoiceLineUpdateEditor.ts";
 import { isDraftInvoice } from "./invoiceIssue.ts";
@@ -16,12 +17,19 @@ export function canViewInvoiceDetails(invoice: Pick<Invoice, "status">): boolean
  * Lifecycle handoff from the read-only detail panel.
  * Composes existing row-action eligibility — does not invent new rules.
  */
-export type InvoiceDetailLifecycleAction = "addLine" | "editDueDate" | "issue";
+export type InvoiceDetailLifecycleAction =
+  | "editHeader"
+  | "addLine"
+  | "editDueDate"
+  | "issue";
 
 export function detailLifecycleActionsFor(
   invoice: Pick<Invoice, "status">
 ): InvoiceDetailLifecycleAction[] {
   const actions: InvoiceDetailLifecycleAction[] = [];
+  if (canEditDraftInvoiceHeader(invoice)) {
+    actions.push("editHeader");
+  }
   if (canAddDraftInvoiceLine(invoice)) {
     actions.push("addLine");
   }
@@ -32,6 +40,12 @@ export function detailLifecycleActionsFor(
     actions.push("issue");
   }
   return actions;
+}
+
+export function canEditInvoiceHeaderFromDetails(
+  invoice: Pick<Invoice, "status">
+): boolean {
+  return detailLifecycleActionsFor(invoice).includes("editHeader");
 }
 
 export function canAddInvoiceLineFromDetails(

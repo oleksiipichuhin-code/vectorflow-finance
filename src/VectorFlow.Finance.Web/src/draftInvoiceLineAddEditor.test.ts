@@ -262,6 +262,7 @@ describe("interpretDraftInvoiceLineAddError", () => {
 describe("line-add editor handoff / coordination policy", () => {
   it("exposes addLine lifecycle action only for Draft", () => {
     assert.deepEqual(detailLifecycleActionsFor({ status: "Draft" }), [
+      "editHeader",
       "addLine",
       "editDueDate",
       "issue"
