@@ -32,9 +32,12 @@ export type AppUrlState = {
 
 export const EMPTY_INVOICE_FILTERS: InvoiceListFilters = {
   documentNumber: "",
+  counterpartyReference: "",
   status: "",
   createdFromDate: "",
   createdToDate: "",
+  issuedFromDate: "",
+  issuedToDate: "",
   dueFromDate: "",
   dueToDate: ""
 };
@@ -198,9 +201,12 @@ export function parseUrlSearch(search: string): AppUrlState {
 
   const invoiceFilters: InvoiceListFilters = {
     documentNumber: params.get("documentNumber")?.trim() ?? "",
+    counterpartyReference: params.get("counterpartyReference")?.trim() ?? "",
     status: parseInvoiceStatus(params.get("status")),
     createdFromDate: parseDateInput(params.get("createdFrom")),
     createdToDate: parseDateInput(params.get("createdTo")),
+    issuedFromDate: parseDateInput(params.get("issuedFrom")),
+    issuedToDate: parseDateInput(params.get("issuedTo")),
     dueFromDate: parseDateInput(params.get("dueFrom")),
     dueToDate: parseDateInput(params.get("dueTo"))
   };
@@ -253,11 +259,14 @@ export function buildUrlSearch(state: AppUrlState): string {
   if (state.view === "invoices") {
     const filters = state.discovery.invoiceFilters;
     setIfPresent(params, "documentNumber", filters.documentNumber);
+    setIfPresent(params, "counterpartyReference", filters.counterpartyReference);
     if (filters.status === "Draft" || filters.status === "Issued") {
       params.set("status", filters.status);
     }
     setIfPresent(params, "createdFrom", filters.createdFromDate);
     setIfPresent(params, "createdTo", filters.createdToDate);
+    setIfPresent(params, "issuedFrom", filters.issuedFromDate);
+    setIfPresent(params, "issuedTo", filters.issuedToDate);
     setIfPresent(params, "dueFrom", filters.dueFromDate);
     setIfPresent(params, "dueTo", filters.dueToDate);
     if (page > 1) {

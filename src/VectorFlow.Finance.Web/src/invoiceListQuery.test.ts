@@ -4,7 +4,8 @@ import {
   buildInvoiceListQuery,
   hasActiveInvoiceFilters,
   INVOICE_PAGE_SIZE,
-  validateDueDateRange
+  validateDueDateRange,
+  validateIssuedDateRange
 } from "./invoiceListQuery.ts";
 
 describe("invoiceListQuery", () => {
@@ -40,7 +41,32 @@ describe("invoiceListQuery", () => {
     assert.equal(query.dueToUtc, "2026-08-31T23:59:59.999Z");
   });
 
-  it("allows open-ended due date bounds independently", () => {
+  it("maps counterparty and issued dates into a combined Issued search query", () => {
+    const { query, validationError } = buildInvoiceListQuery(1, INVOICE_PAGE_SIZE, {
+      documentNumber: " INV-SEARCH ",
+      counterpartyReference: "  acme-ua  ",
+      status: "Issued",
+      issuedFromDate: "2026-07-01",
+      issuedToDate: "2026-07-31",
+      dueFromDate: "2026-08-01",
+      dueToDate: "2026-08-31"
+    });
+
+    assert.equal(validationError, null);
+    assert.deepEqual(query, {
+      page: 1,
+      pageSize: INVOICE_PAGE_SIZE,
+      documentNumber: "INV-SEARCH",
+      counterpartyReference: "acme-ua",
+      status: "Issued",
+      issuedFromUtc: "2026-07-01T00:00:00.000Z",
+      issuedToUtc: "2026-07-31T23:59:59.999Z",
+      dueFromUtc: "2026-08-01T00:00:00.000Z",
+      dueToUtc: "2026-08-31T23:59:59.999Z"
+    });
+  });
+
+  it("allows open-ended issued and due date bounds independently", () => {
     const fromOnly = buildInvoiceListQuery(1, INVOICE_PAGE_SIZE, {
       dueFromDate: "2026-07-15"
     });
@@ -54,14 +80,24 @@ describe("invoiceListQuery", () => {
     assert.equal(toOnly.validationError, null);
     assert.equal(toOnly.query.dueToUtc, "2026-07-20T23:59:59.999Z");
     assert.equal(toOnly.query.dueFromUtc, undefined);
+
+    const issuedFromOnly = buildInvoiceListQuery(1, INVOICE_PAGE_SIZE, {
+      issuedFromDate: "2026-06-01"
+    });
+    assert.equal(issuedFromOnly.validationError, null);
+    assert.equal(issuedFromOnly.query.issuedFromUtc, "2026-06-01T00:00:00.000Z");
+    assert.equal(issuedFromOnly.query.issuedToUtc, undefined);
   });
 
-  it("omits blank filters and validates created and due date ranges", () => {
+  it("omits blank filters and validates created, issued, and due date ranges", () => {
     const blank = buildInvoiceListQuery(1, INVOICE_PAGE_SIZE, {
       documentNumber: " ",
+      counterpartyReference: " ",
       status: "",
       createdFromDate: "",
       createdToDate: "",
+      issuedFromDate: "",
+      issuedToDate: "",
       dueFromDate: "",
       dueToDate: ""
     });
@@ -74,6 +110,13 @@ describe("invoiceListQuery", () => {
     });
     assert.match(invalidCreated.validationError ?? "", /не може бути пізніше/);
 
+    const invalidIssued = buildInvoiceListQuery(1, INVOICE_PAGE_SIZE, {
+      issuedFromDate: "2026-07-31",
+      issuedToDate: "2026-07-01"
+    });
+    assert.match(invalidIssued.validationError ?? "", /Дата виставлення/);
+    assert.equal(validateIssuedDateRange("2026-07-01", "2026-07-31"), null);
+
     const invalidDue = buildInvoiceListQuery(1, INVOICE_PAGE_SIZE, {
       dueFromDate: "2026-08-31",
       dueToDate: "2026-08-01"
@@ -82,10 +125,13 @@ describe("invoiceListQuery", () => {
     assert.equal(validateDueDateRange("2026-08-01", "2026-08-31"), null);
   });
 
-  it("detects active invoice filters including due dates", () => {
+  it("detects active invoice filters including counterparty and issued dates", () => {
     assert.equal(hasActiveInvoiceFilters({}), false);
     assert.equal(hasActiveInvoiceFilters({ documentNumber: "INV" }), true);
+    assert.equal(hasActiveInvoiceFilters({ counterpartyReference: "acme" }), true);
     assert.equal(hasActiveInvoiceFilters({ status: "Draft" }), true);
+    assert.equal(hasActiveInvoiceFilters({ issuedFromDate: "2026-07-01" }), true);
+    assert.equal(hasActiveInvoiceFilters({ issuedToDate: "2026-07-31" }), true);
     assert.equal(hasActiveInvoiceFilters({ dueFromDate: "2026-08-01" }), true);
     assert.equal(hasActiveInvoiceFilters({ dueToDate: "2026-08-31" }), true);
   });

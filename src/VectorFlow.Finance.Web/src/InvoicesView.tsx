@@ -1769,8 +1769,11 @@ export function InvoicesView({
   const draftFilterActive =
     appliedFilters.status === "Draft" &&
     !appliedFilters.documentNumber?.trim() &&
+    !appliedFilters.counterpartyReference?.trim() &&
     !appliedFilters.createdFromDate?.trim() &&
     !appliedFilters.createdToDate?.trim() &&
+    !appliedFilters.issuedFromDate?.trim() &&
+    !appliedFilters.issuedToDate?.trim() &&
     !appliedFilters.dueFromDate?.trim() &&
     !appliedFilters.dueToDate?.trim() &&
     page === 1;
@@ -1778,8 +1781,11 @@ export function InvoicesView({
   const issuedFilterActive =
     appliedFilters.status === "Issued" &&
     !appliedFilters.documentNumber?.trim() &&
+    !appliedFilters.counterpartyReference?.trim() &&
     !appliedFilters.createdFromDate?.trim() &&
     !appliedFilters.createdToDate?.trim() &&
+    !appliedFilters.issuedFromDate?.trim() &&
+    !appliedFilters.issuedToDate?.trim() &&
     !appliedFilters.dueFromDate?.trim() &&
     !appliedFilters.dueToDate?.trim() &&
     page === 1;
@@ -1818,8 +1824,8 @@ export function InvoicesView({
         <p className="eyebrow">VectorFlow Finance</p>
         <h1>Invoices</h1>
         <p className="lede">
-          Рахунки обраного фінансового простору з реального Finance API: фільтри за статусом і
-          строком оплати, посторінковий перегляд.
+          Рахунки обраного фінансового простору з реального Finance API: фільтри за номером,
+          контрагентом, статусом, датами створення / виставлення / оплати; посторінковий перегляд.
         </p>
       </header>
 
@@ -1872,7 +1878,7 @@ export function InvoicesView({
                       ? "list-shortcut list-shortcut--active"
                       : "list-shortcut"
                   }
-                  title="status=Issued · page 1 · інші фільтри скинуто · далі звузьте за строком оплати"
+                  title="status=Issued · page 1 · інші фільтри скинуто · далі звузьте пошук"
                   aria-pressed={issuedFilterActive}
                   disabled={loading}
                   onClick={applyIssuedInvoicesFilter}
@@ -1881,8 +1887,9 @@ export function InvoicesView({
                 </button>
               </div>
               <p className="meta">
-                Чернетки — Draft. Виставлені — Issued (черга зі строком оплати). Стан у URL;
-                відновлюється після оновлення сторінки. Нижче можна обмежити дату оплати.
+                Чернетки — Draft. Виставлені — Issued (робочий пошук). Стан у URL; відновлюється
+                після оновлення сторінки. Нижче — контрагент, номер, період виставлення та строк
+                оплати.
               </p>
             </div>
 
@@ -1899,6 +1906,21 @@ export function InvoicesView({
                   }
                   placeholder="INV-20260724-001"
                   autoComplete="off"
+                />
+              </label>
+              <label>
+                Контрагент
+                <input
+                  value={draftFilters.counterpartyReference ?? ""}
+                  onChange={(event) =>
+                    setDraftFilters((current) => ({
+                      ...current,
+                      counterpartyReference: event.target.value
+                    }))
+                  }
+                  placeholder="точне значення"
+                  autoComplete="off"
+                  title="Точний збіг з посиланням контрагента в API"
                 />
               </label>
               <label>
@@ -1942,6 +1964,32 @@ export function InvoicesView({
                     setDraftFilters((current) => ({
                       ...current,
                       createdToDate: event.target.value
+                    }))
+                  }
+                />
+              </label>
+              <label>
+                Виставлено з
+                <input
+                  type="date"
+                  value={draftFilters.issuedFromDate ?? ""}
+                  onChange={(event) =>
+                    setDraftFilters((current) => ({
+                      ...current,
+                      issuedFromDate: event.target.value
+                    }))
+                  }
+                />
+              </label>
+              <label>
+                Виставлено по
+                <input
+                  type="date"
+                  value={draftFilters.issuedToDate ?? ""}
+                  onChange={(event) =>
+                    setDraftFilters((current) => ({
+                      ...current,
+                      issuedToDate: event.target.value
                     }))
                   }
                 />
@@ -1991,6 +2039,9 @@ export function InvoicesView({
                 {appliedFilters.documentNumber?.trim()
                   ? ` номер «${appliedFilters.documentNumber.trim()}»`
                   : ""}
+                {appliedFilters.counterpartyReference?.trim()
+                  ? ` контрагент «${appliedFilters.counterpartyReference.trim()}»`
+                  : ""}
                 {appliedFilters.status === "Draft" || appliedFilters.status === "Issued"
                   ? ` статус ${appliedFilters.status}`
                   : ""}
@@ -1999,6 +2050,12 @@ export function InvoicesView({
                   : ""}
                 {appliedFilters.createdToDate
                   ? ` створено по ${appliedFilters.createdToDate}`
+                  : ""}
+                {appliedFilters.issuedFromDate
+                  ? ` виставлено з ${appliedFilters.issuedFromDate}`
+                  : ""}
+                {appliedFilters.issuedToDate
+                  ? ` виставлено по ${appliedFilters.issuedToDate}`
                   : ""}
                 {appliedFilters.dueFromDate
                   ? ` строк з ${appliedFilters.dueFromDate}`
@@ -2473,6 +2530,7 @@ export function InvoicesView({
                     <th>Статус</th>
                     <th>Контрагент</th>
                     <th>Сума</th>
+                    <th>Виставлено</th>
                     <th>Дата оплати</th>
                     <th>Створено</th>
                     <th>Дія</th>
@@ -2489,6 +2547,7 @@ export function InvoicesView({
                       <td>{invoice.status}</td>
                       <td className="cell-wrap">{invoice.counterpartyReference}</td>
                       <td>{formatMoney(invoice.totalAmount, invoice.currency)}</td>
+                      <td>{formatDate(invoice.issuedAtUtc)}</td>
                       <td>{formatDate(invoice.dueDateUtc)}</td>
                       <td>{formatDate(invoice.createdAtUtc)}</td>
                       <td>

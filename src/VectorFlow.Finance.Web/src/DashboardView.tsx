@@ -211,8 +211,9 @@ export function DashboardView({
             </div>
             <p className="meta">
               Чернетки — <span className="mono">status=Draft</span>. Виставлені —
-              <span className="mono"> status=Issued</span> (черга зі строком оплати). Сторінка 1,
-              стан у shareable URL; у списку можна звузити за датою оплати.
+              <span className="mono"> status=Issued</span> (робочий пошук). Сторінка 1, стан у
+              shareable URL; у списку можна звузити за контрагентом, номером, періодом виставлення
+              та строком оплати.
             </p>
           </div>
         ) : (

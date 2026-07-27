@@ -155,9 +155,12 @@ export type InvoiceListQueryOptions = {
   page?: number;
   pageSize?: number;
   documentNumber?: string;
+  counterpartyReference?: string;
   status?: string;
   createdFromUtc?: string;
   createdToUtc?: string;
+  issuedFromUtc?: string;
+  issuedToUtc?: string;
   dueFromUtc?: string;
   dueToUtc?: string;
 };
@@ -177,6 +180,11 @@ export function buildInvoicePagedSearchParams(
     params.set("documentNumber", documentNumber);
   }
 
+  const counterpartyReference = options.counterpartyReference?.trim();
+  if (counterpartyReference) {
+    params.set("counterpartyReference", counterpartyReference);
+  }
+
   const status = options.status?.trim();
   if (status) {
     params.set("status", status);
@@ -188,6 +196,14 @@ export function buildInvoicePagedSearchParams(
 
   if (options.createdToUtc) {
     params.set("createdToUtc", options.createdToUtc);
+  }
+
+  if (options.issuedFromUtc) {
+    params.set("issuedFromUtc", options.issuedFromUtc);
+  }
+
+  if (options.issuedToUtc) {
+    params.set("issuedToUtc", options.issuedToUtc);
   }
 
   if (options.dueFromUtc) {

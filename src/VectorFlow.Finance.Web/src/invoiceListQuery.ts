@@ -2,9 +2,15 @@ export type InvoiceStatusFilter = "" | "Draft" | "Issued";
 
 export type InvoiceListFilters = {
   documentNumber?: string;
+  /** Exact counterparty reference (API Ordinal match after trim). */
+  counterpartyReference?: string;
   status?: InvoiceStatusFilter;
   createdFromDate?: string;
   createdToDate?: string;
+  /** Invoice issued-at date (YYYY-MM-DD) → issuedFromUtc inclusive start. */
+  issuedFromDate?: string;
+  /** Invoice issued-at date (YYYY-MM-DD) → issuedToUtc inclusive end. */
+  issuedToDate?: string;
   /** Payment due date (YYYY-MM-DD) → dueFromUtc inclusive start. */
   dueFromDate?: string;
   /** Payment due date (YYYY-MM-DD) → dueToUtc inclusive end. */
@@ -15,9 +21,12 @@ export type InvoiceListQuery = {
   page: number;
   pageSize: number;
   documentNumber?: string;
+  counterpartyReference?: string;
   status?: "Draft" | "Issued";
   createdFromUtc?: string;
   createdToUtc?: string;
+  issuedFromUtc?: string;
+  issuedToUtc?: string;
   dueFromUtc?: string;
   dueToUtc?: string;
 };
@@ -46,6 +55,19 @@ export function validateCreatedDateRange(fromDate: string, toDate: string): stri
   return null;
 }
 
+/** Same ordering rule as created-date range; used for issuedFrom/issuedTo inputs. */
+export function validateIssuedDateRange(fromDate: string, toDate: string): string | null {
+  if (!fromDate || !toDate) {
+    return null;
+  }
+
+  if (fromDate > toDate) {
+    return "Дата виставлення «з» не може бути пізніше за «по».";
+  }
+
+  return null;
+}
+
 /** Same ordering rule as created-date range; used for dueFrom/dueTo inputs. */
 export function validateDueDateRange(fromDate: string, toDate: string): string | null {
   if (!fromDate || !toDate) {
@@ -65,10 +87,13 @@ export function buildInvoiceListQuery(
   filters: InvoiceListFilters
 ): { query: InvoiceListQuery; validationError: string | null } {
   const documentNumber = filters.documentNumber?.trim() || undefined;
+  const counterpartyReference = filters.counterpartyReference?.trim() || undefined;
   const status =
     filters.status === "Draft" || filters.status === "Issued" ? filters.status : undefined;
   const createdFromDate = filters.createdFromDate?.trim() || undefined;
   const createdToDate = filters.createdToDate?.trim() || undefined;
+  const issuedFromDate = filters.issuedFromDate?.trim() || undefined;
+  const issuedToDate = filters.issuedToDate?.trim() || undefined;
   const dueFromDate = filters.dueFromDate?.trim() || undefined;
   const dueToDate = filters.dueToDate?.trim() || undefined;
 
@@ -80,6 +105,14 @@ export function buildInvoiceListQuery(
     return {
       query: { page, pageSize },
       validationError: createdRangeError
+    };
+  }
+
+  const issuedRangeError = validateIssuedDateRange(issuedFromDate ?? "", issuedToDate ?? "");
+  if (issuedRangeError) {
+    return {
+      query: { page, pageSize },
+      validationError: issuedRangeError
     };
   }
 
@@ -100,6 +133,10 @@ export function buildInvoiceListQuery(
     query.documentNumber = documentNumber;
   }
 
+  if (counterpartyReference) {
+    query.counterpartyReference = counterpartyReference;
+  }
+
   if (status) {
     query.status = status;
   }
@@ -110,6 +147,14 @@ export function buildInvoiceListQuery(
 
   if (createdToDate) {
     query.createdToUtc = dateInputToUtcEnd(createdToDate);
+  }
+
+  if (issuedFromDate) {
+    query.issuedFromUtc = dateInputToUtcStart(issuedFromDate);
+  }
+
+  if (issuedToDate) {
+    query.issuedToUtc = dateInputToUtcEnd(issuedToDate);
   }
 
   if (dueFromDate) {
@@ -126,10 +171,13 @@ export function buildInvoiceListQuery(
 export function hasActiveInvoiceFilters(filters: InvoiceListFilters): boolean {
   return Boolean(
     filters.documentNumber?.trim() ||
+      filters.counterpartyReference?.trim() ||
       filters.status === "Draft" ||
       filters.status === "Issued" ||
       filters.createdFromDate?.trim() ||
       filters.createdToDate?.trim() ||
+      filters.issuedFromDate?.trim() ||
+      filters.issuedToDate?.trim() ||
       filters.dueFromDate?.trim() ||
       filters.dueToDate?.trim()
   );

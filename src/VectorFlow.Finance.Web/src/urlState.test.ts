@@ -121,6 +121,53 @@ describe("urlState", () => {
     assert.equal(invalidDue.discovery.invoiceFilters.dueToDate, "");
   });
 
+  it("round-trips Issued search filters: counterparty, issued window, due window, document", () => {
+    const workspaceId = "11111111-1111-1111-1111-111111111111";
+    const search = buildUrlSearch({
+      view: "invoices",
+      workspaceId,
+      accrualId: null,
+      invoiceId: "b1111111-1111-1111-1111-111111111111",
+      discovery: {
+        page: 2,
+        invoiceFilters: {
+          ...EMPTY_INVOICE_FILTERS,
+          documentNumber: "INV-SEARCH",
+          counterpartyReference: "acme-ua",
+          status: "Issued",
+          issuedFromDate: "2026-07-01",
+          issuedToDate: "2026-07-31",
+          dueFromDate: "2026-08-01",
+          dueToDate: "2026-08-31"
+        },
+        accrualFilters: { ...EMPTY_ACCRUAL_FILTERS }
+      }
+    });
+
+    assert.equal(
+      search,
+      "?view=invoices&workspaceId=11111111-1111-1111-1111-111111111111&documentNumber=INV-SEARCH&counterpartyReference=acme-ua&status=Issued&issuedFrom=2026-07-01&issuedTo=2026-07-31&dueFrom=2026-08-01&dueTo=2026-08-31&page=2&invoiceId=b1111111-1111-1111-1111-111111111111"
+    );
+
+    const parsed = parseUrlSearch(search);
+    assert.equal(parsed.discovery.page, 2);
+    assert.equal(parsed.invoiceId, "b1111111-1111-1111-1111-111111111111");
+    assert.equal(parsed.discovery.invoiceFilters.documentNumber, "INV-SEARCH");
+    assert.equal(parsed.discovery.invoiceFilters.counterpartyReference, "acme-ua");
+    assert.equal(parsed.discovery.invoiceFilters.status, "Issued");
+    assert.equal(parsed.discovery.invoiceFilters.issuedFromDate, "2026-07-01");
+    assert.equal(parsed.discovery.invoiceFilters.issuedToDate, "2026-07-31");
+    assert.equal(parsed.discovery.invoiceFilters.dueFromDate, "2026-08-01");
+    assert.equal(parsed.discovery.invoiceFilters.dueToDate, "2026-08-31");
+
+    const invalidIssued = parseUrlSearch(
+      "?view=invoices&issuedFrom=07-01-2026&issuedTo=bad&counterpartyReference=%20"
+    );
+    assert.equal(invalidIssued.discovery.invoiceFilters.issuedFromDate, "");
+    assert.equal(invalidIssued.discovery.invoiceFilters.issuedToDate, "");
+    assert.equal(invalidIssued.discovery.invoiceFilters.counterpartyReference, "");
+  });
+
   it("parses accrual discovery and ignores invalid page or dates", () => {
     const parsed = parseUrlSearch(
       "?view=accruals&descriptionPrefix=Оренда&recognitionFrom=2026-07-10&recognitionTo=nope&page=0"
@@ -203,8 +250,11 @@ describe("urlState", () => {
     assert.equal(discovery.page, 1);
     assert.equal(discovery.invoiceFilters.status, "Draft");
     assert.equal(discovery.invoiceFilters.documentNumber, "");
+    assert.equal(discovery.invoiceFilters.counterpartyReference, "");
     assert.equal(discovery.invoiceFilters.createdFromDate, "");
     assert.equal(discovery.invoiceFilters.createdToDate, "");
+    assert.equal(discovery.invoiceFilters.issuedFromDate, "");
+    assert.equal(discovery.invoiceFilters.issuedToDate, "");
     assert.equal(discovery.invoiceFilters.dueFromDate, "");
     assert.equal(discovery.invoiceFilters.dueToDate, "");
   });
@@ -214,8 +264,11 @@ describe("urlState", () => {
     assert.equal(discovery.page, 1);
     assert.equal(discovery.invoiceFilters.status, "Issued");
     assert.equal(discovery.invoiceFilters.documentNumber, "");
+    assert.equal(discovery.invoiceFilters.counterpartyReference, "");
     assert.equal(discovery.invoiceFilters.createdFromDate, "");
     assert.equal(discovery.invoiceFilters.createdToDate, "");
+    assert.equal(discovery.invoiceFilters.issuedFromDate, "");
+    assert.equal(discovery.invoiceFilters.issuedToDate, "");
     assert.equal(discovery.invoiceFilters.dueFromDate, "");
     assert.equal(discovery.invoiceFilters.dueToDate, "");
 
