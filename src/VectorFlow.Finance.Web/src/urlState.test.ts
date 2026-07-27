@@ -5,6 +5,7 @@ import {
   EMPTY_INVOICE_FILTERS,
   buildUrlSearch,
   draftInvoicesDiscovery,
+  issuedInvoicesDiscovery,
   parseAccrualIdParam,
   parseInvoiceIdParam,
   parseUrlSearch,
@@ -82,6 +83,42 @@ describe("urlState", () => {
     assert.equal(search.includes("descriptionPrefix"), false);
     assert.equal(search.includes("recognitionFrom"), false);
     assert.equal(search.includes("accrualId"), false);
+  });
+
+  it("round-trips invoice due date filters in shareable URL", () => {
+    const workspaceId = "11111111-1111-1111-1111-111111111111";
+    const search = buildUrlSearch({
+      view: "invoices",
+      workspaceId,
+      accrualId: null,
+      invoiceId: null,
+      discovery: {
+        page: 1,
+        invoiceFilters: {
+          ...EMPTY_INVOICE_FILTERS,
+          status: "Issued",
+          dueFromDate: "2026-08-01",
+          dueToDate: "2026-08-31"
+        },
+        accrualFilters: { ...EMPTY_ACCRUAL_FILTERS }
+      }
+    });
+
+    assert.equal(
+      search,
+      "?view=invoices&workspaceId=11111111-1111-1111-1111-111111111111&status=Issued&dueFrom=2026-08-01&dueTo=2026-08-31"
+    );
+
+    const parsed = parseUrlSearch(search);
+    assert.equal(parsed.view, "invoices");
+    assert.equal(parsed.discovery.invoiceFilters.status, "Issued");
+    assert.equal(parsed.discovery.invoiceFilters.dueFromDate, "2026-08-01");
+    assert.equal(parsed.discovery.invoiceFilters.dueToDate, "2026-08-31");
+    assert.equal(parsed.discovery.invoiceFilters.createdFromDate, "");
+
+    const invalidDue = parseUrlSearch("?view=invoices&dueFrom=08-01-2026&dueTo=nope");
+    assert.equal(invalidDue.discovery.invoiceFilters.dueFromDate, "");
+    assert.equal(invalidDue.discovery.invoiceFilters.dueToDate, "");
   });
 
   it("parses accrual discovery and ignores invalid page or dates", () => {
@@ -168,6 +205,32 @@ describe("urlState", () => {
     assert.equal(discovery.invoiceFilters.documentNumber, "");
     assert.equal(discovery.invoiceFilters.createdFromDate, "");
     assert.equal(discovery.invoiceFilters.createdToDate, "");
+    assert.equal(discovery.invoiceFilters.dueFromDate, "");
+    assert.equal(discovery.invoiceFilters.dueToDate, "");
+  });
+
+  it("issuedInvoicesDiscovery opens Issued attention queue without inventing due window", () => {
+    const discovery = issuedInvoicesDiscovery();
+    assert.equal(discovery.page, 1);
+    assert.equal(discovery.invoiceFilters.status, "Issued");
+    assert.equal(discovery.invoiceFilters.documentNumber, "");
+    assert.equal(discovery.invoiceFilters.createdFromDate, "");
+    assert.equal(discovery.invoiceFilters.createdToDate, "");
+    assert.equal(discovery.invoiceFilters.dueFromDate, "");
+    assert.equal(discovery.invoiceFilters.dueToDate, "");
+
+    const workspaceId = "11111111-1111-1111-1111-111111111111";
+    const search = buildUrlSearch({
+      view: "invoices",
+      workspaceId,
+      accrualId: null,
+      invoiceId: null,
+      discovery
+    });
+    assert.equal(
+      search,
+      "?view=invoices&workspaceId=11111111-1111-1111-1111-111111111111&status=Issued"
+    );
   });
 });
 

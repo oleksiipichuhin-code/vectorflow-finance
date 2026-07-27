@@ -5,6 +5,10 @@ export type InvoiceListFilters = {
   status?: InvoiceStatusFilter;
   createdFromDate?: string;
   createdToDate?: string;
+  /** Payment due date (YYYY-MM-DD) → dueFromUtc inclusive start. */
+  dueFromDate?: string;
+  /** Payment due date (YYYY-MM-DD) → dueToUtc inclusive end. */
+  dueToDate?: string;
 };
 
 export type InvoiceListQuery = {
@@ -14,6 +18,8 @@ export type InvoiceListQuery = {
   status?: "Draft" | "Issued";
   createdFromUtc?: string;
   createdToUtc?: string;
+  dueFromUtc?: string;
+  dueToUtc?: string;
 };
 
 export const INVOICE_PAGE_SIZE = 5;
@@ -40,6 +46,19 @@ export function validateCreatedDateRange(fromDate: string, toDate: string): stri
   return null;
 }
 
+/** Same ordering rule as created-date range; used for dueFrom/dueTo inputs. */
+export function validateDueDateRange(fromDate: string, toDate: string): string | null {
+  if (!fromDate || !toDate) {
+    return null;
+  }
+
+  if (fromDate > toDate) {
+    return "Строк оплати «з» не може бути пізніше за «по».";
+  }
+
+  return null;
+}
+
 export function buildInvoiceListQuery(
   page: number,
   pageSize: number,
@@ -50,16 +69,25 @@ export function buildInvoiceListQuery(
     filters.status === "Draft" || filters.status === "Issued" ? filters.status : undefined;
   const createdFromDate = filters.createdFromDate?.trim() || undefined;
   const createdToDate = filters.createdToDate?.trim() || undefined;
+  const dueFromDate = filters.dueFromDate?.trim() || undefined;
+  const dueToDate = filters.dueToDate?.trim() || undefined;
 
-  const validationError = validateCreatedDateRange(
+  const createdRangeError = validateCreatedDateRange(
     createdFromDate ?? "",
     createdToDate ?? ""
   );
-
-  if (validationError) {
+  if (createdRangeError) {
     return {
       query: { page, pageSize },
-      validationError
+      validationError: createdRangeError
+    };
+  }
+
+  const dueRangeError = validateDueDateRange(dueFromDate ?? "", dueToDate ?? "");
+  if (dueRangeError) {
+    return {
+      query: { page, pageSize },
+      validationError: dueRangeError
     };
   }
 
@@ -84,6 +112,14 @@ export function buildInvoiceListQuery(
     query.createdToUtc = dateInputToUtcEnd(createdToDate);
   }
 
+  if (dueFromDate) {
+    query.dueFromUtc = dateInputToUtcStart(dueFromDate);
+  }
+
+  if (dueToDate) {
+    query.dueToUtc = dateInputToUtcEnd(dueToDate);
+  }
+
   return { query, validationError: null };
 }
 
@@ -93,7 +129,9 @@ export function hasActiveInvoiceFilters(filters: InvoiceListFilters): boolean {
       filters.status === "Draft" ||
       filters.status === "Issued" ||
       filters.createdFromDate?.trim() ||
-      filters.createdToDate?.trim()
+      filters.createdToDate?.trim() ||
+      filters.dueFromDate?.trim() ||
+      filters.dueToDate?.trim()
   );
 }
 

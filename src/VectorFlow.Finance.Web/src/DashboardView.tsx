@@ -18,6 +18,7 @@ type DashboardViewProps = {
   onRetryWorkspace: () => void;
   onNavigate: (view: AppView) => void;
   onShowDraftInvoices: () => void;
+  onShowIssuedInvoices: () => void;
 };
 
 function invoiceCardCopy(workspace: FinanceWorkspace | null, totals: WorkspaceTotals | null): string {
@@ -66,7 +67,8 @@ export function DashboardView({
   onCreateWorkspace,
   onRetryWorkspace,
   onNavigate,
-  onShowDraftInvoices
+  onShowDraftInvoices,
+  onShowIssuedInvoices
 }: DashboardViewProps) {
   const [totals, setTotals] = useState<WorkspaceTotals | null>(null);
   const handleTotalsChange = useCallback((next: WorkspaceTotals | null) => {
@@ -203,10 +205,14 @@ export function DashboardView({
               <button type="button" className="list-shortcut" onClick={onShowDraftInvoices}>
                 Чернетки рахунків
               </button>
+              <button type="button" className="list-shortcut" onClick={onShowIssuedInvoices}>
+                Виставлені рахунки
+              </button>
             </div>
             <p className="meta">
-              Відкриває Invoices з <span className="mono">status=Draft</span> на сторінці 1 і
-              зберігає стан у shareable URL.
+              Чернетки — <span className="mono">status=Draft</span>. Виставлені —
+              <span className="mono"> status=Issued</span> (черга зі строком оплати). Сторінка 1,
+              стан у shareable URL; у списку можна звузити за датою оплати.
             </p>
           </div>
         ) : (

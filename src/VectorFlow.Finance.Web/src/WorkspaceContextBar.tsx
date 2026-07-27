@@ -7,6 +7,7 @@ type WorkspaceContextBarProps = {
   onOpenWorkspace: () => void;
   onCopyLink: () => void;
   onShowDraftInvoices: () => void;
+  onShowIssuedInvoices: () => void;
 };
 
 export function WorkspaceContextBar({
@@ -15,7 +16,8 @@ export function WorkspaceContextBar({
   copyFeedback,
   onOpenWorkspace,
   onCopyLink,
-  onShowDraftInvoices
+  onShowDraftInvoices,
+  onShowIssuedInvoices
 }: WorkspaceContextBarProps) {
   return (
     <div className="workspace-context" aria-live="polite">
@@ -31,6 +33,9 @@ export function WorkspaceContextBar({
           <div className="workspace-context-actions">
             <button type="button" className="button-secondary" onClick={onShowDraftInvoices}>
               Чернетки
+            </button>
+            <button type="button" className="button-secondary" onClick={onShowIssuedInvoices}>
+              Виставлені
             </button>
             <button type="button" className="button-secondary" onClick={onCopyLink}>
               Скопіювати посилання

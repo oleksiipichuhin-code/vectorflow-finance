@@ -13,6 +13,7 @@ import {
   buildUrlSearch,
   createEmptyDiscovery,
   draftInvoicesDiscovery,
+  issuedInvoicesDiscovery,
   parseUrlSearch,
   type AppUrlState,
   type ListDiscovery
@@ -258,6 +259,19 @@ export default function App() {
     setView("invoices");
   }, [workspace]);
 
+  const showIssuedInvoices = useCallback(() => {
+    if (!workspace) {
+      setView("workspace");
+      return;
+    }
+
+    setDiscovery(issuedInvoicesDiscovery());
+    setAccrualId(null);
+    setInvoiceId(null);
+    setListEpoch((value) => value + 1);
+    setView("invoices");
+  }, [workspace]);
+
   const openAccrualDetail = useCallback(
     (nextAccrualId: string) => {
       if (!workspace) {
@@ -372,6 +386,7 @@ export default function App() {
         onOpenWorkspace={() => navigate("workspace")}
         onCopyLink={() => void handleCopyLink()}
         onShowDraftInvoices={showDraftInvoices}
+        onShowIssuedInvoices={showIssuedInvoices}
       />
 
       {view === "dashboard" ? (
@@ -388,6 +403,7 @@ export default function App() {
           onRetryWorkspace={handleRetryWorkspace}
           onNavigate={navigate}
           onShowDraftInvoices={showDraftInvoices}
+          onShowIssuedInvoices={showIssuedInvoices}
         />
       ) : null}
 
@@ -413,6 +429,7 @@ export default function App() {
           onDiscoveryChange={handleInvoiceDiscoveryChange}
           onSelectedInvoiceIdChange={handleInvoiceIdChange}
           onShowDraftInvoices={showDraftInvoices}
+          onShowIssuedInvoices={showIssuedInvoices}
           onOpenAccrual={openAccrualDetail}
         />
       ) : null}

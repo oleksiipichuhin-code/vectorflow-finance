@@ -20,7 +20,8 @@ import {
 } from "./api";
 import {
   EMPTY_INVOICE_FILTERS,
-  draftInvoicesDiscovery
+  draftInvoicesDiscovery,
+  issuedInvoicesDiscovery
 } from "./urlState";
 import {
   INVOICE_PAGE_SIZE,
@@ -115,6 +116,7 @@ type InvoicesViewProps = {
     options?: InvoiceIdChangeOptions
   ) => void;
   onShowDraftInvoices?: () => void;
+  onShowIssuedInvoices?: () => void;
   /** Cross-view handoff: open Accruals detail for a created/related accrual. */
   onOpenAccrual?: (accrualId: string) => void;
 };
@@ -134,6 +136,7 @@ export function InvoicesView({
   onDiscoveryChange,
   onSelectedInvoiceIdChange,
   onShowDraftInvoices,
+  onShowIssuedInvoices,
   onOpenAccrual
 }: InvoicesViewProps) {
   const [draftFilters, setDraftFilters] = useState<InvoiceListFilters>(() => ({
@@ -1768,6 +1771,17 @@ export function InvoicesView({
     !appliedFilters.documentNumber?.trim() &&
     !appliedFilters.createdFromDate?.trim() &&
     !appliedFilters.createdToDate?.trim() &&
+    !appliedFilters.dueFromDate?.trim() &&
+    !appliedFilters.dueToDate?.trim() &&
+    page === 1;
+
+  const issuedFilterActive =
+    appliedFilters.status === "Issued" &&
+    !appliedFilters.documentNumber?.trim() &&
+    !appliedFilters.createdFromDate?.trim() &&
+    !appliedFilters.createdToDate?.trim() &&
+    !appliedFilters.dueFromDate?.trim() &&
+    !appliedFilters.dueToDate?.trim() &&
     page === 1;
 
   function applyDraftInvoicesFilter() {
@@ -1784,14 +1798,28 @@ export function InvoicesView({
     onDiscoveryChange?.(1, next);
   }
 
+  function applyIssuedInvoicesFilter() {
+    if (onShowIssuedInvoices) {
+      onShowIssuedInvoices();
+      return;
+    }
+
+    const next = issuedInvoicesDiscovery().invoiceFilters;
+    setDraftFilters(next);
+    setAppliedFilters(next);
+    setFilterValidationError(null);
+    setPage(1);
+    onDiscoveryChange?.(1, next);
+  }
+
   return (
     <>
       <header className="hero">
         <p className="eyebrow">VectorFlow Finance</p>
         <h1>Invoices</h1>
         <p className="lede">
-          Рахунки обраного фінансового простору з реального Finance API: фільтри та посторінковий
-          перегляд.
+          Рахунки обраного фінансового простору з реального Finance API: фільтри за статусом і
+          строком оплати, посторінковий перегляд.
         </p>
       </header>
 
@@ -1837,10 +1865,24 @@ export function InvoicesView({
                 >
                   Чернетки
                 </button>
+                <button
+                  type="button"
+                  className={
+                    issuedFilterActive
+                      ? "list-shortcut list-shortcut--active"
+                      : "list-shortcut"
+                  }
+                  title="status=Issued · page 1 · інші фільтри скинуто · далі звузьте за строком оплати"
+                  aria-pressed={issuedFilterActive}
+                  disabled={loading}
+                  onClick={applyIssuedInvoicesFilter}
+                >
+                  Виставлені
+                </button>
               </div>
               <p className="meta">
-                Показує рахунки зі статусом Draft на першій сторінці. Стан зберігається в URL і
-                відновлюється після оновлення сторінки.
+                Чернетки — Draft. Виставлені — Issued (черга зі строком оплати). Стан у URL;
+                відновлюється після оновлення сторінки. Нижче можна обмежити дату оплати.
               </p>
             </div>
 
@@ -1904,6 +1946,32 @@ export function InvoicesView({
                   }
                 />
               </label>
+              <label>
+                Строк оплати з
+                <input
+                  type="date"
+                  value={draftFilters.dueFromDate ?? ""}
+                  onChange={(event) =>
+                    setDraftFilters((current) => ({
+                      ...current,
+                      dueFromDate: event.target.value
+                    }))
+                  }
+                />
+              </label>
+              <label>
+                Строк оплати по
+                <input
+                  type="date"
+                  value={draftFilters.dueToDate ?? ""}
+                  onChange={(event) =>
+                    setDraftFilters((current) => ({
+                      ...current,
+                      dueToDate: event.target.value
+                    }))
+                  }
+                />
+              </label>
               <div className="filter-actions">
                 <button type="submit" disabled={loading}>
                   Застосувати
@@ -1927,9 +1995,15 @@ export function InvoicesView({
                   ? ` статус ${appliedFilters.status}`
                   : ""}
                 {appliedFilters.createdFromDate
-                  ? ` з ${appliedFilters.createdFromDate}`
+                  ? ` створено з ${appliedFilters.createdFromDate}`
                   : ""}
-                {appliedFilters.createdToDate ? ` по ${appliedFilters.createdToDate}` : ""}
+                {appliedFilters.createdToDate
+                  ? ` створено по ${appliedFilters.createdToDate}`
+                  : ""}
+                {appliedFilters.dueFromDate
+                  ? ` строк з ${appliedFilters.dueFromDate}`
+                  : ""}
+                {appliedFilters.dueToDate ? ` строк по ${appliedFilters.dueToDate}` : ""}
               </p>
             ) : (
               <p className="meta">Фільтри не застосовані.</p>
@@ -2399,6 +2473,7 @@ export function InvoicesView({
                     <th>Статус</th>
                     <th>Контрагент</th>
                     <th>Сума</th>
+                    <th>Дата оплати</th>
                     <th>Створено</th>
                     <th>Дія</th>
                   </tr>
@@ -2414,6 +2489,7 @@ export function InvoicesView({
                       <td>{invoice.status}</td>
                       <td className="cell-wrap">{invoice.counterpartyReference}</td>
                       <td>{formatMoney(invoice.totalAmount, invoice.currency)}</td>
+                      <td>{formatDate(invoice.dueDateUtc)}</td>
                       <td>{formatDate(invoice.createdAtUtc)}</td>
                       <td>
                         <div className="filter-actions">

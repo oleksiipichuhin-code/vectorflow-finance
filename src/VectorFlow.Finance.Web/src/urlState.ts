@@ -34,7 +34,9 @@ export const EMPTY_INVOICE_FILTERS: InvoiceListFilters = {
   documentNumber: "",
   status: "",
   createdFromDate: "",
-  createdToDate: ""
+  createdToDate: "",
+  dueFromDate: "",
+  dueToDate: ""
 };
 
 export const EMPTY_ACCRUAL_FILTERS: AccrualListFilters = {
@@ -198,7 +200,9 @@ export function parseUrlSearch(search: string): AppUrlState {
     documentNumber: params.get("documentNumber")?.trim() ?? "",
     status: parseInvoiceStatus(params.get("status")),
     createdFromDate: parseDateInput(params.get("createdFrom")),
-    createdToDate: parseDateInput(params.get("createdTo"))
+    createdToDate: parseDateInput(params.get("createdTo")),
+    dueFromDate: parseDateInput(params.get("dueFrom")),
+    dueToDate: parseDateInput(params.get("dueTo"))
   };
 
   const accrualFilters: AccrualListFilters = {
@@ -254,6 +258,8 @@ export function buildUrlSearch(state: AppUrlState): string {
     }
     setIfPresent(params, "createdFrom", filters.createdFromDate);
     setIfPresent(params, "createdTo", filters.createdToDate);
+    setIfPresent(params, "dueFrom", filters.dueFromDate);
+    setIfPresent(params, "dueTo", filters.dueToDate);
     if (page > 1) {
       params.set("page", String(page));
     }
@@ -297,6 +303,21 @@ export function draftInvoicesDiscovery(): ListDiscovery {
     invoiceFilters: {
       ...EMPTY_INVOICE_FILTERS,
       status: "Draft"
+    },
+    accrualFilters: { ...EMPTY_ACCRUAL_FILTERS }
+  };
+}
+
+/**
+ * Issued invoices attention queue: status=Issued, page 1, other invoice filters cleared.
+ * Due-date bounds are left empty so the accountant sets a real payment window in the list.
+ */
+export function issuedInvoicesDiscovery(): ListDiscovery {
+  return {
+    page: 1,
+    invoiceFilters: {
+      ...EMPTY_INVOICE_FILTERS,
+      status: "Issued"
     },
     accrualFilters: { ...EMPTY_ACCRUAL_FILTERS }
   };

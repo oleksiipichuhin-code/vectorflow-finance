@@ -158,6 +158,8 @@ export type InvoiceListQueryOptions = {
   status?: string;
   createdFromUtc?: string;
   createdToUtc?: string;
+  dueFromUtc?: string;
+  dueToUtc?: string;
 };
 
 export function buildInvoicePagedSearchParams(
@@ -186,6 +188,14 @@ export function buildInvoicePagedSearchParams(
 
   if (options.createdToUtc) {
     params.set("createdToUtc", options.createdToUtc);
+  }
+
+  if (options.dueFromUtc) {
+    params.set("dueFromUtc", options.dueFromUtc);
+  }
+
+  if (options.dueToUtc) {
+    params.set("dueToUtc", options.dueToUtc);
   }
 
   return params;
