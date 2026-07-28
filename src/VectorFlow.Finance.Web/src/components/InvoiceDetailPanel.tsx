@@ -15,6 +15,8 @@ import {
   type RelatedAccrualRowView
 } from "../invoiceAccrualBridge";
 import { formatDate, formatMoney } from "../format";
+import type { PromiseFollowUpStatus, PromiseToPayRecord } from "../promiseToPay";
+import { promiseStatusLabel } from "../promiseToPay";
 import { StatusMessage } from "./Panel";
 
 type InvoiceDetailCollectionsContext = {
@@ -29,6 +31,25 @@ type InvoiceDetailCollectionsContext = {
   canGoNext: boolean;
   isLast: boolean;
   onNext: () => void;
+};
+
+type InvoiceDetailPromiseContext = {
+  record: PromiseToPayRecord | null;
+  formOpen: boolean;
+  promiseDate: string;
+  note: string;
+  error: string | null;
+  success: string | null;
+  busy: boolean;
+  onOpenForm: () => void;
+  onCloseForm: () => void;
+  onPromiseDateChange: (value: string) => void;
+  onNoteChange: (value: string) => void;
+  onSave: () => void;
+  onMarkFollowUpRequired: () => void;
+  onMarkContacted: () => void;
+  onComplete: () => void;
+  onReopen: () => void;
 };
 
 type InvoiceDetailPanelProps = {
@@ -55,6 +76,7 @@ type InvoiceDetailPanelProps = {
   relatedAccrualsLoading?: boolean;
   relatedAccrualsError?: string | null;
   collectionsContext?: InvoiceDetailCollectionsContext | null;
+  promiseContext?: InvoiceDetailPromiseContext | null;
   onClose: () => void;
   onRetry: () => void;
   onRetryRelatedAccruals?: () => void;
@@ -92,6 +114,7 @@ export function InvoiceDetailPanel({
   relatedAccrualsLoading = false,
   relatedAccrualsError = null,
   collectionsContext = null,
+  promiseContext = null,
   onClose,
   onRetry,
   onRetryRelatedAccruals,
@@ -154,11 +177,15 @@ export function InvoiceDetailPanel({
     issueBusy ||
     issueOpen ||
     createAccrualBusy ||
-    createAccrualOpen;
+    createAccrualOpen ||
+    Boolean(promiseContext?.busy) ||
+    Boolean(promiseContext?.formOpen);
 
   const relatedRows: RelatedAccrualRowView[] = relatedAccruals.map((accrual) =>
     buildRelatedAccrualRowView(accrual, formatMoney, formatDate)
   );
+
+  const promiseStatus = promiseContext?.record?.status as PromiseFollowUpStatus | undefined;
 
   return (
     <section
@@ -327,6 +354,149 @@ export function InvoiceDetailPanel({
                   <p className="meta">Останній рахунок у поточній collections queue.</p>
                 ) : null}
               </div>
+            </section>
+          ) : null}
+
+          {promiseContext ? (
+            <section
+              className="promise-followup-block"
+              aria-labelledby="invoice-promise-heading"
+            >
+              <h4 id="invoice-promise-heading">Promise to pay</h4>
+              {promiseContext.record ? (
+                <dl className="facts">
+                  <div>
+                    <dt>Promise date</dt>
+                    <dd>{promiseContext.record.promiseDate}</dd>
+                  </div>
+                  <div>
+                    <dt>Follow-up status</dt>
+                    <dd>
+                      <span
+                        className={`aging-badge aging-badge--promise aging-badge--promise-${promiseContext.record.status}`}
+                      >
+                        {promiseStatusLabel(promiseContext.record.status)}
+                      </span>
+                    </dd>
+                  </div>
+                  {promiseContext.record.note ? (
+                    <div>
+                      <dt>Note</dt>
+                      <dd className="cell-wrap">{promiseContext.record.note}</dd>
+                    </div>
+                  ) : null}
+                </dl>
+              ) : (
+                <p className="meta">Обіцянку оплати ще не зафіксовано.</p>
+              )}
+
+              {promiseContext.success ? (
+                <StatusMessage tone="success">{promiseContext.success}</StatusMessage>
+              ) : null}
+              {promiseContext.error ? (
+                <StatusMessage tone="error">{promiseContext.error}</StatusMessage>
+              ) : null}
+
+              {promiseContext.formOpen ? (
+                <form
+                  className="filter-form promise-form"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    promiseContext.onSave();
+                  }}
+                >
+                  <label>
+                    Promise date
+                    <input
+                      type="date"
+                      required
+                      value={promiseContext.promiseDate}
+                      onChange={(event) =>
+                        promiseContext.onPromiseDateChange(event.target.value)
+                      }
+                      disabled={promiseContext.busy}
+                    />
+                  </label>
+                  <label>
+                    Note
+                    <input
+                      value={promiseContext.note}
+                      onChange={(event) => promiseContext.onNoteChange(event.target.value)}
+                      placeholder="коротка нотатка (необовʼязково)"
+                      autoComplete="off"
+                      disabled={promiseContext.busy}
+                    />
+                  </label>
+                  <div className="filter-actions">
+                    <button type="submit" disabled={promiseContext.busy || closeDisabled}>
+                      {promiseContext.busy
+                        ? "Збереження…"
+                        : promiseContext.record
+                          ? "Оновити обіцянку"
+                          : "Зберегти обіцянку"}
+                    </button>
+                    <button
+                      type="button"
+                      className="button-secondary"
+                      disabled={promiseContext.busy || closeDisabled}
+                      onClick={promiseContext.onCloseForm}
+                    >
+                      Скасувати
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <div className="filter-actions">
+                  <button
+                    type="button"
+                    disabled={actionsDisabled && !promiseContext.record}
+                    onClick={promiseContext.onOpenForm}
+                  >
+                    {promiseContext.record ? "Update promise" : "Promise to pay"}
+                  </button>
+                  {promiseContext.record && promiseStatus !== "completed" ? (
+                    <>
+                      <button
+                        type="button"
+                        className="button-secondary"
+                        disabled={promiseContext.busy || closeDisabled}
+                        onClick={promiseContext.onMarkFollowUpRequired}
+                      >
+                        Mark follow-up required
+                      </button>
+                      <button
+                        type="button"
+                        className="button-secondary"
+                        disabled={promiseContext.busy || closeDisabled}
+                        onClick={promiseContext.onMarkContacted}
+                      >
+                        Mark contacted
+                      </button>
+                      <button
+                        type="button"
+                        className="button-secondary"
+                        disabled={promiseContext.busy || closeDisabled}
+                        onClick={promiseContext.onComplete}
+                      >
+                        Complete follow-up
+                      </button>
+                    </>
+                  ) : null}
+                  {promiseContext.record && promiseStatus === "completed" ? (
+                    <button
+                      type="button"
+                      className="button-secondary"
+                      disabled={promiseContext.busy || closeDisabled}
+                      onClick={promiseContext.onReopen}
+                    >
+                      Reopen follow-up
+                    </button>
+                  ) : null}
+                </div>
+              )}
+              <p className="meta promise-persistence-note">
+                Follow-up зберігається локально в браузері (localStorage) за invoice id.
+              </p>
             </section>
           ) : null}
 

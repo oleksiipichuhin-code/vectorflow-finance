@@ -426,6 +426,111 @@ describe("urlState", () => {
       "?view=invoices&status=Issued"
     );
   });
+
+  it("serializes promise follow-ups panel, group filter, and search in URL", () => {
+    const workspaceId = "11111111-1111-1111-1111-111111111111";
+    const search = buildUrlSearch({
+      view: "invoices",
+      workspaceId,
+      accrualId: null,
+      invoiceId: null,
+      discovery: {
+        page: 1,
+        invoiceFilters: {
+          ...EMPTY_INVOICE_FILTERS,
+          status: "Issued"
+        },
+        accrualFilters: { ...EMPTY_ACCRUAL_FILTERS },
+        invoiceQueue: "overdue",
+        agingBucket: "",
+        collectionPanel: "followups",
+        promiseGroup: "broken",
+        promiseSearch: "acme"
+      }
+    });
+
+    assert.equal(
+      search,
+      "?view=invoices&workspaceId=11111111-1111-1111-1111-111111111111&status=Issued&queue=overdue&panel=followups&promiseGroup=broken&promiseQ=acme"
+    );
+  });
+
+  it("restores promise follow-ups panel state from URL", () => {
+    const parsed = parseUrlSearch(
+      "?view=invoices&status=Issued&queue=overdue&panel=followups&promiseGroup=due_today&promiseQ=INV-9"
+    );
+    assert.equal(parsed.discovery.invoiceQueue, "overdue");
+    assert.equal(parsed.discovery.collectionPanel, "followups");
+    assert.equal(parsed.discovery.promiseGroup, "due_today");
+    assert.equal(parsed.discovery.promiseSearch, "INV-9");
+  });
+
+  it("preserves follow-ups filters when opening and closing invoice detail", () => {
+    const workspaceId = "11111111-1111-1111-1111-111111111111";
+    const invoiceId = "b1111111-1111-1111-1111-111111111111";
+    const base = {
+      view: "invoices" as const,
+      workspaceId,
+      accrualId: null as string | null,
+      invoiceId: null as string | null,
+      discovery: {
+        page: 1,
+        invoiceFilters: {
+          ...EMPTY_INVOICE_FILTERS,
+          status: "Issued" as const
+        },
+        accrualFilters: { ...EMPTY_ACCRUAL_FILTERS },
+        invoiceQueue: "overdue" as const,
+        agingBucket: "" as const,
+        collectionPanel: "followups" as const,
+        promiseGroup: "upcoming" as const,
+        promiseSearch: "beta"
+      }
+    };
+
+    const opened = withInvoiceId(base, invoiceId);
+    const openedSearch = buildUrlSearch(opened);
+    assert.match(openedSearch, /panel=followups/);
+    assert.match(openedSearch, /promiseGroup=upcoming/);
+    assert.match(openedSearch, /promiseQ=beta/);
+    assert.match(openedSearch, new RegExp(`invoiceId=${invoiceId}`));
+
+    const closed = withoutInvoiceId(opened);
+    const closedSearch = buildUrlSearch(closed);
+    assert.equal(closedSearch.includes("invoiceId"), false);
+    assert.match(closedSearch, /panel=followups/);
+    assert.match(closedSearch, /promiseGroup=upcoming/);
+    assert.match(closedSearch, /promiseQ=beta/);
+
+    const restored = parseUrlSearch(closedSearch);
+    assert.equal(restored.discovery.collectionPanel, "followups");
+    assert.equal(restored.discovery.promiseGroup, "upcoming");
+    assert.equal(restored.discovery.promiseSearch, "beta");
+    assert.equal(restored.invoiceId, null);
+  });
+
+  it("ignores promise follow-up params outside overdue followups panel", () => {
+    const parsed = parseUrlSearch(
+      "?view=invoices&status=Issued&queue=overdue&promiseGroup=broken&promiseQ=x"
+    );
+    assert.equal(parsed.discovery.collectionPanel, "");
+    assert.equal(parsed.discovery.promiseGroup, "");
+    assert.equal(parsed.discovery.promiseSearch, "");
+
+    const withoutQueue = parseUrlSearch(
+      "?view=invoices&status=Issued&panel=followups&promiseGroup=broken"
+    );
+    assert.equal(withoutQueue.discovery.collectionPanel, "");
+    assert.equal(withoutQueue.discovery.promiseGroup, "");
+  });
+
+  it("unknown promiseGroup values are ignored", () => {
+    const parsed = parseUrlSearch(
+      "?view=invoices&status=Issued&queue=overdue&panel=followups&promiseGroup=paid"
+    );
+    assert.equal(parsed.discovery.collectionPanel, "followups");
+    assert.equal(parsed.discovery.promiseGroup, "");
+  });
 });
 
 describe("accrual detail deep-link URL policy", () => {

@@ -9,6 +9,13 @@ import type {
   InvoiceStatusFilter
 } from "./invoiceListQuery";
 import type { AppView } from "./navigation";
+import {
+  parsePromiseGroupParam,
+  type PromiseGroupFilter
+} from "./promiseToPay.ts";
+
+/** Collection workspace panel: overdue queue (default) or promise follow-ups. */
+export type CollectionPanelMode = "" | "followups";
 
 const VIEW_IDS: ReadonlySet<string> = new Set([
   "dashboard",
@@ -33,6 +40,17 @@ export type ListDiscovery = {
    * Empty = all attention (overdue + due today).
    */
   agingBucket: AgingBucketFilter;
+  /**
+   * Collection panel (`panel=followups` in URL). Meaningful only with queue=overdue.
+   * Empty = overdue queue table.
+   */
+  collectionPanel: CollectionPanelMode;
+  /**
+   * Promise follow-up group filter (`promiseGroup=`). Meaningful only with panel=followups.
+   */
+  promiseGroup: PromiseGroupFilter;
+  /** Promise follow-up search (`promiseQ=`): invoice number or counterparty substring. */
+  promiseSearch: string;
 };
 
 export type AppUrlState = {
@@ -69,8 +87,21 @@ export const EMPTY_DISCOVERY: ListDiscovery = {
   invoiceFilters: { ...EMPTY_INVOICE_FILTERS },
   accrualFilters: { ...EMPTY_ACCRUAL_FILTERS },
   invoiceQueue: "",
-  agingBucket: ""
+  agingBucket: "",
+  collectionPanel: "",
+  promiseGroup: "",
+  promiseSearch: ""
 };
+
+export function parseCollectionPanelParam(
+  value: string | null | undefined
+): CollectionPanelMode {
+  if (value == null) {
+    return "";
+  }
+  const trimmed = value.trim();
+  return trimmed === "followups" ? "followups" : "";
+}
 
 export function isAppView(value: string | null | undefined): value is AppView {
   return typeof value === "string" && VIEW_IDS.has(value);
@@ -207,7 +238,10 @@ export function createEmptyDiscovery(): ListDiscovery {
     invoiceFilters: { ...EMPTY_INVOICE_FILTERS },
     accrualFilters: { ...EMPTY_ACCRUAL_FILTERS },
     invoiceQueue: "",
-    agingBucket: ""
+    agingBucket: "",
+    collectionPanel: "",
+    promiseGroup: "",
+    promiseSearch: ""
   };
 }
 
@@ -229,6 +263,18 @@ export function parseUrlSearch(search: string): AppUrlState {
   const agingBucket =
     view === "invoices" && invoiceQueue === "overdue"
       ? parseAgingBucketParam(params.get("aging"))
+      : "";
+  const collectionPanel =
+    view === "invoices" && invoiceQueue === "overdue"
+      ? parseCollectionPanelParam(params.get("panel"))
+      : "";
+  const promiseGroup =
+    view === "invoices" && invoiceQueue === "overdue" && collectionPanel === "followups"
+      ? parsePromiseGroupParam(params.get("promiseGroup"))
+      : "";
+  const promiseSearch =
+    view === "invoices" && invoiceQueue === "overdue" && collectionPanel === "followups"
+      ? (params.get("promiseQ")?.trim() ?? "")
       : "";
 
   const invoiceFilters: InvoiceListFilters = {
@@ -265,7 +311,10 @@ export function parseUrlSearch(search: string): AppUrlState {
       invoiceFilters,
       accrualFilters,
       invoiceQueue,
-      agingBucket
+      agingBucket,
+      collectionPanel,
+      promiseGroup,
+      promiseSearch
     }
   };
 }
@@ -320,6 +369,13 @@ export function buildUrlSearch(state: AppUrlState): string {
       if (state.discovery.agingBucket) {
         params.set("aging", state.discovery.agingBucket);
       }
+      if (state.discovery.collectionPanel === "followups") {
+        params.set("panel", "followups");
+        if (state.discovery.promiseGroup) {
+          params.set("promiseGroup", state.discovery.promiseGroup);
+        }
+        setIfPresent(params, "promiseQ", state.discovery.promiseSearch);
+      }
     }
     if (page > 1) {
       params.set("page", String(page));
@@ -367,7 +423,10 @@ export function draftInvoicesDiscovery(): ListDiscovery {
     },
     accrualFilters: { ...EMPTY_ACCRUAL_FILTERS },
     invoiceQueue: "",
-    agingBucket: ""
+    agingBucket: "",
+    collectionPanel: "",
+    promiseGroup: "",
+    promiseSearch: ""
   };
 }
 
@@ -384,7 +443,10 @@ export function issuedInvoicesDiscovery(): ListDiscovery {
     },
     accrualFilters: { ...EMPTY_ACCRUAL_FILTERS },
     invoiceQueue: "",
-    agingBucket: ""
+    agingBucket: "",
+    collectionPanel: "",
+    promiseGroup: "",
+    promiseSearch: ""
   };
 }
 
@@ -402,6 +464,9 @@ export function overdueIssuedInvoicesDiscovery(): ListDiscovery {
     },
     accrualFilters: { ...EMPTY_ACCRUAL_FILTERS },
     invoiceQueue: "overdue",
-    agingBucket: ""
+    agingBucket: "",
+    collectionPanel: "",
+    promiseGroup: "",
+    promiseSearch: ""
   };
 }

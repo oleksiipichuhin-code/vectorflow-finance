@@ -22,7 +22,8 @@ import {
   EMPTY_INVOICE_FILTERS,
   draftInvoicesDiscovery,
   issuedInvoicesDiscovery,
-  overdueIssuedInvoicesDiscovery
+  overdueIssuedInvoicesDiscovery,
+  type CollectionPanelMode
 } from "./urlState";
 import {
   INVOICE_PAGE_SIZE,
@@ -50,6 +51,20 @@ import {
   overdueDaysForInvoice,
   type AgingBucketFilter
 } from "./invoiceCollections";
+import {
+  PROMISE_GROUP_OPTIONS,
+  buildPromiseFollowUpItems,
+  buildPromiseFollowUpSummary,
+  filterPromiseFollowUps,
+  groupPromiseFollowUps,
+  listPromiseRecordsFromStorage,
+  readPromiseFromStorage,
+  savePromiseToPay,
+  updatePromiseStatus,
+  type PromiseFollowUpItem,
+  type PromiseGroupFilter,
+  type PromiseToPayRecord
+} from "./promiseToPay";
 import {
   canViewInvoiceDetails,
   DETAIL_RELOAD_AFTER_MUTATION_FAILED_MESSAGE,
@@ -129,12 +144,18 @@ type InvoicesViewProps = {
   initialFilters?: InvoiceListFilters;
   initialInvoiceQueue?: InvoiceQueueMode;
   initialAgingBucket?: AgingBucketFilter;
+  initialCollectionPanel?: CollectionPanelMode;
+  initialPromiseGroup?: PromiseGroupFilter;
+  initialPromiseSearch?: string;
   selectedInvoiceId?: string | null;
   onDiscoveryChange?: (
     page: number,
     filters: InvoiceListFilters,
     invoiceQueue?: InvoiceQueueMode,
-    agingBucket?: AgingBucketFilter
+    agingBucket?: AgingBucketFilter,
+    collectionPanel?: CollectionPanelMode,
+    promiseGroup?: PromiseGroupFilter,
+    promiseSearch?: string
   ) => void;
   onSelectedInvoiceIdChange?: (
     invoiceId: string | null,
@@ -160,6 +181,9 @@ export function InvoicesView({
   initialFilters = emptyFilters,
   initialInvoiceQueue = "",
   initialAgingBucket = "",
+  initialCollectionPanel = "",
+  initialPromiseGroup = "",
+  initialPromiseSearch = "",
   selectedInvoiceId = null,
   onDiscoveryChange,
   onSelectedInvoiceIdChange,
@@ -182,6 +206,33 @@ export function InvoicesView({
   const [agingBucket, setAgingBucket] = useState<AgingBucketFilter>(
     () => (initialInvoiceQueue === "overdue" ? initialAgingBucket : "")
   );
+  const [collectionPanel, setCollectionPanel] = useState<CollectionPanelMode>(() =>
+    initialInvoiceQueue === "overdue" && initialCollectionPanel === "followups"
+      ? "followups"
+      : ""
+  );
+  const [promiseGroup, setPromiseGroup] = useState<PromiseGroupFilter>(() =>
+    initialInvoiceQueue === "overdue" && initialCollectionPanel === "followups"
+      ? initialPromiseGroup
+      : ""
+  );
+  const [promiseSearch, setPromiseSearch] = useState(() =>
+    initialInvoiceQueue === "overdue" && initialCollectionPanel === "followups"
+      ? initialPromiseSearch
+      : ""
+  );
+  const [promiseSearchDraft, setPromiseSearchDraft] = useState(() =>
+    initialInvoiceQueue === "overdue" && initialCollectionPanel === "followups"
+      ? initialPromiseSearch
+      : ""
+  );
+  const [promiseRevision, setPromiseRevision] = useState(0);
+  const [promiseFormOpen, setPromiseFormOpen] = useState(false);
+  const [promiseDateInput, setPromiseDateInput] = useState("");
+  const [promiseNoteInput, setPromiseNoteInput] = useState("");
+  const [promiseFormError, setPromiseFormError] = useState<string | null>(null);
+  const [promiseFormSuccess, setPromiseFormSuccess] = useState<string | null>(null);
+  const [promiseBusy, setPromiseBusy] = useState(false);
   const [filterValidationError, setFilterValidationError] = useState<string | null>(null);
 
   const [page, setPage] = useState(() => (initialPage < 1 ? 1 : Math.floor(initialPage)));
@@ -357,6 +408,10 @@ export function InvoicesView({
       dismissDetailFromUrl({ replace: true });
       setInvoiceQueue("");
       setAgingBucket("");
+      setCollectionPanel("");
+      setPromiseGroup("");
+      setPromiseSearch("");
+      setPromiseSearchDraft("");
       onDiscoveryChange?.(1, emptyFilters, "", "");
     }
   }, [workspace?.id, onDiscoveryChange, onSelectedInvoiceIdChange, selectedInvoiceId]);
@@ -437,6 +492,44 @@ export function InvoicesView({
     };
   }, [workspace, page, appliedFilters, invoiceQueue, loadPage]);
 
+  useEffect(() => {
+    setPromiseFormOpen(false);
+    setPromiseFormError(null);
+    setPromiseFormSuccess(null);
+    setPromiseDateInput("");
+    setPromiseNoteInput("");
+    setPromiseBusy(false);
+  }, [detailTargetId]);
+
+  function publishDiscovery(
+    nextPage: number,
+    filters: InvoiceListFilters,
+    nextQueue: InvoiceQueueMode,
+    nextAging: AgingBucketFilter,
+    nextPanel: CollectionPanelMode = "",
+    nextGroup: PromiseGroupFilter = "",
+    nextSearch: string = ""
+  ) {
+    const panel: CollectionPanelMode =
+      nextQueue === "overdue" && nextPanel === "followups" ? "followups" : "";
+    onDiscoveryChange?.(
+      nextPage,
+      filters,
+      nextQueue,
+      nextQueue === "overdue" ? nextAging : "",
+      panel,
+      panel === "followups" ? nextGroup : "",
+      panel === "followups" ? nextSearch : ""
+    );
+  }
+
+  function clearPromisePanelState() {
+    setCollectionPanel("");
+    setPromiseGroup("");
+    setPromiseSearch("");
+    setPromiseSearchDraft("");
+  }
+
   function applyFilters(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const nextQueue: InvoiceQueueMode =
@@ -445,6 +538,11 @@ export function InvoicesView({
         ? "overdue"
         : "";
     const nextAging: AgingBucketFilter = nextQueue === "overdue" ? agingBucket : "";
+    const nextPanel: CollectionPanelMode =
+      nextQueue === "overdue" ? collectionPanel : "";
+    const nextGroup: PromiseGroupFilter =
+      nextPanel === "followups" ? promiseGroup : "";
+    const nextSearch = nextPanel === "followups" ? promiseSearch : "";
     const filtersForQuery =
       nextQueue === "overdue"
         ? { ...draftFilters, status: "Issued" as const }
@@ -466,7 +564,18 @@ export function InvoicesView({
     setDraftFilters({ ...filtersForQuery });
     setInvoiceQueue(nextQueue);
     setAgingBucket(nextAging);
-    onDiscoveryChange?.(1, { ...filtersForQuery }, nextQueue, nextAging);
+    if (nextQueue !== "overdue") {
+      clearPromisePanelState();
+    }
+    publishDiscovery(
+      1,
+      { ...filtersForQuery },
+      nextQueue,
+      nextAging,
+      nextPanel,
+      nextGroup,
+      nextSearch
+    );
   }
 
   function clearFilters() {
@@ -483,6 +592,7 @@ export function InvoicesView({
       setAgingBucket("");
       setFilterValidationError(null);
       setPage(1);
+      clearPromisePanelState();
       onDiscoveryChange?.(1, next, "", "");
       return;
     }
@@ -491,6 +601,7 @@ export function InvoicesView({
     setAppliedFilters(emptyFilters);
     setInvoiceQueue("");
     setAgingBucket("");
+    clearPromisePanelState();
     setFilterValidationError(null);
     setPage(1);
     onDiscoveryChange?.(1, emptyFilters, "", "");
@@ -530,6 +641,10 @@ export function InvoicesView({
       setAppliedFilters(emptyFilters);
       setInvoiceQueue("");
       setAgingBucket("");
+      setCollectionPanel("");
+      setPromiseGroup("");
+      setPromiseSearch("");
+      setPromiseSearchDraft("");
       setFilterValidationError(null);
       setPage(1);
       setHighlightedId(created.id);
@@ -1898,7 +2013,10 @@ export function InvoicesView({
     !appliedFilters.issuedFromDate?.trim() &&
     !appliedFilters.issuedToDate?.trim() &&
     !appliedFilters.dueFromDate?.trim() &&
-    !agingBucket;
+    !agingBucket &&
+    collectionPanel === "";
+
+  const followUpsPanelActive = overdueQueueActive && collectionPanel === "followups";
 
   const collectionsNow = new Date();
   const collectionsQueue = overdueQueueActive
@@ -1909,10 +2027,37 @@ export function InvoicesView({
     : null;
   const collectionsIds = collectionsQueue.map((invoice) => invoice.id);
   const collectionsPosition = collectionsQueuePosition(collectionsIds, detailTargetId);
+
+  // promiseRevision forces re-read after localStorage mutations.
+  void promiseRevision;
+  const promiseRecords = listPromiseRecordsFromStorage();
+  const promiseFollowUpItems = followUpsPanelActive
+    ? filterPromiseFollowUps(
+        buildPromiseFollowUpItems(invoices, promiseRecords, collectionsNow),
+        { group: promiseGroup, search: promiseSearch }
+      )
+    : [];
+  const promiseFollowUpAll = followUpsPanelActive
+    ? buildPromiseFollowUpItems(invoices, promiseRecords, collectionsNow)
+    : [];
+  const promiseSummary = followUpsPanelActive
+    ? buildPromiseFollowUpSummary(promiseFollowUpAll)
+    : null;
+  const promiseGroups = followUpsPanelActive
+    ? groupPromiseFollowUps(promiseFollowUpItems)
+    : null;
+
+  const detailPromiseRecord =
+    overdueQueueActive && detailTargetId
+      ? readPromiseFromStorage(detailTargetId)
+      : null;
+
   const displayInvoices = overdueQueueActive ? collectionsQueue : invoices;
-  const listEmpty = overdueQueueActive
-    ? !loading && !error && collectionsQueue.length === 0
-    : !loading && !error && invoices.length === 0;
+  const listEmpty = followUpsPanelActive
+    ? !loading && !error && promiseFollowUpItems.length === 0
+    : overdueQueueActive
+      ? !loading && !error && collectionsQueue.length === 0
+      : !loading && !error && invoices.length === 0;
 
   function openNextCollectionsInvoice() {
     if (!collectionsPosition?.nextId) {
@@ -1940,6 +2085,7 @@ export function InvoicesView({
     setAppliedFilters(next);
     setInvoiceQueue("");
     setAgingBucket("");
+    clearPromisePanelState();
     setFilterValidationError(null);
     setPage(1);
     onDiscoveryChange?.(1, next, "", "");
@@ -1956,6 +2102,7 @@ export function InvoicesView({
     setAppliedFilters(next);
     setInvoiceQueue("");
     setAgingBucket("");
+    clearPromisePanelState();
     setFilterValidationError(null);
     setPage(1);
     onDiscoveryChange?.(1, next, "", "");
@@ -1972,6 +2119,7 @@ export function InvoicesView({
     setAppliedFilters(discovery.invoiceFilters);
     setInvoiceQueue("overdue");
     setAgingBucket("");
+    clearPromisePanelState();
     setFilterValidationError(null);
     setPage(1);
     onDiscoveryChange?.(1, discovery.invoiceFilters, "overdue", "");
@@ -1984,7 +2132,130 @@ export function InvoicesView({
 
     setAgingBucket(nextBucket);
     setPage(1);
-    onDiscoveryChange?.(1, appliedFilters, "overdue", nextBucket);
+    publishDiscovery(
+      1,
+      appliedFilters,
+      "overdue",
+      nextBucket,
+      collectionPanel,
+      promiseGroup,
+      promiseSearch
+    );
+  }
+
+  function applyCollectionPanel(nextPanel: CollectionPanelMode) {
+    if (!isOverdueInvoiceQueue(invoiceQueue)) {
+      return;
+    }
+
+    const panel: CollectionPanelMode = nextPanel === "followups" ? "followups" : "";
+    setCollectionPanel(panel);
+    if (panel !== "followups") {
+      setPromiseGroup("");
+      setPromiseSearch("");
+      setPromiseSearchDraft("");
+    }
+    setPage(1);
+    publishDiscovery(
+      1,
+      appliedFilters,
+      "overdue",
+      agingBucket,
+      panel,
+      panel === "followups" ? promiseGroup : "",
+      panel === "followups" ? promiseSearch : ""
+    );
+  }
+
+  function applyPromiseGroup(nextGroup: PromiseGroupFilter) {
+    if (!isOverdueInvoiceQueue(invoiceQueue) || collectionPanel !== "followups") {
+      return;
+    }
+
+    setPromiseGroup(nextGroup);
+    publishDiscovery(
+      1,
+      appliedFilters,
+      "overdue",
+      agingBucket,
+      "followups",
+      nextGroup,
+      promiseSearch
+    );
+  }
+
+  function applyPromiseSearch(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!isOverdueInvoiceQueue(invoiceQueue) || collectionPanel !== "followups") {
+      return;
+    }
+
+    const nextSearch = promiseSearchDraft.trim();
+    setPromiseSearch(nextSearch);
+    setPromiseSearchDraft(nextSearch);
+    publishDiscovery(
+      1,
+      appliedFilters,
+      "overdue",
+      agingBucket,
+      "followups",
+      promiseGroup,
+      nextSearch
+    );
+  }
+
+  function bumpPromiseRevision() {
+    setPromiseRevision((value) => value + 1);
+  }
+
+  function openPromiseForm(existing: PromiseToPayRecord | null) {
+    setPromiseFormOpen(true);
+    setPromiseDateInput(existing?.promiseDate ?? "");
+    setPromiseNoteInput(existing?.note ?? "");
+    setPromiseFormError(null);
+    setPromiseFormSuccess(null);
+  }
+
+  function closePromiseForm() {
+    setPromiseFormOpen(false);
+    setPromiseFormError(null);
+  }
+
+  function handleSavePromise(invoiceId: string) {
+    setPromiseBusy(true);
+    setPromiseFormError(null);
+    setPromiseFormSuccess(null);
+    const result = savePromiseToPay(
+      invoiceId,
+      { promiseDate: promiseDateInput, note: promiseNoteInput },
+      { preserveStatus: true }
+    );
+    setPromiseBusy(false);
+    if (!result.ok) {
+      setPromiseFormError(result.error);
+      return;
+    }
+    setPromiseFormSuccess(
+      result.record.note
+        ? `Обіцянку збережено на ${result.record.promiseDate}.`
+        : `Обіцянку збережено на ${result.record.promiseDate}.`
+    );
+    setPromiseFormOpen(false);
+    bumpPromiseRevision();
+  }
+
+  function handlePromiseStatus(invoiceId: string, status: PromiseToPayRecord["status"]) {
+    setPromiseBusy(true);
+    setPromiseFormError(null);
+    setPromiseFormSuccess(null);
+    const result = updatePromiseStatus(invoiceId, status);
+    setPromiseBusy(false);
+    if (!result.ok) {
+      setPromiseFormError(result.error);
+      return;
+    }
+    setPromiseFormSuccess(`Follow-up: ${result.record.status}.`);
+    bumpPromiseRevision();
   }
 
   return (
@@ -2084,7 +2355,39 @@ export function InvoicesView({
                   строк сьогодні). Сортування: прострочені спочатку → більше днів → більша сума.
                   Це не статус оплати.
                 </p>
-                {collectionsSummary ? (
+                <div
+                  className="aging-bucket-row"
+                  role="group"
+                  aria-label="Collection workspace panels"
+                >
+                  <button
+                    type="button"
+                    className={
+                      !followUpsPanelActive
+                        ? "list-shortcut list-shortcut--active"
+                        : "list-shortcut"
+                    }
+                    aria-pressed={!followUpsPanelActive}
+                    disabled={loading}
+                    onClick={() => applyCollectionPanel("")}
+                  >
+                    Overdue queue
+                  </button>
+                  <button
+                    type="button"
+                    className={
+                      followUpsPanelActive
+                        ? "list-shortcut list-shortcut--attention list-shortcut--active"
+                        : "list-shortcut list-shortcut--attention"
+                    }
+                    aria-pressed={followUpsPanelActive}
+                    disabled={loading}
+                    onClick={() => applyCollectionPanel("followups")}
+                  >
+                    Promise Follow-ups
+                  </button>
+                </div>
+                {!followUpsPanelActive && collectionsSummary ? (
                   <dl className="collections-summary facts collections-kpi">
                     <div>
                       <dt>Total Overdue</dt>
@@ -2121,34 +2424,119 @@ export function InvoicesView({
                     </div>
                   </dl>
                 ) : null}
+                {followUpsPanelActive && promiseSummary ? (
+                  <dl className="collections-summary facts collections-kpi">
+                    <div>
+                      <dt>Promises due today</dt>
+                      <dd>{promiseSummary.dueTodayCount}</dd>
+                    </div>
+                    <div>
+                      <dt>Broken promises</dt>
+                      <dd>{promiseSummary.brokenCount}</dd>
+                    </div>
+                    <div>
+                      <dt>Amount promised</dt>
+                      <dd>
+                        {formatTotals(promiseSummary.promisedTotalsByCurrency)}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Follow-ups required</dt>
+                      <dd>{promiseSummary.followUpRequiredCount}</dd>
+                    </div>
+                  </dl>
+                ) : null}
                 {totalCount > invoices.length ? (
                   <p className="meta">
                     Завантажено {invoices.length} з {totalCount} за запитом (ліміт collections{" "}
                     {COLLECTIONS_PAGE_SIZE}). Підсумок і Next — у межах завантаженого набору.
                   </p>
                 ) : null}
-                <div
-                  className="aging-bucket-row"
-                  role="group"
-                  aria-label="Фільтр днів прострочки"
-                >
-                  {AGING_BUCKET_OPTIONS.map((option) => (
-                    <button
-                      key={option.id || "all"}
-                      type="button"
-                      className={
-                        agingBucket === option.id
-                          ? "list-shortcut list-shortcut--active"
-                          : "list-shortcut"
-                      }
-                      aria-pressed={agingBucket === option.id}
-                      disabled={loading}
-                      onClick={() => applyAgingBucket(option.id)}
+                {!followUpsPanelActive ? (
+                  <div
+                    className="aging-bucket-row"
+                    role="group"
+                    aria-label="Фільтр днів прострочки"
+                  >
+                    {AGING_BUCKET_OPTIONS.map((option) => (
+                      <button
+                        key={option.id || "all"}
+                        type="button"
+                        className={
+                          agingBucket === option.id
+                            ? "list-shortcut list-shortcut--active"
+                            : "list-shortcut"
+                        }
+                        aria-pressed={agingBucket === option.id}
+                        disabled={loading}
+                        onClick={() => applyAgingBucket(option.id)}
+                      >
+                        {option.shortLabel}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <>
+                    <div
+                      className="aging-bucket-row"
+                      role="group"
+                      aria-label="Promise follow-up groups"
                     >
-                      {option.shortLabel}
-                    </button>
-                  ))}
-                </div>
+                      {PROMISE_GROUP_OPTIONS.map((option) => (
+                        <button
+                          key={option.id || "all-followups"}
+                          type="button"
+                          className={
+                            promiseGroup === option.id
+                              ? "list-shortcut list-shortcut--active"
+                              : "list-shortcut"
+                          }
+                          aria-pressed={promiseGroup === option.id}
+                          disabled={loading}
+                          onClick={() => applyPromiseGroup(option.id)}
+                        >
+                          {option.shortLabel}
+                        </button>
+                      ))}
+                    </div>
+                    <form className="filter-form promise-search-form" onSubmit={applyPromiseSearch}>
+                      <label>
+                        Пошук follow-up
+                        <input
+                          value={promiseSearchDraft}
+                          onChange={(event) => setPromiseSearchDraft(event.target.value)}
+                          placeholder="номер рахунку або контрагент"
+                          autoComplete="off"
+                        />
+                      </label>
+                      <div className="filter-actions">
+                        <button type="submit" disabled={loading}>
+                          Знайти
+                        </button>
+                        <button
+                          type="button"
+                          className="button-secondary"
+                          disabled={loading}
+                          onClick={() => {
+                            setPromiseSearchDraft("");
+                            setPromiseSearch("");
+                            publishDiscovery(
+                              1,
+                              appliedFilters,
+                              "overdue",
+                              agingBucket,
+                              "followups",
+                              promiseGroup,
+                              ""
+                            );
+                          }}
+                        >
+                          Скинути пошук
+                        </button>
+                      </div>
+                    </form>
+                  </>
+                )}
               </div>
             ) : null}
 
@@ -2786,6 +3174,30 @@ export function InvoicesView({
                   }
                 : null
             }
+            promiseContext={
+              overdueQueueActive && detailTargetId
+                ? {
+                    record: detailPromiseRecord,
+                    formOpen: promiseFormOpen,
+                    promiseDate: promiseDateInput,
+                    note: promiseNoteInput,
+                    error: promiseFormError,
+                    success: promiseFormSuccess,
+                    busy: promiseBusy,
+                    onOpenForm: () => openPromiseForm(detailPromiseRecord),
+                    onCloseForm: closePromiseForm,
+                    onPromiseDateChange: setPromiseDateInput,
+                    onNoteChange: setPromiseNoteInput,
+                    onSave: () => handleSavePromise(detailTargetId),
+                    onMarkFollowUpRequired: () =>
+                      handlePromiseStatus(detailTargetId, "follow_up_required"),
+                    onMarkContacted: () =>
+                      handlePromiseStatus(detailTargetId, "contacted"),
+                    onComplete: () => handlePromiseStatus(detailTargetId, "completed"),
+                    onReopen: () => handlePromiseStatus(detailTargetId, "awaiting")
+                  }
+                : null
+            }
           />
         ) : null}
 
@@ -2798,18 +3210,134 @@ export function InvoicesView({
             retryDisabled={loading}
             empty={listEmpty}
             emptyMessage={
-              overdueQueueActive
-                ? agingBucket
-                  ? `У bucket «${agingBucketLabel(agingBucket)}» немає прострочених рахунків у завантаженому наборі.`
-                  : "Немає рахунків до збору оплат (прострочені або строк сьогодні)."
-                : filtersActive
-                  ? "За поточними фільтрами рахунків немає."
-                  : "Рахунків ще немає. Створіть чернетку через форму вище."
+              followUpsPanelActive
+                ? promiseGroup || promiseSearch
+                  ? "За поточними follow-up фільтрами обіцянок немає."
+                  : "Немає збережених promise-to-pay follow-ups для завантажених рахунків."
+                : overdueQueueActive
+                  ? agingBucket
+                    ? `У bucket «${agingBucketLabel(agingBucket)}» немає прострочених рахунків у завантаженому наборі.`
+                    : "Немає рахунків до збору оплат (прострочені або строк сьогодні)."
+                  : filtersActive
+                    ? "За поточними фільтрами рахунків немає."
+                    : "Рахунків ще немає. Створіть чернетку через форму вище."
             }
           />
         ) : null}
 
-        {displayInvoices.length > 0 ? (
+        {followUpsPanelActive && promiseGroups && promiseFollowUpItems.length > 0 ? (
+          <>
+            <p className="meta">
+              Promise Follow-ups · показано {promiseFollowUpItems.length}
+              {promiseGroup ? ` · ${PROMISE_GROUP_OPTIONS.find((o) => o.id === promiseGroup)?.label}` : ""}
+              {promiseSearch ? ` · пошук «${promiseSearch}»` : ""}
+            </p>
+            {(
+              [
+                "due_today",
+                "upcoming",
+                "broken",
+                "follow_up_required",
+                "completed"
+              ] as const
+            )
+              .filter((groupId) => !promiseGroup || promiseGroup === groupId)
+              .map((groupId) => {
+                const rows = promiseGroups[groupId];
+                if (rows.length === 0) {
+                  return null;
+                }
+                return (
+                  <div key={groupId} className="promise-group-section">
+                    <h4 className="promise-group-title">
+                      {PROMISE_GROUP_OPTIONS.find((option) => option.id === groupId)?.label ??
+                        groupId}
+                    </h4>
+                    <div className="table-wrap">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Invoice Number</th>
+                            <th>Customer</th>
+                            <th>Overdue amount</th>
+                            <th>Original due date</th>
+                            <th>Promise date</th>
+                            <th>Days to / past promise</th>
+                            <th>Follow-up status</th>
+                            <th>Note</th>
+                            <th>Дія</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {rows.map((item: PromiseFollowUpItem) => {
+                            const selected =
+                              item.invoiceId === detailTargetId ||
+                              item.invoiceId === highlightedId;
+                            return (
+                              <tr
+                                key={item.invoiceId}
+                                data-row-id={item.invoiceId}
+                                className={
+                                  selected
+                                    ? `row-attention row-attention--promise-${item.group} row-highlight row-selected`
+                                    : `row-attention row-attention--promise-${item.group}`
+                                }
+                              >
+                                <td className="cell-wrap">{item.documentNumber}</td>
+                                <td className="cell-wrap">{item.counterpartyReference}</td>
+                                <td>{formatMoney(item.overdueAmount, item.currency)}</td>
+                                <td>
+                                  {item.originalDueDate
+                                    ? formatDate(`${item.originalDueDate}T00:00:00.000Z`)
+                                    : "—"}
+                                </td>
+                                <td>{item.promiseDate}</td>
+                                <td>
+                                  <span
+                                    className={`aging-badge aging-badge--promise aging-badge--promise-group-${item.group}`}
+                                  >
+                                    {item.daysRelativeLabel}
+                                  </span>
+                                </td>
+                                <td>
+                                  <span
+                                    className={`aging-badge aging-badge--promise aging-badge--promise-${item.status}`}
+                                  >
+                                    {item.statusLabel}
+                                  </span>
+                                </td>
+                                <td className="cell-wrap">{item.note || "—"}</td>
+                                <td>
+                                  <button
+                                    type="button"
+                                    className="button-secondary"
+                                    onClick={() => {
+                                      const invoice = invoices.find(
+                                        (row) => row.id === item.invoiceId
+                                      );
+                                      if (invoice) {
+                                        beginViewInvoiceDetails(invoice);
+                                      } else {
+                                        onSelectedInvoiceIdChange?.(item.invoiceId);
+                                      }
+                                    }}
+                                  >
+                                    Відкрити
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                );
+              })}
+          </>
+        ) : null}
+
+        {!followUpsPanelActive && displayInvoices.length > 0 ? (
           <>
             <p className="meta">
               {overdueQueueActive
@@ -3060,7 +3588,15 @@ export function InvoicesView({
                 onClick={() => {
                   const nextPage = Math.max(1, page - 1);
                   setPage(nextPage);
-                  onDiscoveryChange?.(nextPage, appliedFilters, invoiceQueue, agingBucket);
+                  publishDiscovery(
+                    nextPage,
+                    appliedFilters,
+                    invoiceQueue,
+                    agingBucket,
+                    collectionPanel,
+                    promiseGroup,
+                    promiseSearch
+                  );
                 }}
               >
                 Назад
@@ -3074,7 +3610,15 @@ export function InvoicesView({
                 onClick={() => {
                   const nextPage = page + 1;
                   setPage(nextPage);
-                  onDiscoveryChange?.(nextPage, appliedFilters, invoiceQueue, agingBucket);
+                  publishDiscovery(
+                    nextPage,
+                    appliedFilters,
+                    invoiceQueue,
+                    agingBucket,
+                    collectionPanel,
+                    promiseGroup,
+                    promiseSearch
+                  );
                 }}
               >
                 Далі

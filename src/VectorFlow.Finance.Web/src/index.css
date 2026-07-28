@@ -231,6 +231,96 @@ body {
   color: #7a3418;
 }
 
+.promise-followup-block {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0.85rem 0 0;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid rgba(36, 90, 158, 0.28);
+  background: rgba(36, 90, 158, 0.06);
+}
+
+.promise-followup-block h4 {
+  margin: 0;
+  font-size: 0.95rem;
+  color: #244a7a;
+}
+
+.promise-persistence-note {
+  margin: 0;
+}
+
+.promise-search-form {
+  margin-top: 0.45rem;
+}
+
+.promise-group-section {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0.85rem 0 0;
+}
+
+.promise-group-title {
+  margin: 0;
+  font-size: 0.95rem;
+  color: #7a3418;
+}
+
+.row-attention--promise-broken {
+  background: rgba(158, 74, 36, 0.1);
+}
+
+.row-attention--promise-due_today {
+  background: rgba(196, 149, 40, 0.12);
+}
+
+.row-attention--promise-upcoming {
+  background: rgba(31, 107, 69, 0.08);
+}
+
+.row-attention--promise-follow_up_required {
+  background: rgba(120, 60, 140, 0.08);
+}
+
+.row-attention--promise-completed {
+  background: rgba(68, 84, 102, 0.06);
+}
+
+.aging-badge--promise-broken,
+.aging-badge--promise-group-broken {
+  border-color: rgba(158, 74, 36, 0.55);
+  background: rgba(158, 74, 36, 0.12);
+  color: #7a3418;
+}
+
+.aging-badge--promise-due_today,
+.aging-badge--promise-group-due_today {
+  border-color: rgba(120, 90, 20, 0.45);
+  background: rgba(196, 149, 40, 0.14);
+  color: #6a4d10;
+}
+
+.aging-badge--promise-upcoming,
+.aging-badge--promise-group-upcoming {
+  border-color: rgba(31, 107, 69, 0.4);
+  background: rgba(31, 107, 69, 0.1);
+  color: #1f6b45;
+}
+
+.aging-badge--promise-follow_up_required,
+.aging-badge--promise-group-follow_up_required {
+  border-color: rgba(120, 60, 140, 0.45);
+  background: rgba(120, 60, 140, 0.1);
+  color: #5a2f6a;
+}
+
+.aging-badge--promise-completed,
+.aging-badge--promise-group-completed,
+.aging-badge--promise-awaiting,
+.aging-badge--promise-contacted {
+  color: #445466;
+}
+
 .row-selected {
   outline: 2px solid rgba(158, 74, 36, 0.45);
   outline-offset: -2px;

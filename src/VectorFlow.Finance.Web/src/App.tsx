@@ -21,6 +21,8 @@ import {
 } from "./urlState";
 import type { InvoiceQueueMode } from "./invoiceListQuery";
 import type { AgingBucketFilter } from "./invoiceCollections";
+import type { PromiseGroupFilter } from "./promiseToPay";
+import type { CollectionPanelMode } from "./urlState";
 import { InvoicesView } from "./InvoicesView";
 import { APP_VIEWS, type AppView } from "./navigation";
 import { WorkspaceContextBar } from "./WorkspaceContextBar";
@@ -219,14 +221,23 @@ export default function App() {
       page: number,
       filters: ListDiscovery["invoiceFilters"],
       invoiceQueue: InvoiceQueueMode = "",
-      agingBucket: AgingBucketFilter = ""
+      agingBucket: AgingBucketFilter = "",
+      collectionPanel: CollectionPanelMode = "",
+      promiseGroup: PromiseGroupFilter = "",
+      promiseSearch: string = ""
     ) => {
+      const overdue = invoiceQueue === "overdue";
+      const panel: CollectionPanelMode =
+        overdue && collectionPanel === "followups" ? "followups" : "";
       setDiscovery((current) => ({
         ...current,
         page,
         invoiceFilters: filters,
         invoiceQueue,
-        agingBucket: invoiceQueue === "overdue" ? agingBucket : ""
+        agingBucket: overdue ? agingBucket : "",
+        collectionPanel: panel,
+        promiseGroup: panel === "followups" ? promiseGroup : "",
+        promiseSearch: panel === "followups" ? promiseSearch.trim() : ""
       }));
     },
     []
@@ -459,6 +470,9 @@ export default function App() {
           initialFilters={discovery.invoiceFilters}
           initialInvoiceQueue={discovery.invoiceQueue}
           initialAgingBucket={discovery.agingBucket}
+          initialCollectionPanel={discovery.collectionPanel}
+          initialPromiseGroup={discovery.promiseGroup}
+          initialPromiseSearch={discovery.promiseSearch}
           selectedInvoiceId={invoiceId}
           onDiscoveryChange={handleInvoiceDiscoveryChange}
           onSelectedInvoiceIdChange={handleInvoiceIdChange}
