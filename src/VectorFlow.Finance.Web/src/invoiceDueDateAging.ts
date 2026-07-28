@@ -154,10 +154,18 @@ export function classifyDueDateAging(
 }
 
 /**
- * Inclusive dueToUtc upper bound for overdue queue.
+ * Inclusive dueToUtc upper bound for overdue-only queries.
  * Backend: dueDate <= dueToUtc. End of yesterday excludes today's calendar due dates
  * stored as todayT00:00:00.000Z.
  */
 export function overdueQueueDueToDateInput(now: Date = new Date()): string {
   return localCalendarYesterdayString(now);
+}
+
+/**
+ * Inclusive dueToUtc upper bound for payment collection workspace.
+ * Includes overdue and due-today Issued invoices (calendar due date ≤ local today).
+ */
+export function collectionsQueueDueToDateInput(now: Date = new Date()): string {
+  return localCalendarDateString(now);
 }

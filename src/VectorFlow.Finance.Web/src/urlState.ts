@@ -26,11 +26,11 @@ export type ListDiscovery = {
   page: number;
   invoiceFilters: InvoiceListFilters;
   accrualFilters: AccrualListFilters;
-  /** Issued overdue attention queue (`queue=overdue` in URL). */
+  /** Payment collection workspace (`queue=overdue` in URL): overdue + due today. */
   invoiceQueue: InvoiceQueueMode;
   /**
-   * Collections aging bucket (`aging=` in URL). Meaningful only with queue=overdue.
-   * Empty = all overdue.
+   * Overdue-day aging bucket (`aging=` in URL). Meaningful only with queue=overdue.
+   * Empty = all attention (overdue + due today).
    */
   agingBucket: AgingBucketFilter;
 };
@@ -311,7 +311,7 @@ export function buildUrlSearch(state: AppUrlState): string {
     setIfPresent(params, "issuedFrom", filters.issuedFromDate);
     setIfPresent(params, "issuedTo", filters.issuedToDate);
     setIfPresent(params, "dueFrom", filters.dueFromDate);
-    // Overdue queue derives dueTo at query time; do not freeze yesterday into the URL.
+    // Payment collection queue derives dueTo at query time; do not freeze today into the URL.
     if (invoiceQueue !== "overdue") {
       setIfPresent(params, "dueTo", filters.dueToDate);
     }
@@ -389,9 +389,9 @@ export function issuedInvoicesDiscovery(): ListDiscovery {
 }
 
 /**
- * Overdue Issued collections workspace: status=Issued + queue=overdue.
- * Server dueToUtc is computed at query time as end of local yesterday (inclusive bound).
- * Aging bucket defaults to all overdue.
+ * Payment collection workspace: status=Issued + queue=overdue.
+ * Server dueToUtc is computed at query time as end of local today (overdue + due today).
+ * Aging bucket defaults to all attention.
  */
 export function overdueIssuedInvoicesDiscovery(): ListDiscovery {
   return {

@@ -8,6 +8,7 @@ import {
   collectionsQueuePosition,
   compareCollectionsPriority,
   invoiceMatchesAgingBucket,
+  invoiceMatchesCollectionsQueue,
   parseAgingBucketParam,
   type CollectionsInvoiceLike
 } from "./invoiceCollections.ts";
@@ -97,6 +98,12 @@ describe("invoice aging bucket from due dates", () => {
     assert.equal(invoiceMatchesAgingBucket(row, "8-30", now), true);
     assert.equal(invoiceMatchesAgingBucket(row, "1-7", now), false);
   });
+
+  it("includes due today only when aging bucket is all attention", () => {
+    const dueToday = invoice({ id: "t", dueDateUtc: "2026-07-28T00:00:00.000Z" });
+    assert.equal(invoiceMatchesCollectionsQueue(dueToday, "", now), true);
+    assert.equal(invoiceMatchesCollectionsQueue(dueToday, "1-7", now), false);
+  });
 });
 
 describe("collections priority sort", () => {
@@ -131,6 +138,17 @@ describe("collections priority sort", () => {
     assert.deepEqual(ordered, ["a", "c", "b", "d"]);
   });
 
+  it("places overdue before due today", () => {
+    const rows = [
+      invoice({ id: "today", dueDateUtc: "2026-07-28T00:00:00.000Z", totalAmount: 999 }),
+      invoice({ id: "over", dueDateUtc: "2026-07-27T00:00:00.000Z", totalAmount: 1 })
+    ];
+    assert.deepEqual(
+      buildCollectionsQueue(rows, "", now).map((row) => row.id),
+      ["over", "today"]
+    );
+  });
+
   it("compare is stable for identical priority keys except id", () => {
     const a = invoice({
       id: "aaa",
@@ -150,23 +168,30 @@ describe("collections priority sort", () => {
 describe("collections summary and next position", () => {
   const now = new Date(2026, 6, 28, 15, 0, 0);
 
-  it("summarizes loaded overdue set and bucket subset", () => {
+  it("summarizes overdue, due today, and outstanding amounts", () => {
     const rows = [
       invoice({ id: "1", dueDateUtc: "2026-07-27T00:00:00.000Z", totalAmount: 10, currency: "UAH" }),
       invoice({ id: "2", dueDateUtc: "2026-07-01T00:00:00.000Z", totalAmount: 40, currency: "UAH" }),
-      invoice({ id: "3", dueDateUtc: "2026-07-20T00:00:00.000Z", totalAmount: 5, currency: "EUR" })
+      invoice({ id: "3", dueDateUtc: "2026-07-20T00:00:00.000Z", totalAmount: 5, currency: "EUR" }),
+      invoice({ id: "4", dueDateUtc: "2026-07-28T00:00:00.000Z", totalAmount: 25, currency: "UAH" }),
+      invoice({ id: "5", dueDateUtc: "2026-07-30T00:00:00.000Z", totalAmount: 100, currency: "UAH" })
     ];
 
     const all = buildCollectionsSummary(rows, "", now);
     assert.equal(all.overdueCount, 3);
-    assert.equal(all.bucketCount, 3);
+    assert.equal(all.dueTodayCount, 1);
+    assert.equal(all.attentionCount, 4);
+    assert.equal(all.bucketCount, 4);
     assert.equal(all.oldestDaysOverdue, 27);
-    assert.equal(all.totalsByCurrency.length, 2);
+    assert.equal(all.overdueTotalsByCurrency.find((row) => row.currency === "UAH")?.amount, 50);
+    assert.equal(all.dueTodayTotalsByCurrency[0]?.amount, 25);
+    assert.equal(all.outstandingTotalsByCurrency.find((row) => row.currency === "UAH")?.amount, 75);
 
     const bucket = buildCollectionsSummary(rows, "1-7", now);
     assert.equal(bucket.bucketCount, 1);
-    assert.equal(bucket.bucketLabel, "1–7 днів");
-    assert.equal(bucket.totalsByCurrency[0]?.amount, 10);
+    assert.equal(bucket.dueTodayCount, 1);
+    assert.equal(bucket.bucketLabel, "1–7 днів прострочки");
+    assert.equal(bucket.outstandingTotalsByCurrency[0]?.amount, 10);
   });
 
   it("resolves next invoice inside the current ordered queue", () => {

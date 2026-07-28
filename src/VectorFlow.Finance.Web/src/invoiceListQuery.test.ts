@@ -29,7 +29,7 @@ describe("invoiceListQuery", () => {
     });
   });
 
-  it("overdue queue forces Issued and dueTo end of local yesterday", () => {
+  it("overdue queue forces Issued and dueTo end of local today", () => {
     const now = new Date(2026, 6, 27, 10, 0, 0);
     const { query, validationError } = buildInvoiceListQuery(
       1,
@@ -46,7 +46,7 @@ describe("invoiceListQuery", () => {
     assert.equal(validationError, null);
     assert.equal(query.status, "Issued");
     assert.equal(query.counterpartyReference, "acme");
-    assert.equal(query.dueToUtc, "2026-07-26T23:59:59.999Z");
+    assert.equal(query.dueToUtc, "2026-07-27T23:59:59.999Z");
   });
 
   it("hasActiveInvoiceDiscovery treats overdue queue as active", () => {

@@ -44,7 +44,7 @@ export function WorkspaceContextBar({
               className="button-secondary"
               onClick={onShowOverdueIssuedInvoices}
             >
-              Прострочені
+              Збір оплат
             </button>
             <button type="button" className="button-secondary" onClick={onCopyLink}>
               Скопіювати посилання

@@ -1,8 +1,11 @@
-import { overdueQueueDueToDateInput } from "./invoiceDueDateAging.ts";
+import { collectionsQueueDueToDateInput } from "./invoiceDueDateAging.ts";
 
 export type InvoiceStatusFilter = "" | "Draft" | "Issued";
 
-/** Durable attention queue marker (URL `queue=overdue`). */
+/**
+ * Durable payment collection workspace marker (URL `queue=overdue`).
+ * Loads Issued invoices with due date on or before local today (overdue + due today).
+ */
 export type InvoiceQueueMode = "" | "overdue";
 
 export type InvoiceListFilters = {
@@ -88,7 +91,8 @@ export function validateDueDateRange(fromDate: string, toDate: string): string |
 
 /**
  * Resolve list filters for API query.
- * Overdue queue forces status=Issued and dueTo=local yesterday (inclusive dueToUtc excludes today).
+ * Payment collection queue forces status=Issued and dueTo=local today
+ * (inclusive dueToUtc includes overdue and due-today calendar dates).
  * Explicit dueToDate in filters is overridden while the queue is active so reload stays current.
  */
 export function resolveInvoiceFiltersForQuery(
@@ -103,7 +107,7 @@ export function resolveInvoiceFiltersForQuery(
   return {
     ...filters,
     status: "Issued",
-    dueToDate: overdueQueueDueToDateInput(now)
+    dueToDate: collectionsQueueDueToDateInput(now)
   };
 }
 

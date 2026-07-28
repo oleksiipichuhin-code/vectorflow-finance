@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   calendarDayDiff,
   classifyDueDateAging,
+  collectionsQueueDueToDateInput,
   dueDateCalendarString,
   localCalendarDateString,
   localCalendarYesterdayString,
@@ -91,11 +92,11 @@ describe("classifyDueDateAging", () => {
   });
 });
 
-describe("overdue queue dueTo mapping", () => {
-  it("uses inclusive dueToUtc end of local yesterday so today is excluded", () => {
+describe("payment collection queue dueTo mapping", () => {
+  it("uses inclusive dueToUtc end of local today so overdue and due today are included", () => {
     const now = new Date(2026, 6, 27, 12, 0, 0);
-    const dueToDate = overdueQueueDueToDateInput(now);
-    assert.equal(dueToDate, "2026-07-26");
+    assert.equal(overdueQueueDueToDateInput(now), "2026-07-26");
+    assert.equal(collectionsQueueDueToDateInput(now), "2026-07-27");
 
     const { query, validationError } = buildInvoiceListQuery(
       1,
@@ -108,15 +109,16 @@ describe("overdue queue dueTo mapping", () => {
     assert.equal(validationError, null);
     assert.equal(query.status, "Issued");
     assert.equal(query.counterpartyReference, "acme");
-    assert.equal(query.dueToUtc, dateInputToUtcEnd("2026-07-26"));
+    assert.equal(query.dueToUtc, dateInputToUtcEnd("2026-07-27"));
     assert.equal(query.dueFromUtc, undefined);
 
-    // Inclusive bound includes yesterday midnight due dates.
     const yesterdayDue = Date.parse("2026-07-26T00:00:00.000Z");
     const todayDue = Date.parse("2026-07-27T00:00:00.000Z");
+    const tomorrowDue = Date.parse("2026-07-28T00:00:00.000Z");
     const bound = Date.parse(query.dueToUtc!);
     assert.ok(yesterdayDue <= bound);
-    assert.ok(todayDue > bound);
+    assert.ok(todayDue <= bound);
+    assert.ok(tomorrowDue > bound);
   });
 
   it("resolveInvoiceFiltersForQuery overrides stale dueTo while queue is active", () => {
@@ -131,7 +133,7 @@ describe("overdue queue dueTo mapping", () => {
       now
     );
     assert.equal(resolved.status, "Issued");
-    assert.equal(resolved.dueToDate, "2026-07-26");
+    assert.equal(resolved.dueToDate, "2026-07-27");
     assert.equal(resolved.dueFromDate, "2025-01-01");
   });
 

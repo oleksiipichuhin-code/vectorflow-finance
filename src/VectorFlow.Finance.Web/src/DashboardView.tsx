@@ -215,14 +215,14 @@ export function DashboardView({
                 className="list-shortcut list-shortcut--attention"
                 onClick={onShowOverdueIssuedInvoices}
               >
-                Прострочені рахунки
+                Збір оплат
               </button>
             </div>
             <p className="meta">
               Чернетки — <span className="mono">status=Draft</span>. Виставлені —
-              <span className="mono"> status=Issued</span>. Прострочені — collections workspace
-              для Issued зі строком оплати раніше за сьогоднішню календарну дату (не факт
-              оплати). Сторінка 1, стан у shareable URL.
+              <span className="mono"> status=Issued</span>. Збір оплат — payment collection
+              workspace для Issued зі строком сьогодні або раніше (не факт оплати). Сторінка 1,
+              стан у shareable URL.
             </p>
           </div>
         ) : (

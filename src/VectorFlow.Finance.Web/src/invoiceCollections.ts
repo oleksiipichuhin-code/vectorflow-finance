@@ -1,7 +1,7 @@
 /**
- * Overdue collections workspace helpers.
- * Aging buckets and priority sort use calendar due-date aging only —
- * never payment/settlement status. Amounts are invoice totals from the API.
+ * Payment collection workspace helpers.
+ * Attention set = Issued invoices that are overdue or due today (calendar due-date aging only —
+ * never payment/settlement status). Amounts are invoice totals from the API.
  */
 
 import {
@@ -11,7 +11,7 @@ import {
 
 export type AgingBucketId = "1-7" | "8-30" | "31-60" | "61-90" | "90+";
 
-/** Empty string = all overdue (no bucket filter). */
+/** Empty string = all attention (overdue + due today; no overdue-day bucket filter). */
 export type AgingBucketFilter = "" | AgingBucketId;
 
 export const AGING_BUCKET_IDS: readonly AgingBucketId[] = [
@@ -31,12 +31,12 @@ export type AgingBucketOption = {
 };
 
 export const AGING_BUCKET_OPTIONS: readonly AgingBucketOption[] = [
-  { id: "", label: "Усі прострочені", shortLabel: "Усі" },
-  { id: "1-7", label: "1–7 днів", shortLabel: "1–7" },
-  { id: "8-30", label: "8–30 днів", shortLabel: "8–30" },
-  { id: "31-60", label: "31–60 днів", shortLabel: "31–60" },
-  { id: "61-90", label: "61–90 днів", shortLabel: "61–90" },
-  { id: "90+", label: "90+ днів", shortLabel: "90+" }
+  { id: "", label: "Усі до уваги", shortLabel: "Усі" },
+  { id: "1-7", label: "1–7 днів прострочки", shortLabel: "1–7" },
+  { id: "8-30", label: "8–30 днів прострочки", shortLabel: "8–30" },
+  { id: "31-60", label: "31–60 днів прострочки", shortLabel: "31–60" },
+  { id: "61-90", label: "61–90 днів прострочки", shortLabel: "61–90" },
+  { id: "90+", label: "90+ днів прострочки", shortLabel: "90+" }
 ];
 
 export type CollectionsInvoiceLike = {
@@ -88,7 +88,7 @@ export function parseAgingBucketParam(value: string | null | undefined): AgingBu
 
 export function agingBucketLabel(bucket: AgingBucketFilter): string {
   const found = AGING_BUCKET_OPTIONS.find((option) => option.id === bucket);
-  return found?.label ?? "Усі прострочені";
+  return found?.label ?? "Усі до уваги";
 }
 
 export function overdueDaysForInvoice(
@@ -100,6 +100,21 @@ export function overdueDaysForInvoice(
     return null;
   }
   return aging.dayOffset;
+}
+
+export function isDueTodayInvoice(
+  invoice: Pick<CollectionsInvoiceLike, "dueDateUtc">,
+  now: Date = new Date()
+): boolean {
+  return classifyDueDateAging(invoice.dueDateUtc, now).kind === "due_today";
+}
+
+export function isCollectionsAttentionInvoice(
+  invoice: Pick<CollectionsInvoiceLike, "dueDateUtc">,
+  now: Date = new Date()
+): boolean {
+  const kind = classifyDueDateAging(invoice.dueDateUtc, now).kind;
+  return kind === "overdue" || kind === "due_today";
 }
 
 export function agingBucketForInvoice(
@@ -129,17 +144,41 @@ export function invoiceMatchesAgingBucket(
 }
 
 /**
- * Priority: more overdue days → higher totalAmount → earlier due calendar day → id.
+ * Payment collection list membership.
+ * Empty bucket = all attention (overdue + due today).
+ * Non-empty bucket = overdue days only (due today excluded).
+ */
+export function invoiceMatchesCollectionsQueue(
+  invoice: Pick<CollectionsInvoiceLike, "dueDateUtc">,
+  bucket: AgingBucketFilter,
+  now: Date = new Date()
+): boolean {
+  if (!bucket) {
+    return isCollectionsAttentionInvoice(invoice, now);
+  }
+  return invoiceMatchesAgingBucket(invoice, bucket, now);
+}
+
+/**
+ * Priority: overdue before due today → more overdue days → higher totalAmount →
+ * earlier due calendar day → id.
  */
 export function compareCollectionsPriority(
   a: CollectionsInvoiceLike,
   b: CollectionsInvoiceLike,
   now: Date = new Date()
 ): number {
-  const daysA = overdueDaysForInvoice(a, now) ?? -1;
-  const daysB = overdueDaysForInvoice(b, now) ?? -1;
-  if (daysA !== daysB) {
-    return daysB - daysA;
+  const daysA = overdueDaysForInvoice(a, now);
+  const daysB = overdueDaysForInvoice(b, now);
+  const overdueA = daysA != null;
+  const overdueB = daysB != null;
+
+  if (overdueA !== overdueB) {
+    return overdueA ? -1 : 1;
+  }
+
+  if (overdueA && overdueB && daysA !== daysB) {
+    return (daysB as number) - (daysA as number);
   }
 
   if (a.totalAmount !== b.totalAmount) {
@@ -164,7 +203,7 @@ export function buildCollectionsQueue<T extends CollectionsInvoiceLike>(
   now: Date = new Date()
 ): T[] {
   return invoices
-    .filter((invoice) => invoiceMatchesAgingBucket(invoice, bucket, now))
+    .filter((invoice) => invoiceMatchesCollectionsQueue(invoice, bucket, now))
     .slice()
     .sort((a, b) => compareCollectionsPriority(a, b, now));
 }
@@ -176,22 +215,42 @@ export type CurrencyTotal = {
 
 export type CollectionsSummary = {
   overdueCount: number;
+  dueTodayCount: number;
+  attentionCount: number;
   bucketCount: number;
   bucket: AgingBucketFilter;
   bucketLabel: string;
   oldestDaysOverdue: number | null;
+  overdueTotalsByCurrency: CurrencyTotal[];
+  dueTodayTotalsByCurrency: CurrencyTotal[];
+  outstandingTotalsByCurrency: CurrencyTotal[];
+  /** @deprecated Prefer outstandingTotalsByCurrency (bucket view totals). */
   totalsByCurrency: CurrencyTotal[];
 };
 
+function totalsByCurrencyFor(
+  invoices: readonly CollectionsInvoiceLike[]
+): CurrencyTotal[] {
+  const totals = new Map<string, number>();
+  for (const invoice of invoices) {
+    const code = invoice.currency?.trim() || "—";
+    totals.set(code, (totals.get(code) ?? 0) + invoice.totalAmount);
+  }
+
+  return [...totals.entries()]
+    .map(([currency, amount]) => ({ currency, amount }))
+    .sort((a, b) => a.currency.localeCompare(b.currency));
+}
+
 export function buildCollectionsSummary(
-  overdueInvoices: readonly CollectionsInvoiceLike[],
+  invoices: readonly CollectionsInvoiceLike[],
   bucket: AgingBucketFilter = "",
   now: Date = new Date()
 ): CollectionsSummary {
-  const overdueOnly = overdueInvoices.filter(
-    (invoice) => overdueDaysForInvoice(invoice, now) != null
-  );
-  const queue = buildCollectionsQueue(overdueOnly, bucket, now);
+  const overdueOnly = invoices.filter((invoice) => overdueDaysForInvoice(invoice, now) != null);
+  const dueTodayOnly = invoices.filter((invoice) => isDueTodayInvoice(invoice, now));
+  const attention = invoices.filter((invoice) => isCollectionsAttentionInvoice(invoice, now));
+  const queue = buildCollectionsQueue(attention, bucket, now);
 
   let oldest: number | null = null;
   for (const invoice of overdueOnly) {
@@ -204,23 +263,20 @@ export function buildCollectionsSummary(
     }
   }
 
-  const totals = new Map<string, number>();
-  for (const invoice of queue) {
-    const code = invoice.currency?.trim() || "—";
-    totals.set(code, (totals.get(code) ?? 0) + invoice.totalAmount);
-  }
-
-  const totalsByCurrency = [...totals.entries()]
-    .map(([currency, amount]) => ({ currency, amount }))
-    .sort((a, b) => a.currency.localeCompare(b.currency));
+  const outstandingTotalsByCurrency = totalsByCurrencyFor(queue);
 
   return {
     overdueCount: overdueOnly.length,
+    dueTodayCount: dueTodayOnly.length,
+    attentionCount: attention.length,
     bucketCount: queue.length,
     bucket,
     bucketLabel: agingBucketLabel(bucket),
     oldestDaysOverdue: oldest,
-    totalsByCurrency
+    overdueTotalsByCurrency: totalsByCurrencyFor(overdueOnly),
+    dueTodayTotalsByCurrency: totalsByCurrencyFor(dueTodayOnly),
+    outstandingTotalsByCurrency,
+    totalsByCurrency: outstandingTotalsByCurrency
   };
 }
 

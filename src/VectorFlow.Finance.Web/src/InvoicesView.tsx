@@ -37,7 +37,7 @@ import {
 } from "./invoiceListQuery";
 import {
   classifyDueDateAging,
-  overdueQueueDueToDateInput
+  collectionsQueueDueToDateInput
 } from "./invoiceDueDateAging";
 import {
   AGING_BUCKET_OPTIONS,
@@ -1852,8 +1852,15 @@ export function InvoicesView({
   const overdueQueueActive = isOverdueInvoiceQueue(invoiceQueue);
   const filtersActive = hasActiveInvoiceDiscovery(appliedFilters, invoiceQueue);
   const effectiveDueToForSummary = overdueQueueActive
-    ? overdueQueueDueToDateInput()
+    ? collectionsQueueDueToDateInput()
     : appliedFilters.dueToDate?.trim() || "";
+
+  function formatTotals(totals: { amount: number; currency: string }[]): string {
+    if (totals.length === 0) {
+      return "—";
+    }
+    return totals.map((row) => formatMoney(row.amount, row.currency)).join(" · ");
+  }
   const draftFilterActive =
     !overdueQueueActive &&
     appliedFilters.status === "Draft" &&
@@ -2054,58 +2061,62 @@ export function InvoicesView({
                       ? "list-shortcut list-shortcut--attention list-shortcut--active"
                       : "list-shortcut list-shortcut--attention"
                   }
-                  title="status=Issued · queue=overdue · строк раніше за сьогодні · не факт оплати"
+                  title="status=Issued · queue=overdue · строк ≤ сьогодні · прострочені + строк сьогодні · не факт оплати"
                   aria-pressed={overdueFilterActive}
                   disabled={loading}
                   onClick={applyOverdueIssuedInvoicesFilter}
                 >
-                  Прострочені
+                  Збір оплат
                 </button>
               </div>
               <p className="meta">
-                Чернетки — Draft. Виставлені — Issued. Прострочені — Issued зі строком оплати
-                раніше за сьогоднішню календарну дату (класифікація строку, не оплати). Стан у
-                URL.
+                Чернетки — Draft. Виставлені — Issued. Збір оплат — Issued зі строком сьогодні
+                або раніше (класифікація строку, не оплати). Стан у URL.
               </p>
             </div>
 
             {overdueQueueActive ? (
               <div className="queue-banner" role="status">
-                <p className="queue-banner-title">Collections: прострочені виставлені рахунки</p>
+                <p className="queue-banner-title">Payment collection workspace</p>
                 <p className="meta">
                   Серверний фільтр: <span className="mono">status=Issued</span>, строк оплати по{" "}
-                  <span className="mono">{effectiveDueToForSummary}</span> (включно; сьогоднішній
-                  строк виключено). Сортування: більше днів прострочення → більша сума рахунка.
+                  <span className="mono">{effectiveDueToForSummary}</span> (включно: прострочені та
+                  строк сьогодні). Сортування: прострочені спочатку → більше днів → більша сума.
                   Це не статус оплати.
                 </p>
                 {collectionsSummary ? (
-                  <dl className="collections-summary facts">
+                  <dl className="collections-summary facts collections-kpi">
                     <div>
-                      <dt>Overdue у наборі</dt>
-                      <dd>{collectionsSummary.overdueCount}</dd>
-                    </div>
-                    <div>
-                      <dt>Bucket</dt>
+                      <dt>Total Overdue</dt>
                       <dd>
-                        {collectionsSummary.bucketLabel} · {collectionsSummary.bucketCount}
+                        {collectionsSummary.overdueCount}
+                        <span className="collections-kpi-amount">
+                          {formatTotals(collectionsSummary.overdueTotalsByCurrency)}
+                        </span>
                       </dd>
                     </div>
                     <div>
-                      <dt>Найстарша прострочка</dt>
+                      <dt>Total Due Today</dt>
                       <dd>
-                        {collectionsSummary.oldestDaysOverdue == null
-                          ? "—"
-                          : `${collectionsSummary.oldestDaysOverdue} дн.`}
+                        {collectionsSummary.dueTodayCount}
+                        <span className="collections-kpi-amount">
+                          {formatTotals(collectionsSummary.dueTodayTotalsByCurrency)}
+                        </span>
                       </dd>
                     </div>
                     <div>
-                      <dt>Сума рахунків (bucket)</dt>
+                      <dt>Total Outstanding Amount</dt>
                       <dd>
-                        {collectionsSummary.totalsByCurrency.length === 0
-                          ? "—"
-                          : collectionsSummary.totalsByCurrency
-                              .map((row) => formatMoney(row.amount, row.currency))
-                              .join(" · ")}
+                        {formatTotals(collectionsSummary.outstandingTotalsByCurrency)}
+                        {agingBucket ? (
+                          <span className="collections-kpi-amount">
+                            {collectionsSummary.bucketLabel} · {collectionsSummary.bucketCount}
+                          </span>
+                        ) : (
+                          <span className="collections-kpi-amount">
+                            {collectionsSummary.attentionCount} рах.
+                          </span>
+                        )}
                       </dd>
                     </div>
                   </dl>
@@ -2119,7 +2130,7 @@ export function InvoicesView({
                 <div
                   className="aging-bucket-row"
                   role="group"
-                  aria-label="Aging buckets прострочки"
+                  aria-label="Фільтр днів прострочки"
                 >
                   {AGING_BUCKET_OPTIONS.map((option) => (
                     <button
@@ -2790,7 +2801,7 @@ export function InvoicesView({
               overdueQueueActive
                 ? agingBucket
                   ? `У bucket «${agingBucketLabel(agingBucket)}» немає прострочених рахунків у завантаженому наборі.`
-                  : "Прострочених виставлених рахунків немає (строк оплати раніше за сьогодні)."
+                  : "Немає рахунків до збору оплат (прострочені або строк сьогодні)."
                 : filtersActive
                   ? "За поточними фільтрами рахунків немає."
                   : "Рахунків ще немає. Створіть чернетку через форму вище."
@@ -2802,23 +2813,38 @@ export function InvoicesView({
           <>
             <p className="meta">
               {overdueQueueActive
-                ? `Collections queue · показано ${displayInvoices.length} · overdue у запиті ${totalCount}`
+                ? `Payment collection · показано ${displayInvoices.length} · у запиті ${totalCount}`
                 : `Сторінка ${page} · показано ${displayInvoices.length} · усього ${totalCount}`}
             </p>
             <div className="table-wrap">
               <table>
                 <thead>
                   <tr>
-                    <th>Номер</th>
-                    <th>Контрагент</th>
-                    <th>Сума</th>
-                    <th>Валюта</th>
-                    <th>Виставлено</th>
-                    <th>Строк оплати</th>
-                    <th>Статус</th>
-                    <th>Статус строку</th>
-                    <th>Дні / bucket</th>
-                    <th>Дія</th>
+                    {overdueQueueActive ? (
+                      <>
+                        <th>Invoice Number</th>
+                        <th>Customer</th>
+                        <th>Amount</th>
+                        <th>Currency</th>
+                        <th>Due Date</th>
+                        <th>Days Overdue</th>
+                        <th>Status</th>
+                        <th>Дія</th>
+                      </>
+                    ) : (
+                      <>
+                        <th>Номер</th>
+                        <th>Контрагент</th>
+                        <th>Сума</th>
+                        <th>Валюта</th>
+                        <th>Виставлено</th>
+                        <th>Строк оплати</th>
+                        <th>Статус</th>
+                        <th>Статус строку</th>
+                        <th>Дні / bucket</th>
+                        <th>Дія</th>
+                      </>
+                    )}
                   </tr>
                 </thead>
                 <tbody>
@@ -2828,33 +2854,69 @@ export function InvoicesView({
                     const daysOverdue = overdueDaysForInvoice(invoice);
                     const selected =
                       invoice.id === detailTargetId || invoice.id === highlightedId;
+                    const attentionClass = overdueQueueActive
+                      ? aging.kind === "overdue"
+                        ? "row-attention row-attention--overdue"
+                        : aging.kind === "due_today"
+                          ? "row-attention row-attention--due-today"
+                          : ""
+                      : "";
+                    const rowClass = [attentionClass, selected ? "row-highlight row-selected" : ""]
+                      .filter(Boolean)
+                      .join(" ");
                     return (
                     <tr
                       key={invoice.id}
                       data-row-id={invoice.id}
-                      className={
-                        selected
-                          ? "row-highlight row-selected"
-                          : undefined
-                      }
+                      className={rowClass || undefined}
                     >
-                      <td className="cell-wrap">{invoice.documentNumber}</td>
-                      <td className="cell-wrap">{invoice.counterpartyReference}</td>
-                      <td>{formatMoney(invoice.totalAmount, invoice.currency)}</td>
-                      <td>{invoice.currency}</td>
-                      <td>{formatDate(invoice.issuedAtUtc)}</td>
-                      <td>{formatDate(invoice.dueDateUtc)}</td>
-                      <td>{invoice.status}</td>
-                      <td>
-                        <span className={`aging-badge aging-badge--${aging.kind}`}>
-                          {aging.label}
-                        </span>
-                      </td>
-                      <td>
-                        {daysOverdue != null && bucket
-                          ? `${daysOverdue} дн. · ${bucket}`
-                          : aging.dayOffsetLabel}
-                      </td>
+                      {overdueQueueActive ? (
+                        <>
+                          <td className="cell-wrap">{invoice.documentNumber}</td>
+                          <td className="cell-wrap">{invoice.counterpartyReference}</td>
+                          <td>{formatMoney(invoice.totalAmount, invoice.currency)}</td>
+                          <td>{invoice.currency}</td>
+                          <td>{formatDate(invoice.dueDateUtc)}</td>
+                          <td>
+                            {daysOverdue != null ? (
+                              <span className="aging-badge aging-badge--overdue">
+                                {daysOverdue} дн.
+                              </span>
+                            ) : aging.kind === "due_today" ? (
+                              <span className="aging-badge aging-badge--due_today">
+                                Строк сьогодні
+                              </span>
+                            ) : (
+                              aging.dayOffsetLabel
+                            )}
+                          </td>
+                          <td>
+                            <span className={`aging-badge aging-badge--${aging.kind}`}>
+                              {invoice.status}
+                            </span>
+                          </td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="cell-wrap">{invoice.documentNumber}</td>
+                          <td className="cell-wrap">{invoice.counterpartyReference}</td>
+                          <td>{formatMoney(invoice.totalAmount, invoice.currency)}</td>
+                          <td>{invoice.currency}</td>
+                          <td>{formatDate(invoice.issuedAtUtc)}</td>
+                          <td>{formatDate(invoice.dueDateUtc)}</td>
+                          <td>{invoice.status}</td>
+                          <td>
+                            <span className={`aging-badge aging-badge--${aging.kind}`}>
+                              {aging.label}
+                            </span>
+                          </td>
+                          <td>
+                            {daysOverdue != null && bucket
+                              ? `${daysOverdue} дн. · ${bucket}`
+                              : aging.dayOffsetLabel}
+                          </td>
+                        </>
+                      )}
                       <td>
                         <div className="filter-actions">
                           {canViewInvoiceDetails(invoice) ? (

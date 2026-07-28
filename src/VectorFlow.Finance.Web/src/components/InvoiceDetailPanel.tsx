@@ -265,13 +265,13 @@ export function InvoiceDetailPanel({
               className="collections-context-block"
               aria-labelledby="invoice-collections-heading"
             >
-              <h4 id="invoice-collections-heading">Collections</h4>
+              <h4 id="invoice-collections-heading">Payment collection</h4>
               <dl className="facts">
                 <div>
                   <dt>Дні прострочення</dt>
                   <dd>
                     {collectionsContext.daysOverdue == null
-                      ? "—"
+                      ? "Строк сьогодні / —"
                       : collectionsContext.daysOverdue}
                   </dd>
                 </div>
@@ -321,7 +321,7 @@ export function InvoiceDetailPanel({
                   }
                   onClick={collectionsContext.onNext}
                 >
-                  Next overdue invoice
+                  Next collection invoice
                 </button>
                 {collectionsContext.isLast ? (
                   <p className="meta">Останній рахунок у поточній collections queue.</p>

@@ -187,11 +187,33 @@ body {
   margin: 0.35rem 0 0;
 }
 
+.collections-kpi {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 0.65rem 1rem;
+}
+
+.collections-kpi-amount {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #445466;
+}
+
 .aging-bucket-row {
   display: flex;
   flex-wrap: wrap;
   gap: 0.4rem;
   margin-top: 0.45rem;
+}
+
+.row-attention--overdue {
+  background: rgba(158, 74, 36, 0.08);
+}
+
+.row-attention--due-today {
+  background: rgba(196, 149, 40, 0.1);
 }
 
 .collections-context-block {
