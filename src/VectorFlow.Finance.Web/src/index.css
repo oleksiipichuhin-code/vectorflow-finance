@@ -396,6 +396,25 @@ body {
   color: #5a2f6a;
 }
 
+.aging-badge--escalation-open {
+  border-color: rgba(120, 60, 140, 0.45);
+  background: rgba(120, 60, 140, 0.1);
+  color: #5a2f6a;
+}
+
+.aging-badge--escalation-completed {
+  border-color: rgba(68, 84, 102, 0.35);
+  background: rgba(68, 84, 102, 0.08);
+  color: #445466;
+}
+
+.aging-badge--escalation-critical {
+  border-color: rgba(158, 74, 36, 0.55);
+  background: rgba(158, 74, 36, 0.14);
+  color: #7a3418;
+  font-weight: 700;
+}
+
 .aging-badge--resolution-unable_to_contact {
   color: #445466;
 }

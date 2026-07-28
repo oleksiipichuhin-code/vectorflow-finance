@@ -5,25 +5,35 @@ import {
   buildPromiseFollowUpItems,
   buildPromiseFollowUpSummary,
   classifyPromiseGroup,
+  completeCollectionEscalation,
   filterPromiseFollowUps,
   groupPromiseFollowUps,
+  isEscalationOverdue,
+  listActiveNextActionCandidates,
   listPromiseRecordsFromStorage,
+  NEXT_ACTION_TIE_BREAK,
   raiseCollectionDispute,
+  raiseCollectionEscalation,
   readPromiseFromStorage,
   rejectCollectionDispute,
   removePromiseFromStorage,
   resolveCollectionDispute,
+  resolveNextAction,
+  resolveNextActionDate,
   saveCollectionContact,
   savePromiseToPay,
   sanitizePromiseRecord,
   storageKeyForInvoice,
   updateCollectionDispute,
+  updateCollectionEscalation,
   updateContactFollowUp,
   updatePromiseStatus,
   validateCollectionContactInput,
   validateCollectionDisputeInput,
+  validateCollectionEscalationInput,
   validateCollectionResolutionInput,
   validateDisputeCloseInput,
+  validateEscalationCompleteInput,
   validatePromiseToPayInput,
   type PromiseInvoiceLike,
   type PromiseToPayRecord
@@ -176,6 +186,7 @@ describe("promiseToPay classification", () => {
       nextFollowUpAt: null,
       lastContact: null,
       dispute: null,
+      escalation: null,
       history: [],
       ...overrides
     };
@@ -623,6 +634,7 @@ describe("collection resolution workflow", () => {
       nextFollowUpAt: null,
       lastContact: null,
       dispute: null,
+      escalation: null,
       history: []
     };
     assert.equal(
@@ -1147,5 +1159,365 @@ describe("collection dispute workflow", () => {
     assert.ok(rejected.record.history.some((e) => e.type === "promise_created"));
     assert.ok(rejected.record.history.some((e) => e.type === "dispute_raised"));
     assert.ok(rejected.record.history.some((e) => e.type === "dispute_rejected"));
+  });
+});
+
+describe("collection escalation workflow", () => {
+  const now = new Date("2026-07-28T12:00:00.000Z");
+  const invoice: PromiseInvoiceLike = {
+    id: INVOICE_A,
+    documentNumber: "INV-ESC-1",
+    counterpartyReference: "Customer ESC",
+    dueDateUtc: "2026-07-01T00:00:00.000Z",
+    totalAmount: 1500,
+    currency: "UAH"
+  };
+
+  it("parses old records without escalation field", () => {
+    const storage = new MemoryStorage();
+    storage.setItem(
+      storageKeyForInvoice(INVOICE_A),
+      JSON.stringify({
+        invoiceId: INVOICE_A,
+        promiseDate: "2026-08-01",
+        status: "awaiting",
+        note: "",
+        updatedAtUtc: "2026-07-28T00:00:00.000Z",
+        completedAtUtc: null,
+        resolution: null,
+        history: []
+      })
+    );
+    const record = readPromiseFromStorage(INVOICE_A, storage);
+    assert.ok(record);
+    assert.equal(record?.escalation, null);
+    assert.equal(record?.dispute, null);
+  });
+
+  it("validates required escalation fields", () => {
+    assert.equal(
+      validateCollectionEscalationInput({
+        reason: "",
+        priority: "",
+        responsibleTeam: "",
+        requestedAction: "",
+        dueDate: ""
+      }).ok,
+      false
+    );
+    assert.equal(
+      validateCollectionEscalationInput({
+        reason: "",
+        priority: "critical",
+        responsibleTeam: "legal",
+        requestedAction: "call manager",
+        dueDate: "2026-08-10"
+      }).ok,
+      false
+    );
+    assert.equal(
+      validateCollectionEscalationInput({
+        reason: "broken_promise",
+        priority: "",
+        responsibleTeam: "legal",
+        requestedAction: "call manager",
+        dueDate: "2026-08-10"
+      }).ok,
+      false
+    );
+    assert.equal(
+      validateCollectionEscalationInput({
+        reason: "broken_promise",
+        priority: "critical",
+        responsibleTeam: "",
+        requestedAction: "call manager",
+        dueDate: "2026-08-10"
+      }).ok,
+      false
+    );
+    assert.equal(
+      validateCollectionEscalationInput({
+        reason: "broken_promise",
+        priority: "critical",
+        responsibleTeam: "legal",
+        requestedAction: "   ",
+        dueDate: "2026-08-10"
+      }).ok,
+      false
+    );
+    assert.equal(
+      validateCollectionEscalationInput({
+        reason: "broken_promise",
+        priority: "critical",
+        responsibleTeam: "legal",
+        requestedAction: "call manager",
+        dueDate: ""
+      }).ok,
+      false
+    );
+    assert.equal(
+      validateCollectionEscalationInput({
+        reason: "broken_promise",
+        priority: "critical",
+        responsibleTeam: "legal",
+        requestedAction: "call manager",
+        dueDate: "not-a-date"
+      }).ok,
+      false
+    );
+    assert.equal(
+      validateCollectionEscalationInput({
+        reason: "broken_promise",
+        priority: "critical",
+        responsibleTeam: "legal",
+        requestedAction: "call manager",
+        dueDate: "2026-08-10"
+      }).ok,
+      true
+    );
+  });
+
+  it("raises escalation, maps history and workbench eligibility", () => {
+    const storage = new MemoryStorage();
+    const raised = raiseCollectionEscalation(
+      INVOICE_A,
+      {
+        reason: "repeated_no_response",
+        priority: "critical",
+        responsibleTeam: "finance",
+        requestedAction: "manager outreach",
+        dueDate: "2026-08-05"
+      },
+      { storage, now }
+    );
+    assert.equal(raised.ok, true);
+    if (!raised.ok) return;
+    assert.equal(raised.record.escalation?.status, "open");
+    assert.equal(raised.record.escalation?.priority, "critical");
+    assert.equal(classifyPromiseGroup(raised.record, now), "escalated");
+    assert.ok(raised.record.history.some((e) => e.type === "case_escalated"));
+    assert.equal(
+      raised.record.history.filter((e) => e.type === "case_escalated").length,
+      1
+    );
+
+    const reloaded = readPromiseFromStorage(INVOICE_A, storage);
+    assert.equal(reloaded?.escalation?.dueDate, "2026-08-05");
+    assert.equal(reloaded?.escalation?.responsibleTeam, "finance");
+
+    const items = buildPromiseFollowUpItems([invoice], [raised.record], now);
+    assert.equal(items[0]?.group, "escalated");
+    assert.equal(items[0]?.escalationDueAt, "2026-08-05");
+    assert.equal(filterPromiseFollowUps(items, { group: "escalated" }).length, 1);
+  });
+
+  it("blocks second active escalation and updates with handoff summary", () => {
+    const storage = new MemoryStorage();
+    raiseCollectionEscalation(
+      INVOICE_A,
+      {
+        reason: "broken_promise",
+        priority: "high",
+        responsibleTeam: "finance",
+        requestedAction: "recover promise",
+        dueDate: "2026-08-12"
+      },
+      { storage, now }
+    );
+    const second = raiseCollectionEscalation(
+      INVOICE_A,
+      {
+        reason: "active_dispute",
+        priority: "critical",
+        responsibleTeam: "legal",
+        requestedAction: "legal review",
+        dueDate: "2026-08-15"
+      },
+      { storage, now: new Date(now.getTime() + 1000) }
+    );
+    assert.equal(second.ok, false);
+
+    const updated = updateCollectionEscalation(
+      INVOICE_A,
+      {
+        reason: "broken_promise",
+        priority: "critical",
+        responsibleTeam: "legal",
+        requestedAction: "handoff to legal",
+        dueDate: "2026-08-18"
+      },
+      { storage, now: new Date(now.getTime() + 2000) }
+    );
+    assert.equal(updated.ok, true);
+    if (!updated.ok) return;
+    assert.equal(updated.record.escalation?.id.startsWith("escalation|"), true);
+    assert.equal(updated.record.escalation?.responsibleTeam, "legal");
+    assert.equal(
+      updated.record.history.filter((e) => e.type === "case_escalated").length,
+      1
+    );
+    assert.equal(
+      updated.record.history.filter((e) => e.type === "escalation_updated").length,
+      1
+    );
+    const handoffEvent = updated.record.history.find((e) => e.type === "escalation_updated");
+    assert.ok(handoffEvent?.description.includes("Finance → Legal"));
+
+    const noop = updateCollectionEscalation(
+      INVOICE_A,
+      {
+        reason: "broken_promise",
+        priority: "critical",
+        responsibleTeam: "legal",
+        requestedAction: "handoff to legal",
+        dueDate: "2026-08-18"
+      },
+      { storage, now: new Date(now.getTime() + 3000) }
+    );
+    assert.equal(noop.ok, true);
+    if (!noop.ok) return;
+    assert.equal(
+      noop.record.history.filter((e) => e.type === "escalation_updated").length,
+      1
+    );
+  });
+
+  it("requires completion comment and excludes completed from escalated queue", () => {
+    const storage = new MemoryStorage();
+    raiseCollectionEscalation(
+      INVOICE_A,
+      {
+        reason: "due_date_exceeded",
+        priority: "normal",
+        responsibleTeam: "collections",
+        requestedAction: "collect payment",
+        dueDate: "2026-08-01"
+      },
+      { storage, now }
+    );
+    assert.equal(validateEscalationCompleteInput({ comment: "   " }).ok, false);
+    const completed = completeCollectionEscalation(
+      INVOICE_A,
+      { comment: "resolved with customer" },
+      { storage, now: new Date(now.getTime() + 1000) }
+    );
+    assert.equal(completed.ok, true);
+    if (!completed.ok) return;
+    assert.equal(completed.record.escalation?.status, "completed");
+    assert.equal(completed.record.escalation?.completionComment, "resolved with customer");
+    assert.ok(completed.record.history.some((e) => e.type === "escalation_completed"));
+    assert.notEqual(classifyPromiseGroup(completed.record, now), "escalated");
+    assert.equal(completed.record.resolution, null);
+    const items = buildPromiseFollowUpItems([invoice], [completed.record], now);
+    assert.equal(filterPromiseFollowUps(items, { group: "escalated" }).length, 0);
+  });
+
+  it("marks overdue escalation and preserves coexistence with follow-up and dispute", () => {
+    const storage = new MemoryStorage();
+    savePromiseToPay(
+      INVOICE_A,
+      { promiseDate: "2026-08-20", note: "base" },
+      { storage, now }
+    );
+    saveCollectionContact(
+      INVOICE_A,
+      {
+        channel: "phone",
+        result: "no_answer",
+        note: "missed",
+        followUpAt: "2026-08-10"
+      },
+      { storage, now: new Date(now.getTime() + 1000) }
+    );
+    raiseCollectionDispute(
+      INVOICE_A,
+      {
+        reason: "incorrect_amount",
+        description: "amount mismatch",
+        responsibleParty: "finance",
+        nextReviewAt: "2026-08-10"
+      },
+      { storage, now: new Date(now.getTime() + 2000) }
+    );
+    const raised = raiseCollectionEscalation(
+      INVOICE_A,
+      {
+        reason: "active_dispute",
+        priority: "critical",
+        responsibleTeam: "legal",
+        requestedAction: "priority review",
+        dueDate: "2026-08-10"
+      },
+      { storage, now: new Date(now.getTime() + 3000) }
+    );
+    assert.equal(raised.ok, true);
+    if (!raised.ok) return;
+
+    assert.equal(raised.record.nextFollowUpAt, "2026-08-10");
+    assert.equal(raised.record.dispute?.nextReviewAt, "2026-08-10");
+    assert.equal(raised.record.escalation?.dueDate, "2026-08-10");
+    assert.ok(raised.record.history.some((e) => e.type === "contact_logged"));
+    assert.ok(raised.record.history.some((e) => e.type === "dispute_raised"));
+    assert.ok(raised.record.history.some((e) => e.type === "case_escalated"));
+
+    const candidates = listActiveNextActionCandidates(raised.record);
+    assert.equal(candidates.length, 3);
+    const selected = resolveNextAction(raised.record);
+    assert.equal(selected?.kind, "critical_escalation");
+    assert.equal(selected?.date, "2026-08-10");
+    assert.equal(resolveNextActionDate(raised.record), "2026-08-10");
+    assert.deepEqual(NEXT_ACTION_TIE_BREAK, [
+      "critical_escalation",
+      "dispute_review",
+      "escalation",
+      "contact_follow_up"
+    ]);
+
+    const overdueNow = new Date("2026-08-12T12:00:00.000Z");
+    assert.equal(isEscalationOverdue(raised.record.escalation, overdueNow), true);
+    const items = buildPromiseFollowUpItems([invoice], [raised.record], overdueNow);
+    assert.equal(items[0]?.escalationOverdue, true);
+    assert.equal(items[0]?.group, "escalated");
+  });
+
+  it("uses deterministic tie-break when escalation is not critical", () => {
+    const record: PromiseToPayRecord = {
+      invoiceId: INVOICE_A,
+      promiseDate: "2026-08-20",
+      note: "",
+      status: "follow_up_required",
+      updatedAtUtc: now.toISOString(),
+      completedAtUtc: null,
+      resolution: null,
+      nextFollowUpAt: "2026-08-10",
+      lastContact: null,
+      dispute: {
+        id: "d1",
+        status: "open",
+        reason: "other",
+        description: "x",
+        responsibleParty: "finance",
+        openedAtUtc: now.toISOString(),
+        updatedAtUtc: now.toISOString(),
+        nextReviewAt: "2026-08-10",
+        resolutionComment: null,
+        resolvedAtUtc: null
+      },
+      escalation: {
+        id: "e1",
+        status: "open",
+        reason: "other",
+        priority: "normal",
+        responsibleTeam: "operations",
+        requestedAction: "check docs",
+        dueDate: "2026-08-10",
+        openedAtUtc: now.toISOString(),
+        updatedAtUtc: now.toISOString(),
+        completedAtUtc: null,
+        completionComment: null
+      },
+      history: []
+    };
+    assert.equal(resolveNextAction(record)?.kind, "dispute_review");
   });
 });

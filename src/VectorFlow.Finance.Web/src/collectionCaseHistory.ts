@@ -29,6 +29,9 @@ export type CollectionActivityEventType =
   | "dispute_resolved"
   | "dispute_rejected"
   | "escalated"
+  | "case_escalated"
+  | "escalation_updated"
+  | "escalation_completed"
   | "unable_to_contact"
   | "completed";
 
@@ -59,6 +62,25 @@ export type DisputeParty =
   | "operations"
   | "other";
 
+export type EscalationReason =
+  | "broken_promise"
+  | "repeated_no_response"
+  | "active_dispute"
+  | "high_outstanding_balance"
+  | "due_date_exceeded"
+  | "documentation_required"
+  | "other";
+
+export type EscalationPriority = "normal" | "high" | "critical";
+
+export type EscalationTeam =
+  | "collections"
+  | "finance"
+  | "operations"
+  | "account_management"
+  | "legal"
+  | "other";
+
 export type CollectionActivityEvent = {
   id: string;
   type: CollectionActivityEventType;
@@ -71,6 +93,9 @@ export type CollectionActivityEvent = {
   followUpAt: string | null;
   disputeReason: DisputeReason | null;
   disputeParty: DisputeParty | null;
+  escalationReason: EscalationReason | null;
+  escalationTeam: EscalationTeam | null;
+  escalationPriority: EscalationPriority | null;
 };
 
 export type CaseHistorySummary = {
@@ -119,6 +144,9 @@ export const ACTIVITY_EVENT_TYPE_OPTIONS: readonly {
   { id: "dispute_resolved", label: "Dispute resolved" },
   { id: "dispute_rejected", label: "Dispute rejected" },
   { id: "escalated", label: "Escalated" },
+  { id: "case_escalated", label: "Case escalated" },
+  { id: "escalation_updated", label: "Escalation updated" },
+  { id: "escalation_completed", label: "Escalation completed" },
   { id: "unable_to_contact", label: "Unable to contact" },
   { id: "completed", label: "Completed" }
 ];
@@ -168,6 +196,40 @@ export const DISPUTE_PARTY_OPTIONS: readonly {
   { id: "other", label: "Other" }
 ];
 
+export const ESCALATION_REASON_OPTIONS: readonly {
+  id: EscalationReason;
+  label: string;
+}[] = [
+  { id: "broken_promise", label: "Broken promise" },
+  { id: "repeated_no_response", label: "Repeated no response" },
+  { id: "active_dispute", label: "Active dispute" },
+  { id: "high_outstanding_balance", label: "High outstanding balance" },
+  { id: "due_date_exceeded", label: "Due date exceeded" },
+  { id: "documentation_required", label: "Documentation required" },
+  { id: "other", label: "Other" }
+];
+
+export const ESCALATION_PRIORITY_OPTIONS: readonly {
+  id: EscalationPriority;
+  label: string;
+}[] = [
+  { id: "normal", label: "Normal" },
+  { id: "high", label: "High" },
+  { id: "critical", label: "Critical" }
+];
+
+export const ESCALATION_TEAM_OPTIONS: readonly {
+  id: EscalationTeam;
+  label: string;
+}[] = [
+  { id: "collections", label: "Collections" },
+  { id: "finance", label: "Finance" },
+  { id: "operations", label: "Operations" },
+  { id: "account_management", label: "Account Management" },
+  { id: "legal", label: "Legal" },
+  { id: "other", label: "Other" }
+];
+
 const EVENT_TYPE_SET: ReadonlySet<string> = new Set(
   ACTIVITY_EVENT_TYPE_OPTIONS.map((option) => option.id).filter(Boolean)
 );
@@ -188,6 +250,18 @@ const DISPUTE_PARTY_SET: ReadonlySet<string> = new Set(
   DISPUTE_PARTY_OPTIONS.map((option) => option.id)
 );
 
+const ESCALATION_REASON_SET: ReadonlySet<string> = new Set(
+  ESCALATION_REASON_OPTIONS.map((option) => option.id)
+);
+
+const ESCALATION_PRIORITY_SET: ReadonlySet<string> = new Set(
+  ESCALATION_PRIORITY_OPTIONS.map((option) => option.id)
+);
+
+const ESCALATION_TEAM_SET: ReadonlySet<string> = new Set(
+  ESCALATION_TEAM_OPTIONS.map((option) => option.id)
+);
+
 const EVENT_LABELS: Record<CollectionActivityEventType, string> = {
   promise_created: "Promise created",
   promise_updated: "Promise updated",
@@ -204,6 +278,9 @@ const EVENT_LABELS: Record<CollectionActivityEventType, string> = {
   dispute_resolved: "Dispute resolved",
   dispute_rejected: "Dispute rejected",
   escalated: "Escalated",
+  case_escalated: "Case escalated",
+  escalation_updated: "Escalation updated",
+  escalation_completed: "Escalation completed",
   unable_to_contact: "Unable to contact",
   completed: "Completed"
 };
@@ -244,6 +321,23 @@ export function disputePartyLabel(party: DisputeParty): string {
   return DISPUTE_PARTY_OPTIONS.find((option) => option.id === party)?.label ?? party;
 }
 
+export function escalationReasonLabel(reason: EscalationReason): string {
+  return (
+    ESCALATION_REASON_OPTIONS.find((option) => option.id === reason)?.label ?? reason
+  );
+}
+
+export function escalationPriorityLabel(priority: EscalationPriority): string {
+  return (
+    ESCALATION_PRIORITY_OPTIONS.find((option) => option.id === priority)?.label ??
+    priority
+  );
+}
+
+export function escalationTeamLabel(team: EscalationTeam): string {
+  return ESCALATION_TEAM_OPTIONS.find((option) => option.id === team)?.label ?? team;
+}
+
 export function parseContactChannel(value: string | null | undefined): ContactChannel | null {
   if (value == null) {
     return null;
@@ -274,6 +368,34 @@ export function parseDisputeParty(value: string | null | undefined): DisputePart
   }
   const trimmed = value.trim();
   return DISPUTE_PARTY_SET.has(trimmed) ? (trimmed as DisputeParty) : null;
+}
+
+export function parseEscalationReason(
+  value: string | null | undefined
+): EscalationReason | null {
+  if (value == null) {
+    return null;
+  }
+  const trimmed = value.trim();
+  return ESCALATION_REASON_SET.has(trimmed) ? (trimmed as EscalationReason) : null;
+}
+
+export function parseEscalationPriority(
+  value: string | null | undefined
+): EscalationPriority | null {
+  if (value == null) {
+    return null;
+  }
+  const trimmed = value.trim();
+  return ESCALATION_PRIORITY_SET.has(trimmed) ? (trimmed as EscalationPriority) : null;
+}
+
+export function parseEscalationTeam(value: string | null | undefined): EscalationTeam | null {
+  if (value == null) {
+    return null;
+  }
+  const trimmed = value.trim();
+  return ESCALATION_TEAM_SET.has(trimmed) ? (trimmed as EscalationTeam) : null;
 }
 
 export function parseHistoryEventTypeParam(
@@ -310,6 +432,9 @@ export function activityEventFingerprint(
     | "followUpAt"
     | "disputeReason"
     | "disputeParty"
+    | "escalationReason"
+    | "escalationTeam"
+    | "escalationPriority"
   >
 ): string {
   return [
@@ -322,7 +447,10 @@ export function activityEventFingerprint(
     event.contactResult ?? "",
     event.followUpAt ?? "",
     event.disputeReason ?? "",
-    event.disputeParty ?? ""
+    event.disputeParty ?? "",
+    event.escalationReason ?? "",
+    event.escalationTeam ?? "",
+    event.escalationPriority ?? ""
   ].join("|");
 }
 
@@ -337,6 +465,9 @@ export function createActivityEvent(input: {
   followUpAt?: string | null;
   disputeReason?: DisputeReason | null;
   disputeParty?: DisputeParty | null;
+  escalationReason?: EscalationReason | null;
+  escalationTeam?: EscalationTeam | null;
+  escalationPriority?: EscalationPriority | null;
   id?: string;
 }): CollectionActivityEvent {
   const note = input.note?.trim() ? input.note.trim() : null;
@@ -346,6 +477,9 @@ export function createActivityEvent(input: {
   const followUpAt = input.followUpAt?.trim() ? input.followUpAt.trim() : null;
   const disputeReason = input.disputeReason ?? null;
   const disputeParty = input.disputeParty ?? null;
+  const escalationReason = input.escalationReason ?? null;
+  const escalationTeam = input.escalationTeam ?? null;
+  const escalationPriority = input.escalationPriority ?? null;
   const description =
     input.description?.trim() ||
     defaultDescription(
@@ -356,7 +490,10 @@ export function createActivityEvent(input: {
       contactResult,
       followUpAt,
       disputeReason,
-      disputeParty
+      disputeParty,
+      escalationReason,
+      escalationTeam,
+      escalationPriority
     );
   const draft = {
     type: input.type,
@@ -368,7 +505,10 @@ export function createActivityEvent(input: {
     contactResult,
     followUpAt,
     disputeReason,
-    disputeParty
+    disputeParty,
+    escalationReason,
+    escalationTeam,
+    escalationPriority
   };
   return {
     id: input.id?.trim() || activityEventFingerprint(draft),
@@ -384,7 +524,10 @@ function defaultDescription(
   contactResult: ContactResult | null = null,
   followUpAt: string | null = null,
   disputeReason: DisputeReason | null = null,
-  disputeParty: DisputeParty | null = null
+  disputeParty: DisputeParty | null = null,
+  escalationReason: EscalationReason | null = null,
+  escalationTeam: EscalationTeam | null = null,
+  escalationPriority: EscalationPriority | null = null
 ): string {
   if (type === "contact_logged") {
     const channel = contactChannel ? contactChannelLabel(contactChannel) : "Contact";
@@ -418,6 +561,31 @@ function defaultDescription(
     }
     if (followUpAt && (type === "dispute_raised" || type === "dispute_updated")) {
       text = `${text} (review ${followUpAt})`;
+    }
+    return text;
+  }
+  if (
+    type === "case_escalated" ||
+    type === "escalation_updated" ||
+    type === "escalation_completed"
+  ) {
+    const label = activityEventTypeLabel(type);
+    const parts = [label];
+    if (escalationPriority) {
+      parts.push(escalationPriorityLabel(escalationPriority));
+    }
+    if (escalationReason) {
+      parts.push(escalationReasonLabel(escalationReason));
+    }
+    if (escalationTeam) {
+      parts.push(escalationTeamLabel(escalationTeam));
+    }
+    let text = parts.join(" · ");
+    if (note) {
+      text = `${text} — ${note.length > 80 ? `${note.slice(0, 77)}…` : note}`;
+    }
+    if (followUpAt && (type === "case_escalated" || type === "escalation_updated")) {
+      text = `${text} (due ${followUpAt})`;
     }
     return text;
   }
@@ -474,6 +642,17 @@ export function sanitizeActivityEvent(raw: unknown): CollectionActivityEvent | n
   const disputeParty = parseDisputeParty(
     typeof candidate.disputeParty === "string" ? candidate.disputeParty : null
   );
+  const escalationReason = parseEscalationReason(
+    typeof candidate.escalationReason === "string" ? candidate.escalationReason : null
+  );
+  const escalationTeam = parseEscalationTeam(
+    typeof candidate.escalationTeam === "string" ? candidate.escalationTeam : null
+  );
+  const escalationPriority = parseEscalationPriority(
+    typeof candidate.escalationPriority === "string"
+      ? candidate.escalationPriority
+      : null
+  );
   const description =
     typeof candidate.description === "string" && candidate.description.trim()
       ? candidate.description.trim()
@@ -485,7 +664,10 @@ export function sanitizeActivityEvent(raw: unknown): CollectionActivityEvent | n
           contactResult,
           followUpAt,
           disputeReason,
-          disputeParty
+          disputeParty,
+          escalationReason,
+          escalationTeam,
+          escalationPriority
         );
   const id =
     typeof candidate.id === "string" && candidate.id.trim()
@@ -500,7 +682,10 @@ export function sanitizeActivityEvent(raw: unknown): CollectionActivityEvent | n
           contactResult,
           followUpAt,
           disputeReason,
-          disputeParty
+          disputeParty,
+          escalationReason,
+          escalationTeam,
+          escalationPriority
         });
   return {
     id,
@@ -513,7 +698,10 @@ export function sanitizeActivityEvent(raw: unknown): CollectionActivityEvent | n
     contactResult,
     followUpAt,
     disputeReason,
-    disputeParty
+    disputeParty,
+    escalationReason,
+    escalationTeam,
+    escalationPriority
   };
 }
 
@@ -637,7 +825,7 @@ export function filterCaseTimeline(
       return true;
     }
     const haystack =
-      `${event.description} ${event.note ?? ""} ${event.promiseDate ?? ""} ${event.followUpAt ?? ""} ${event.contactChannel ?? ""} ${event.contactResult ?? ""} ${event.disputeReason ?? ""} ${event.disputeParty ?? ""} ${activityEventTypeLabel(event.type)}`.toLowerCase();
+      `${event.description} ${event.note ?? ""} ${event.promiseDate ?? ""} ${event.followUpAt ?? ""} ${event.contactChannel ?? ""} ${event.contactResult ?? ""} ${event.disputeReason ?? ""} ${event.disputeParty ?? ""} ${event.escalationReason ?? ""} ${event.escalationTeam ?? ""} ${event.escalationPriority ?? ""} ${activityEventTypeLabel(event.type)}`.toLowerCase();
     return haystack.includes(search);
   });
 }
@@ -870,6 +1058,52 @@ export function historyAfterDisputeChange(
       followUpAt: dispute.nextReviewAt,
       disputeReason: dispute.reason,
       disputeParty: dispute.responsibleParty
+    })
+  );
+}
+
+export function historyAfterEscalationChange(
+  existing: PromiseToPayRecord | null,
+  type: "case_escalated" | "escalation_updated" | "escalation_completed",
+  escalation: {
+    reason: EscalationReason;
+    priority: EscalationPriority;
+    responsibleTeam: EscalationTeam;
+    requestedAction: string;
+    dueDate: string;
+    previousTeam?: EscalationTeam | null;
+    completionComment?: string | null;
+  },
+  now: Date = new Date()
+): CollectionActivityEvent[] {
+  const handoff =
+    type === "escalation_updated" &&
+    escalation.previousTeam &&
+    escalation.previousTeam !== escalation.responsibleTeam
+      ? `${escalationTeamLabel(escalation.previousTeam)} → ${escalationTeamLabel(escalation.responsibleTeam)}`
+      : null;
+  const note =
+    type === "escalation_completed"
+      ? escalation.completionComment?.trim() || escalation.requestedAction
+      : handoff
+        ? `${handoff} — ${escalation.requestedAction}`
+        : escalation.requestedAction;
+  const description =
+    type === "escalation_updated" && handoff
+      ? `${activityEventTypeLabel(type)} · ${handoff} · ${escalationPriorityLabel(escalation.priority)} · ${escalationReasonLabel(escalation.reason)} · ${escalationTeamLabel(escalation.responsibleTeam)} — ${escalation.requestedAction.length > 80 ? `${escalation.requestedAction.slice(0, 77)}…` : escalation.requestedAction} (due ${escalation.dueDate})`
+      : undefined;
+  return appendActivityEvent(
+    existing?.history ?? [],
+    createActivityEvent({
+      type,
+      atUtc: now.toISOString(),
+      note: note || null,
+      promiseDate: existing?.promiseDate ?? null,
+      followUpAt: type === "escalation_completed" ? null : escalation.dueDate,
+      escalationReason: escalation.reason,
+      escalationTeam: escalation.responsibleTeam,
+      escalationPriority: escalation.priority,
+      description
     })
   );
 }

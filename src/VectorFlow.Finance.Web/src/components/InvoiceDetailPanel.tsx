@@ -18,14 +18,16 @@ import {
 import { formatDate, formatMoney } from "../format";
 import type {
   CollectionResolutionKind,
-  DisputeStatus,
+  EscalationStatus,
   PromiseFollowUpStatus,
   PromiseToPayRecord
 } from "../promiseToPay";
 import {
   RESOLUTION_KIND_OPTIONS,
   disputeStatusLabel,
+  escalationStatusLabel,
   isActiveDispute,
+  isActiveEscalation,
   promiseStatusLabel,
   resolutionKindLabel
 } from "../promiseToPay";
@@ -35,19 +37,29 @@ import {
   CONTACT_RESULT_OPTIONS,
   DISPUTE_PARTY_OPTIONS,
   DISPUTE_REASON_OPTIONS,
+  ESCALATION_PRIORITY_OPTIONS,
+  ESCALATION_REASON_OPTIONS,
+  ESCALATION_TEAM_OPTIONS,
   activityEventTypeLabel,
   contactChannelLabel,
   contactResultLabel,
   disputePartyLabel,
   disputeReasonLabel,
+  escalationPriorityLabel,
+  escalationReasonLabel,
+  escalationTeamLabel,
   type CaseHistoryView,
   type CollectionActivityEventTypeFilter,
   type ContactChannel,
   type ContactResult,
   type DisputeParty,
-  type DisputeReason
+  type DisputeReason,
+  type EscalationPriority,
+  type EscalationReason,
+  type EscalationTeam
 } from "../collectionCaseHistory";
 import { StatusMessage } from "./Panel";
+import type { DisputeStatus } from "../promiseToPay";
 
 type InvoiceDetailCollectionsContext = {
   daysOverdue: number | null;
@@ -92,6 +104,16 @@ type InvoiceDetailPromiseContext = {
   disputeParty: DisputeParty | "";
   disputeReviewAt: string;
   disputeCloseComment: string;
+  escalationOpen: boolean;
+  escalationEditMode: boolean;
+  escalationCompleteMode: boolean;
+  escalationReason: EscalationReason | "";
+  escalationPriority: EscalationPriority | "";
+  escalationTeam: EscalationTeam | "";
+  escalationRequestedAction: string;
+  escalationDueDate: string;
+  escalationNote: string;
+  escalationCompleteComment: string;
   onOpenForm: () => void;
   onCloseForm: () => void;
   onPromiseDateChange: (value: string) => void;
@@ -131,6 +153,19 @@ type InvoiceDetailPromiseContext = {
   onDisputeCloseCommentChange: (value: string) => void;
   onSaveDispute: () => void;
   onConfirmCloseDispute: () => void;
+  onOpenEscalateCase: () => void;
+  onOpenEditEscalation: () => void;
+  onOpenCompleteEscalation: () => void;
+  onCloseEscalationForm: () => void;
+  onEscalationReasonChange: (value: EscalationReason | "") => void;
+  onEscalationPriorityChange: (value: EscalationPriority | "") => void;
+  onEscalationTeamChange: (value: EscalationTeam | "") => void;
+  onEscalationRequestedActionChange: (value: string) => void;
+  onEscalationDueDateChange: (value: string) => void;
+  onEscalationNoteChange: (value: string) => void;
+  onEscalationCompleteCommentChange: (value: string) => void;
+  onSaveEscalation: () => void;
+  onConfirmCompleteEscalation: () => void;
 };
 
 type InvoiceDetailHistoryContext = {
@@ -278,7 +313,8 @@ export function InvoiceDetailPanel({
     Boolean(promiseContext?.formOpen) ||
     Boolean(promiseContext?.resolutionOpen) ||
     Boolean(promiseContext?.contactOpen) ||
-    Boolean(promiseContext?.disputeOpen);
+    Boolean(promiseContext?.disputeOpen) ||
+    Boolean(promiseContext?.escalationOpen);
 
   const relatedRows: RelatedAccrualRowView[] = relatedAccruals.map((accrual) =>
     buildRelatedAccrualRowView(accrual, formatMoney, formatDate)
@@ -583,6 +619,61 @@ export function InvoiceDetailPanel({
                           <dt>Dispute outcome</dt>
                           <dd className="cell-wrap">
                             {promiseContext.record.dispute.resolutionComment}
+                          </dd>
+                        </div>
+                      ) : null}
+                    </>
+                  ) : null}
+                  {promiseContext.record.escalation ? (
+                    <>
+                      <div>
+                        <dt>Escalation</dt>
+                        <dd>
+                          <span
+                            className={`aging-badge aging-badge--promise aging-badge--escalation-${promiseContext.record.escalation.status as EscalationStatus}${
+                              promiseContext.record.escalation.priority === "critical" &&
+                              promiseContext.record.escalation.status === "open"
+                                ? " aging-badge--escalation-critical"
+                                : ""
+                            }`}
+                          >
+                            {escalationStatusLabel(promiseContext.record.escalation.status)}
+                          </span>
+                          {" · "}
+                          {escalationPriorityLabel(promiseContext.record.escalation.priority)}
+                          {" · "}
+                          {escalationReasonLabel(promiseContext.record.escalation.reason)}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Responsible team</dt>
+                        <dd>
+                          {escalationTeamLabel(
+                            promiseContext.record.escalation.responsibleTeam
+                          )}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Requested action</dt>
+                        <dd className="cell-wrap">
+                          {promiseContext.record.escalation.requestedAction}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Escalation due</dt>
+                        <dd>{promiseContext.record.escalation.dueDate}</dd>
+                      </div>
+                      <div>
+                        <dt>Escalation opened</dt>
+                        <dd>
+                          {formatDate(promiseContext.record.escalation.openedAtUtc)}
+                        </dd>
+                      </div>
+                      {promiseContext.record.escalation.completionComment ? (
+                        <div>
+                          <dt>Escalation outcome</dt>
+                          <dd className="cell-wrap">
+                            {promiseContext.record.escalation.completionComment}
                           </dd>
                         </div>
                       ) : null}
@@ -1065,10 +1156,207 @@ export function InvoiceDetailPanel({
                 </form>
               ) : null}
 
+              {promiseContext.escalationOpen && !promiseContext.escalationCompleteMode ? (
+                <form
+                  className="filter-form escalation-form"
+                  aria-labelledby="collection-escalation-heading"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    promiseContext.onSaveEscalation();
+                  }}
+                >
+                  <h4 id="collection-escalation-heading">
+                    {promiseContext.escalationEditMode
+                      ? "Update escalation"
+                      : "Escalate case"}
+                  </h4>
+                  <label>
+                    Reason *
+                    <select
+                      value={promiseContext.escalationReason}
+                      onChange={(event) =>
+                        promiseContext.onEscalationReasonChange(
+                          event.target.value as EscalationReason | ""
+                        )
+                      }
+                      disabled={promiseContext.busy}
+                      required
+                    >
+                      <option value="">Оберіть причину…</option>
+                      {ESCALATION_REASON_OPTIONS.map((option) => (
+                        <option key={option.id} value={option.id}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Priority *
+                    <select
+                      value={promiseContext.escalationPriority}
+                      onChange={(event) =>
+                        promiseContext.onEscalationPriorityChange(
+                          event.target.value as EscalationPriority | ""
+                        )
+                      }
+                      disabled={promiseContext.busy}
+                      required
+                    >
+                      <option value="">Оберіть пріоритет…</option>
+                      {ESCALATION_PRIORITY_OPTIONS.map((option) => (
+                        <option key={option.id} value={option.id}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Responsible team *
+                    <select
+                      value={promiseContext.escalationTeam}
+                      onChange={(event) =>
+                        promiseContext.onEscalationTeamChange(
+                          event.target.value as EscalationTeam | ""
+                        )
+                      }
+                      disabled={promiseContext.busy}
+                      required
+                    >
+                      <option value="">Оберіть підрозділ…</option>
+                      {ESCALATION_TEAM_OPTIONS.map((option) => (
+                        <option key={option.id} value={option.id}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Requested action *
+                    <textarea
+                      value={promiseContext.escalationRequestedAction}
+                      onChange={(event) =>
+                        promiseContext.onEscalationRequestedActionChange(
+                          event.target.value
+                        )
+                      }
+                      placeholder="очікувана наступна дія"
+                      disabled={promiseContext.busy}
+                      required
+                      rows={2}
+                    />
+                  </label>
+                  <label>
+                    Due date *
+                    <input
+                      type="date"
+                      value={promiseContext.escalationDueDate}
+                      onChange={(event) =>
+                        promiseContext.onEscalationDueDateChange(event.target.value)
+                      }
+                      disabled={promiseContext.busy}
+                      required
+                    />
+                  </label>
+                  {!promiseContext.escalationEditMode ? (
+                    <label>
+                      Note
+                      <input
+                        value={promiseContext.escalationNote}
+                        onChange={(event) =>
+                          promiseContext.onEscalationNoteChange(event.target.value)
+                        }
+                        placeholder="optional"
+                        autoComplete="off"
+                        disabled={promiseContext.busy}
+                      />
+                    </label>
+                  ) : null}
+                  <div className="filter-actions">
+                    <button
+                      type="submit"
+                      disabled={
+                        promiseContext.busy ||
+                        closeDisabled ||
+                        !promiseContext.escalationReason ||
+                        !promiseContext.escalationPriority ||
+                        !promiseContext.escalationTeam ||
+                        !promiseContext.escalationRequestedAction.trim() ||
+                        !promiseContext.escalationDueDate
+                      }
+                    >
+                      {promiseContext.busy
+                        ? "Збереження…"
+                        : promiseContext.escalationEditMode
+                          ? "Save escalation update"
+                          : "Save escalation"}
+                    </button>
+                    <button
+                      type="button"
+                      className="button-secondary"
+                      disabled={promiseContext.busy || closeDisabled}
+                      onClick={promiseContext.onCloseEscalationForm}
+                    >
+                      Скасувати
+                    </button>
+                  </div>
+                </form>
+              ) : null}
+
+              {promiseContext.escalationOpen && promiseContext.escalationCompleteMode ? (
+                <form
+                  className="filter-form escalation-complete-form"
+                  aria-labelledby="collection-escalation-complete-heading"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    promiseContext.onConfirmCompleteEscalation();
+                  }}
+                >
+                  <h4 id="collection-escalation-complete-heading">
+                    Complete escalation
+                  </h4>
+                  <label>
+                    Completion comment *
+                    <input
+                      value={promiseContext.escalationCompleteComment}
+                      onChange={(event) =>
+                        promiseContext.onEscalationCompleteCommentChange(
+                          event.target.value
+                        )
+                      }
+                      placeholder="підсумковий коментар"
+                      autoComplete="off"
+                      disabled={promiseContext.busy}
+                      required
+                    />
+                  </label>
+                  <div className="filter-actions">
+                    <button
+                      type="submit"
+                      disabled={
+                        promiseContext.busy ||
+                        closeDisabled ||
+                        !promiseContext.escalationCompleteComment.trim()
+                      }
+                    >
+                      {promiseContext.busy ? "Збереження…" : "Complete escalation"}
+                    </button>
+                    <button
+                      type="button"
+                      className="button-secondary"
+                      disabled={promiseContext.busy || closeDisabled}
+                      onClick={promiseContext.onCloseEscalationForm}
+                    >
+                      Скасувати
+                    </button>
+                  </div>
+                </form>
+              ) : null}
+
               {!promiseContext.formOpen &&
               !promiseContext.resolutionOpen &&
               !promiseContext.contactOpen &&
-              !promiseContext.disputeOpen ? (
+              !promiseContext.disputeOpen &&
+              !promiseContext.escalationOpen ? (
                 <div className="filter-actions">
                   <button
                     type="button"
@@ -1109,6 +1397,32 @@ export function InvoiceDetailPanel({
                       onClick={promiseContext.onOpenRaiseDispute}
                     >
                       Raise dispute
+                    </button>
+                  )}
+                  {isActiveEscalation(promiseContext.record?.escalation) ? (
+                    <>
+                      <button
+                        type="button"
+                        disabled={closeDisabled || promiseContext.busy}
+                        onClick={promiseContext.onOpenEditEscalation}
+                      >
+                        Update escalation
+                      </button>
+                      <button
+                        type="button"
+                        disabled={closeDisabled || promiseContext.busy}
+                        onClick={promiseContext.onOpenCompleteEscalation}
+                      >
+                        Complete escalation
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={closeDisabled || promiseContext.busy}
+                      onClick={promiseContext.onOpenEscalateCase}
+                    >
+                      Escalate case
                     </button>
                   )}
                   <button
@@ -1168,8 +1482,8 @@ export function InvoiceDetailPanel({
                 </div>
               ) : null}
               <p className="meta promise-persistence-note">
-                Contact, dispute, follow-up і resolution зберігаються локально в браузері
-                (localStorage) за invoice id.
+                Contact, dispute, escalation, follow-up і resolution зберігаються локально в
+                браузері (localStorage) за invoice id.
               </p>
             </section>
           ) : null}
@@ -1317,7 +1631,10 @@ export function InvoiceDetailPanel({
                             <p className="meta">
                               {event.type.startsWith("dispute_")
                                 ? `Review: ${event.followUpAt}`
-                                : `Follow-up: ${event.followUpAt}`}
+                                : event.type === "case_escalated" ||
+                                    event.type === "escalation_updated"
+                                  ? `Due: ${event.followUpAt}`
+                                  : `Follow-up: ${event.followUpAt}`}
                             </p>
                           ) : null}
                           {event.disputeReason || event.disputeParty ? (
@@ -1327,6 +1644,21 @@ export function InvoiceDetailPanel({
                                 : "Dispute"}
                               {event.disputeParty
                                 ? ` · ${disputePartyLabel(event.disputeParty)}`
+                                : ""}
+                            </p>
+                          ) : null}
+                          {event.escalationReason ||
+                          event.escalationTeam ||
+                          event.escalationPriority ? (
+                            <p className="meta">
+                              {event.escalationPriority
+                                ? escalationPriorityLabel(event.escalationPriority)
+                                : "Escalation"}
+                              {event.escalationReason
+                                ? ` · ${escalationReasonLabel(event.escalationReason)}`
+                                : ""}
+                              {event.escalationTeam
+                                ? ` · ${escalationTeamLabel(event.escalationTeam)}`
                                 : ""}
                             </p>
                           ) : null}

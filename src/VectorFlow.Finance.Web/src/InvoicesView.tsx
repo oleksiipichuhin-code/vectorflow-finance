@@ -61,12 +61,15 @@ import {
   groupPromiseFollowUps,
   listPromiseRecordsFromStorage,
   raiseCollectionDispute,
+  raiseCollectionEscalation,
   readPromiseFromStorage,
   rejectCollectionDispute,
   resolveCollectionDispute,
+  completeCollectionEscalation,
   saveCollectionContact,
   savePromiseToPay,
   updateCollectionDispute,
+  updateCollectionEscalation,
   updateContactFollowUp,
   updatePromiseStatus,
   type CollectionResolutionKind,
@@ -90,11 +93,17 @@ import {
   buildCaseHistoryView,
   disputePartyLabel,
   disputeReasonLabel,
+  escalationPriorityLabel,
+  escalationReasonLabel,
+  escalationTeamLabel,
   type CollectionActivityEventTypeFilter,
   type ContactChannel,
   type ContactResult,
   type DisputeParty,
-  type DisputeReason
+  type DisputeReason,
+  type EscalationPriority,
+  type EscalationReason,
+  type EscalationTeam
 } from "./collectionCaseHistory";
 import {
   canViewInvoiceDetails,
@@ -346,6 +355,18 @@ export function InvoicesView({
   const [disputeParty, setDisputeParty] = useState<DisputeParty | "">("");
   const [disputeReviewAt, setDisputeReviewAt] = useState("");
   const [disputeCloseComment, setDisputeCloseComment] = useState("");
+  const [escalationOpen, setEscalationOpen] = useState(false);
+  const [escalationEditMode, setEscalationEditMode] = useState(false);
+  const [escalationCompleteMode, setEscalationCompleteMode] = useState(false);
+  const [escalationReason, setEscalationReason] = useState<EscalationReason | "">("");
+  const [escalationPriority, setEscalationPriority] = useState<EscalationPriority | "">(
+    ""
+  );
+  const [escalationTeam, setEscalationTeam] = useState<EscalationTeam | "">("");
+  const [escalationRequestedAction, setEscalationRequestedAction] = useState("");
+  const [escalationDueDate, setEscalationDueDate] = useState("");
+  const [escalationNote, setEscalationNote] = useState("");
+  const [escalationCompleteComment, setEscalationCompleteComment] = useState("");
   const [filterValidationError, setFilterValidationError] = useState<string | null>(null);
 
   const [page, setPage] = useState(() => (initialPage < 1 ? 1 : Math.floor(initialPage)));
@@ -633,6 +654,16 @@ export function InvoicesView({
     setDisputeParty("");
     setDisputeReviewAt("");
     setDisputeCloseComment("");
+    setEscalationOpen(false);
+    setEscalationEditMode(false);
+    setEscalationCompleteMode(false);
+    setEscalationReason("");
+    setEscalationPriority("");
+    setEscalationTeam("");
+    setEscalationRequestedAction("");
+    setEscalationDueDate("");
+    setEscalationNote("");
+    setEscalationCompleteComment("");
   }, [detailTargetId]);
 
   function publishDiscovery(
@@ -2670,6 +2701,7 @@ export function InvoicesView({
     setResolutionOpen(false);
     setContactOpen(false);
     setDisputeOpen(false);
+    setEscalationOpen(false);
     setPromiseFormOpen(true);
     setPromiseDateInput(existing?.promiseDate ?? "");
     setPromiseNoteInput(existing?.note ?? "");
@@ -2686,6 +2718,7 @@ export function InvoicesView({
     setPromiseFormOpen(false);
     setContactOpen(false);
     setDisputeOpen(false);
+    setEscalationOpen(false);
     setResolutionOpen(true);
     setResolutionKind("");
     setResolutionPaymentDate("");
@@ -2707,6 +2740,7 @@ export function InvoicesView({
     setPromiseFormOpen(false);
     setResolutionOpen(false);
     setDisputeOpen(false);
+    setEscalationOpen(false);
     setContactOpen(true);
     setContactChannel("");
     setContactResult("");
@@ -2725,6 +2759,7 @@ export function InvoicesView({
     setPromiseFormOpen(false);
     setResolutionOpen(false);
     setContactOpen(false);
+    setEscalationOpen(false);
     setDisputeOpen(true);
     setDisputeEditMode(false);
     setDisputeCloseMode("");
@@ -2742,6 +2777,7 @@ export function InvoicesView({
     setPromiseFormOpen(false);
     setResolutionOpen(false);
     setContactOpen(false);
+    setEscalationOpen(false);
     setDisputeOpen(true);
     setDisputeEditMode(true);
     setDisputeCloseMode("");
@@ -2758,6 +2794,7 @@ export function InvoicesView({
     setPromiseFormOpen(false);
     setResolutionOpen(false);
     setContactOpen(false);
+    setEscalationOpen(false);
     setDisputeOpen(true);
     setDisputeEditMode(false);
     setDisputeCloseMode("resolve");
@@ -2770,6 +2807,7 @@ export function InvoicesView({
     setPromiseFormOpen(false);
     setResolutionOpen(false);
     setContactOpen(false);
+    setEscalationOpen(false);
     setDisputeOpen(true);
     setDisputeEditMode(false);
     setDisputeCloseMode("reject");
@@ -2782,6 +2820,65 @@ export function InvoicesView({
     setDisputeOpen(false);
     setDisputeEditMode(false);
     setDisputeCloseMode("");
+    setPromiseFormError(null);
+  }
+
+  function openEscalateCaseForm() {
+    setPromiseFormOpen(false);
+    setResolutionOpen(false);
+    setContactOpen(false);
+    setDisputeOpen(false);
+    setEscalationOpen(true);
+    setEscalationEditMode(false);
+    setEscalationCompleteMode(false);
+    setEscalationReason("");
+    setEscalationPriority("");
+    setEscalationTeam("");
+    setEscalationRequestedAction("");
+    setEscalationDueDate("");
+    setEscalationNote("");
+    setEscalationCompleteComment("");
+    setPromiseFormError(null);
+    setPromiseFormSuccess(null);
+  }
+
+  function openEditEscalationForm(existing: PromiseToPayRecord | null) {
+    const escalation = existing?.escalation;
+    setPromiseFormOpen(false);
+    setResolutionOpen(false);
+    setContactOpen(false);
+    setDisputeOpen(false);
+    setEscalationOpen(true);
+    setEscalationEditMode(true);
+    setEscalationCompleteMode(false);
+    setEscalationReason(escalation?.reason ?? "");
+    setEscalationPriority(escalation?.priority ?? "");
+    setEscalationTeam(escalation?.responsibleTeam ?? "");
+    setEscalationRequestedAction(escalation?.requestedAction ?? "");
+    setEscalationDueDate(escalation?.dueDate ?? "");
+    setEscalationNote("");
+    setEscalationCompleteComment("");
+    setPromiseFormError(null);
+    setPromiseFormSuccess(null);
+  }
+
+  function openCompleteEscalationForm() {
+    setPromiseFormOpen(false);
+    setResolutionOpen(false);
+    setContactOpen(false);
+    setDisputeOpen(false);
+    setEscalationOpen(true);
+    setEscalationEditMode(false);
+    setEscalationCompleteMode(true);
+    setEscalationCompleteComment("");
+    setPromiseFormError(null);
+    setPromiseFormSuccess(null);
+  }
+
+  function closeEscalationForm() {
+    setEscalationOpen(false);
+    setEscalationEditMode(false);
+    setEscalationCompleteMode(false);
     setPromiseFormError(null);
   }
 
@@ -2948,6 +3045,56 @@ export function InvoicesView({
     setDisputeOpen(false);
     setDisputeCloseMode("");
     setDisputeCloseComment("");
+    bumpPromiseRevision();
+  }
+
+  function handleSaveEscalation(invoiceId: string) {
+    setPromiseBusy(true);
+    setPromiseFormError(null);
+    setPromiseFormSuccess(null);
+    const input = {
+      reason: escalationReason,
+      priority: escalationPriority,
+      responsibleTeam: escalationTeam,
+      requestedAction: escalationRequestedAction,
+      dueDate: escalationDueDate,
+      note: escalationNote
+    };
+    const result = escalationEditMode
+      ? updateCollectionEscalation(invoiceId, input)
+      : raiseCollectionEscalation(invoiceId, input);
+    setPromiseBusy(false);
+    if (!result.ok) {
+      setPromiseFormError(result.error);
+      return;
+    }
+    setPromiseFormSuccess(
+      escalationEditMode
+        ? "Ескалацію оновлено."
+        : `Ескалацію створено. Due: ${result.record.escalation?.dueDate}.`
+    );
+    setEscalationOpen(false);
+    setEscalationEditMode(false);
+    setEscalationCompleteMode(false);
+    bumpPromiseRevision();
+  }
+
+  function handleConfirmCompleteEscalation(invoiceId: string) {
+    setPromiseBusy(true);
+    setPromiseFormError(null);
+    setPromiseFormSuccess(null);
+    const result = completeCollectionEscalation(invoiceId, {
+      comment: escalationCompleteComment
+    });
+    setPromiseBusy(false);
+    if (!result.ok) {
+      setPromiseFormError(result.error);
+      return;
+    }
+    setPromiseFormSuccess("Ескалацію завершено.");
+    setEscalationOpen(false);
+    setEscalationCompleteMode(false);
+    setEscalationCompleteComment("");
     bumpPromiseRevision();
   }
 
@@ -4078,6 +4225,16 @@ export function InvoicesView({
                     disputeParty,
                     disputeReviewAt,
                     disputeCloseComment,
+                    escalationOpen,
+                    escalationEditMode,
+                    escalationCompleteMode,
+                    escalationReason,
+                    escalationPriority,
+                    escalationTeam,
+                    escalationRequestedAction,
+                    escalationDueDate,
+                    escalationNote,
+                    escalationCompleteComment,
                     onOpenForm: () => openPromiseForm(detailPromiseRecord),
                     onCloseForm: closePromiseForm,
                     onPromiseDateChange: setPromiseDateInput,
@@ -4118,7 +4275,21 @@ export function InvoicesView({
                     onDisputeReviewAtChange: setDisputeReviewAt,
                     onDisputeCloseCommentChange: setDisputeCloseComment,
                     onSaveDispute: () => handleSaveDispute(detailTargetId),
-                    onConfirmCloseDispute: () => handleConfirmCloseDispute(detailTargetId)
+                    onConfirmCloseDispute: () => handleConfirmCloseDispute(detailTargetId),
+                    onOpenEscalateCase: openEscalateCaseForm,
+                    onOpenEditEscalation: () => openEditEscalationForm(detailPromiseRecord),
+                    onOpenCompleteEscalation: openCompleteEscalationForm,
+                    onCloseEscalationForm: closeEscalationForm,
+                    onEscalationReasonChange: setEscalationReason,
+                    onEscalationPriorityChange: setEscalationPriority,
+                    onEscalationTeamChange: setEscalationTeam,
+                    onEscalationRequestedActionChange: setEscalationRequestedAction,
+                    onEscalationDueDateChange: setEscalationDueDate,
+                    onEscalationNoteChange: setEscalationNote,
+                    onEscalationCompleteCommentChange: setEscalationCompleteComment,
+                    onSaveEscalation: () => handleSaveEscalation(detailTargetId),
+                    onConfirmCompleteEscalation: () =>
+                      handleConfirmCompleteEscalation(detailTargetId)
                   }
                 : null
             }
@@ -4263,16 +4434,40 @@ export function InvoicesView({
                               {item.disputeReviewAt ? (
                                 <span className="meta"> · dispute review</span>
                               ) : null}
+                              {item.escalationDueAt ? (
+                                <span className="meta">
+                                  {" "}
+                                  · escalation
+                                  {item.escalationOverdue ? " overdue" : ""}
+                                </span>
+                              ) : null}
                             </td>
                             <td>
                               <span className="aging-badge aging-badge--promise aging-badge--nba">
                                 {item.nextBestActionLabel}
                               </span>
+                              {item.nextActionLabel ? (
+                                <p className="meta cell-wrap">{item.nextActionLabel}</p>
+                              ) : null}
                               {item.dispute && item.group === "disputed" ? (
                                 <p className="meta cell-wrap">
                                   {disputeReasonLabel(item.dispute.reason)}
                                   {" · "}
                                   {disputePartyLabel(item.dispute.responsibleParty)}
+                                </p>
+                              ) : null}
+                              {item.escalation && item.group === "escalated" ? (
+                                <p className="meta cell-wrap">
+                                  {escalationPriorityLabel(item.escalation.priority)}
+                                  {" · "}
+                                  {escalationReasonLabel(item.escalation.reason)}
+                                  {" · "}
+                                  {escalationTeamLabel(item.escalation.responsibleTeam)}
+                                  {item.escalationOverdue ? " · overdue" : ""}
+                                  <br />
+                                  {item.escalation.requestedAction.length > 60
+                                    ? `${item.escalation.requestedAction.slice(0, 57)}…`
+                                    : item.escalation.requestedAction}
                                 </p>
                               ) : null}
                             </td>

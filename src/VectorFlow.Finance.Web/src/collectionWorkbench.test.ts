@@ -100,6 +100,11 @@ function baseItem(
     lastContact: null,
     dispute: null,
     disputeReviewAt: null,
+    escalation: null,
+    escalationDueAt: null,
+    escalationOverdue: false,
+    nextActionKind: null,
+    nextActionLabel: null,
     ...overrides
   };
 }

@@ -12,6 +12,7 @@ import {
 import {
   historyAfterContact,
   historyAfterDisputeChange,
+  historyAfterEscalationChange,
   historyAfterPromiseSave,
   historyAfterResolution,
   historyAfterStatusChange,
@@ -19,12 +20,18 @@ import {
   parseContactResult,
   parseDisputeParty,
   parseDisputeReason,
+  parseEscalationPriority,
+  parseEscalationReason,
+  parseEscalationTeam,
   sanitizeActivityHistory,
   type CollectionActivityEvent,
   type ContactChannel,
   type ContactResult,
   type DisputeParty,
-  type DisputeReason
+  type DisputeReason,
+  type EscalationPriority,
+  type EscalationReason,
+  type EscalationTeam
 } from "./collectionCaseHistory.ts";
 
 export const PROMISE_STORAGE_KEY_PREFIX = "vectorflow.finance.promiseToPay.";
@@ -88,6 +95,22 @@ export type CollectionDispute = {
   resolvedAtUtc: string | null;
 };
 
+export type EscalationStatus = "open" | "completed";
+
+export type CollectionEscalation = {
+  id: string;
+  status: EscalationStatus;
+  reason: EscalationReason;
+  priority: EscalationPriority;
+  responsibleTeam: EscalationTeam;
+  requestedAction: string;
+  dueDate: string;
+  openedAtUtc: string;
+  updatedAtUtc: string;
+  completedAtUtc: string | null;
+  completionComment: string | null;
+};
+
 export type PromiseToPayRecord = {
   invoiceId: string;
   promiseDate: string;
@@ -102,6 +125,8 @@ export type PromiseToPayRecord = {
   lastContact: CollectionContactAttempt | null;
   /** Structured collection dispute lifecycle (separate from resolution.kind). */
   dispute: CollectionDispute | null;
+  /** Structured collection escalation / ownership lifecycle. */
+  escalation: CollectionEscalation | null;
   /** Append-only activity timeline (same localStorage record). */
   history: CollectionActivityEvent[];
 };
@@ -164,6 +189,46 @@ export type DisputeCloseInput = {
   comment?: string;
 };
 
+export type CollectionEscalationInput = {
+  reason: EscalationReason | "";
+  priority: EscalationPriority | "";
+  responsibleTeam: EscalationTeam | "";
+  requestedAction?: string;
+  dueDate?: string;
+  note?: string;
+};
+
+export type EscalationValidationResult =
+  | {
+      ok: true;
+      reason: EscalationReason;
+      priority: EscalationPriority;
+      responsibleTeam: EscalationTeam;
+      requestedAction: string;
+      dueDate: string;
+      note: string;
+    }
+  | { ok: false; error: string };
+
+export type EscalationCompleteInput = {
+  comment?: string;
+};
+
+/** Deterministic next-action kinds among active business dates. */
+export type NextActionKind =
+  | "critical_escalation"
+  | "dispute_review"
+  | "escalation"
+  | "contact_follow_up";
+
+export type NextActionCandidate = {
+  kind: NextActionKind;
+  date: string;
+  label: string;
+};
+
+export type NextActionSelection = NextActionCandidate;
+
 export type PromiseInvoiceLike = {
   id: string;
   documentNumber: string;
@@ -198,6 +263,11 @@ export type PromiseFollowUpItem = {
   lastContact: CollectionContactAttempt | null;
   dispute: CollectionDispute | null;
   disputeReviewAt: string | null;
+  escalation: CollectionEscalation | null;
+  escalationDueAt: string | null;
+  escalationOverdue: boolean;
+  nextActionKind: NextActionKind | null;
+  nextActionLabel: string | null;
 };
 
 export type PromiseFollowUpSummary = {
@@ -400,6 +470,91 @@ export function isActiveDispute(
   return dispute?.status === "open";
 }
 
+export function validateCollectionEscalationInput(
+  input: CollectionEscalationInput
+): EscalationValidationResult {
+  const reason = parseEscalationReason(input.reason);
+  const priority = parseEscalationPriority(input.priority);
+  const responsibleTeam = parseEscalationTeam(input.responsibleTeam);
+  const requestedAction = (input.requestedAction ?? "").trim();
+  const dueRaw = (input.dueDate ?? "").trim();
+  const note = (input.note ?? "").trim();
+
+  if (!reason && !priority && !responsibleTeam && !requestedAction && !dueRaw && !note) {
+    return { ok: false, error: "Заповніть обовʼязкові поля ескалації." };
+  }
+  if (!reason) {
+    return { ok: false, error: "Оберіть причину ескалації." };
+  }
+  if (!priority) {
+    return { ok: false, error: "Оберіть пріоритет ескалації." };
+  }
+  if (!responsibleTeam) {
+    return { ok: false, error: "Оберіть відповідальний підрозділ." };
+  }
+  if (!requestedAction) {
+    return { ok: false, error: "Вкажіть очікувану наступну дію." };
+  }
+  if (!dueRaw) {
+    return { ok: false, error: "Вкажіть строк обробки ескалації." };
+  }
+  if (!isValidPromiseDate(dueRaw)) {
+    return {
+      ok: false,
+      error: "Некоректна дата due. Використовуйте формат РРРР-ММ-ДД."
+    };
+  }
+
+  return {
+    ok: true,
+    reason,
+    priority,
+    responsibleTeam,
+    requestedAction,
+    dueDate: dueRaw,
+    note
+  };
+}
+
+export function validateEscalationCompleteInput(
+  input: EscalationCompleteInput
+): { ok: true; comment: string } | { ok: false; error: string } {
+  const comment = (input.comment ?? "").trim();
+  if (!comment) {
+    return { ok: false, error: "Вкажіть підсумковий коментар." };
+  }
+  return { ok: true, comment };
+}
+
+export function escalationStatusLabel(status: EscalationStatus): string {
+  switch (status) {
+    case "open":
+      return "Open";
+    case "completed":
+      return "Completed";
+    default:
+      return status;
+  }
+}
+
+export function isActiveEscalation(
+  escalation: CollectionEscalation | null | undefined
+): boolean {
+  return escalation?.status === "open";
+}
+
+export function isEscalationOverdue(
+  escalation: CollectionEscalation | null | undefined,
+  now: Date = new Date()
+): boolean {
+  if (!isActiveEscalation(escalation) || !escalation?.dueDate) {
+    return false;
+  }
+  const today = localCalendarDateString(now);
+  const relative = calendarDayDiff(today, escalation.dueDate);
+  return relative != null && relative < 0;
+}
+
 export function parsePromiseGroupParam(value: string | null | undefined): PromiseGroupFilter {
   if (value == null) {
     return "";
@@ -490,9 +645,9 @@ function classifyByPromiseDate(
 
 /**
  * Classify an active or completed promise into a follow-up workspace group.
- * Resolution outcomes and open disputes take precedence over calendar buckets.
- * Contact nextFollowUpAt places the case in follow_up_required when active
- * (unless an open dispute or terminal resolution wins).
+ * Resolution outcomes, open escalations, and open disputes take precedence over
+ * calendar buckets. Contact nextFollowUpAt places the case in follow_up_required
+ * when active (unless an open escalation/dispute or terminal resolution wins).
  */
 export function classifyPromiseGroup(
   record: Pick<
@@ -503,6 +658,7 @@ export function classifyPromiseGroup(
     | "resolution"
     | "nextFollowUpAt"
     | "dispute"
+    | "escalation"
   >,
   now: Date = new Date()
 ): PromiseGroupId | null {
@@ -514,12 +670,12 @@ export function classifyPromiseGroup(
       : null;
   }
 
-  if (isActiveDispute(record.dispute) || resolution?.kind === "disputed") {
-    return "disputed";
+  if (isActiveEscalation(record.escalation) || resolution?.kind === "escalated") {
+    return "escalated";
   }
 
-  if (resolution?.kind === "escalated") {
-    return "escalated";
+  if (isActiveDispute(record.dispute) || resolution?.kind === "disputed") {
+    return "disputed";
   }
 
   if (resolution?.kind === "unable_to_contact") {
@@ -578,6 +734,8 @@ const DISPUTE_STATUS_SET: ReadonlySet<string> = new Set([
   "resolved",
   "rejected"
 ]);
+
+const ESCALATION_STATUS_SET: ReadonlySet<string> = new Set(["open", "completed"]);
 
 export function sanitizeDispute(raw: unknown): CollectionDispute | null {
   if (raw == null || typeof raw !== "object") {
@@ -640,19 +798,146 @@ export function sanitizeDispute(raw: unknown): CollectionDispute | null {
   };
 }
 
-/** Earliest actionable calendar date among contact follow-up and dispute review. */
-export function resolveNextActionDate(record: PromiseToPayRecord): string {
-  const candidates: string[] = [];
+export function sanitizeEscalation(raw: unknown): CollectionEscalation | null {
+  if (raw == null || typeof raw !== "object") {
+    return null;
+  }
+  const candidate = raw as Record<string, unknown>;
+  const id = typeof candidate.id === "string" ? candidate.id.trim() : "";
+  if (!id) {
+    return null;
+  }
+  const statusRaw = typeof candidate.status === "string" ? candidate.status.trim() : "";
+  if (!ESCALATION_STATUS_SET.has(statusRaw)) {
+    return null;
+  }
+  const reason = parseEscalationReason(
+    typeof candidate.reason === "string" ? candidate.reason : null
+  );
+  const priority = parseEscalationPriority(
+    typeof candidate.priority === "string" ? candidate.priority : null
+  );
+  const responsibleTeam = parseEscalationTeam(
+    typeof candidate.responsibleTeam === "string" ? candidate.responsibleTeam : null
+  );
+  if (!reason || !priority || !responsibleTeam) {
+    return null;
+  }
+  const requestedAction =
+    typeof candidate.requestedAction === "string" ? candidate.requestedAction.trim() : "";
+  if (!requestedAction) {
+    return null;
+  }
+  const dueRaw = typeof candidate.dueDate === "string" ? candidate.dueDate.trim() : "";
+  if (!dueRaw || !isValidPromiseDate(dueRaw)) {
+    return null;
+  }
+  const openedAtUtc =
+    typeof candidate.openedAtUtc === "string" && candidate.openedAtUtc.trim()
+      ? candidate.openedAtUtc.trim()
+      : new Date(0).toISOString();
+  const updatedAtUtc =
+    typeof candidate.updatedAtUtc === "string" && candidate.updatedAtUtc.trim()
+      ? candidate.updatedAtUtc.trim()
+      : openedAtUtc;
+  const completedAtUtc =
+    typeof candidate.completedAtUtc === "string" && candidate.completedAtUtc.trim()
+      ? candidate.completedAtUtc.trim()
+      : null;
+  const completionComment =
+    typeof candidate.completionComment === "string" && candidate.completionComment.trim()
+      ? candidate.completionComment.trim()
+      : null;
+  return {
+    id,
+    status: statusRaw as EscalationStatus,
+    reason,
+    priority,
+    responsibleTeam,
+    requestedAction,
+    dueDate: dueRaw,
+    openedAtUtc,
+    updatedAtUtc,
+    completedAtUtc,
+    completionComment
+  };
+}
+
+/** Tie-break order when multiple active actions share the same calendar date. */
+export const NEXT_ACTION_TIE_BREAK: readonly NextActionKind[] = [
+  "critical_escalation",
+  "dispute_review",
+  "escalation",
+  "contact_follow_up"
+] as const;
+
+const NEXT_ACTION_RANK: Record<NextActionKind, number> = {
+  critical_escalation: 0,
+  dispute_review: 1,
+  escalation: 2,
+  contact_follow_up: 3
+};
+
+const NEXT_ACTION_LABELS: Record<NextActionKind, string> = {
+  critical_escalation: "Critical escalation due",
+  dispute_review: "Dispute review",
+  escalation: "Escalation due",
+  contact_follow_up: "Contact follow-up"
+};
+
+export function listActiveNextActionCandidates(
+  record: Pick<PromiseToPayRecord, "nextFollowUpAt" | "dispute" | "escalation">
+): NextActionCandidate[] {
+  const candidates: NextActionCandidate[] = [];
   if (record.nextFollowUpAt) {
-    candidates.push(record.nextFollowUpAt);
+    candidates.push({
+      kind: "contact_follow_up",
+      date: record.nextFollowUpAt,
+      label: NEXT_ACTION_LABELS.contact_follow_up
+    });
   }
   if (isActiveDispute(record.dispute) && record.dispute?.nextReviewAt) {
-    candidates.push(record.dispute.nextReviewAt);
+    candidates.push({
+      kind: "dispute_review",
+      date: record.dispute.nextReviewAt,
+      label: NEXT_ACTION_LABELS.dispute_review
+    });
   }
+  if (isActiveEscalation(record.escalation) && record.escalation?.dueDate) {
+    const critical = record.escalation.priority === "critical";
+    candidates.push({
+      kind: critical ? "critical_escalation" : "escalation",
+      date: record.escalation.dueDate,
+      label: critical
+        ? NEXT_ACTION_LABELS.critical_escalation
+        : NEXT_ACTION_LABELS.escalation
+    });
+  }
+  return candidates;
+}
+
+/**
+ * Choose the earliest active business date; on ties use NEXT_ACTION_TIE_BREAK.
+ */
+export function resolveNextAction(
+  record: Pick<PromiseToPayRecord, "nextFollowUpAt" | "dispute" | "escalation" | "promiseDate">
+): NextActionSelection | null {
+  const candidates = listActiveNextActionCandidates(record);
   if (candidates.length === 0) {
-    return record.promiseDate;
+    return null;
   }
-  return candidates.slice().sort()[0]!;
+  return candidates.slice().sort((a, b) => {
+    if (a.date !== b.date) {
+      return a.date < b.date ? -1 : 1;
+    }
+    return NEXT_ACTION_RANK[a.kind] - NEXT_ACTION_RANK[b.kind];
+  })[0]!;
+}
+
+/** Earliest actionable calendar date among contact, dispute review, and escalation. */
+export function resolveNextActionDate(record: PromiseToPayRecord): string {
+  const selected = resolveNextAction(record);
+  return selected?.date ?? record.promiseDate;
 }
 
 function parseAmount(value: string | number | null | undefined): number | null {
@@ -781,6 +1066,11 @@ export function sanitizePromiseRecord(
       ? null
       : sanitizeDispute(candidate.dispute);
 
+  const escalation =
+    candidate.escalation === undefined || candidate.escalation === null
+      ? null
+      : sanitizeEscalation(candidate.escalation);
+
   const history = sanitizeActivityHistory(candidate.history);
 
   return {
@@ -794,6 +1084,7 @@ export function sanitizePromiseRecord(
     nextFollowUpAt,
     lastContact,
     dispute,
+    escalation,
     history
   };
 }
@@ -909,6 +1200,7 @@ export function savePromiseToPay(
     nextFollowUpAt: existing?.nextFollowUpAt ?? null,
     lastContact: existing?.lastContact ?? null,
     dispute: existing?.dispute ?? null,
+    escalation: existing?.escalation ?? null,
     history: existing?.history ?? []
   };
 
@@ -1173,6 +1465,7 @@ export function applyCollectionResolution(
         : existing.nextFollowUpAt,
     lastContact: existing.lastContact,
     dispute: existing.dispute,
+    escalation: existing.escalation,
     history: historyAfterResolution(
       existing,
       validated.resolution,
@@ -1259,6 +1552,7 @@ export function saveCollectionContact(
     nextFollowUpAt: followUpAt,
     lastContact,
     dispute: existing?.dispute ?? null,
+    escalation: existing?.escalation ?? null,
     history: existing?.history ?? []
   };
 
@@ -1394,6 +1688,7 @@ export function raiseCollectionDispute(
     nextFollowUpAt: existing?.nextFollowUpAt ?? null,
     lastContact: existing?.lastContact ?? null,
     dispute,
+    escalation: existing?.escalation ?? null,
     history: existing?.history ?? []
   };
 
@@ -1555,6 +1850,215 @@ function closeCollectionDispute(
   return { ok: true, record };
 }
 
+function createEscalationId(invoiceId: string, now: Date): string {
+  return `escalation|${invoiceId.trim().toLowerCase()}|${now.toISOString()}`;
+}
+
+/**
+ * Escalate a collection case with ownership / priority metadata.
+ * Does not mark the invoice paid and does not apply Collection Resolution.
+ */
+export function raiseCollectionEscalation(
+  invoiceId: string,
+  input: CollectionEscalationInput,
+  options?: { storage?: Storage | null; now?: Date }
+): { ok: true; record: PromiseToPayRecord } | { ok: false; error: string } {
+  const validation = validateCollectionEscalationInput(input);
+  if (!validation.ok) {
+    return validation;
+  }
+  if (!UUID_RE.test(invoiceId.trim())) {
+    return { ok: false, error: "Некоректний ідентифікатор рахунку." };
+  }
+
+  const storage = options?.storage === undefined ? defaultStorage() : options.storage;
+  const now = options?.now ?? new Date();
+  const existing = readPromiseFromStorage(invoiceId, storage);
+  if (isActiveEscalation(existing?.escalation)) {
+    return {
+      ok: false,
+      error: "Активна ескалація вже існує. Оновіть або завершіть поточну ескалацію."
+    };
+  }
+
+  const at = now.toISOString();
+  const escalation: CollectionEscalation = {
+    id: createEscalationId(invoiceId, now),
+    status: "open",
+    reason: validation.reason,
+    priority: validation.priority,
+    responsibleTeam: validation.responsibleTeam,
+    requestedAction: validation.requestedAction,
+    dueDate: validation.dueDate,
+    openedAtUtc: at,
+    updatedAtUtc: at,
+    completedAtUtc: null,
+    completionComment: null
+  };
+
+  const promiseDate =
+    existing?.promiseDate ?? validation.dueDate ?? localCalendarDateString(now);
+  const draftBase: PromiseToPayRecord = {
+    invoiceId: invoiceId.trim(),
+    promiseDate,
+    note: existing?.note ?? validation.note,
+    status: existing?.status === "completed" ? "awaiting" : existing?.status ?? "awaiting",
+    updatedAtUtc: at,
+    completedAtUtc: null,
+    resolution:
+      existing?.resolution?.kind === "paid" ? null : existing?.resolution ?? null,
+    nextFollowUpAt: existing?.nextFollowUpAt ?? null,
+    lastContact: existing?.lastContact ?? null,
+    dispute: existing?.dispute ?? null,
+    escalation,
+    history: existing?.history ?? []
+  };
+
+  const record: PromiseToPayRecord = {
+    ...draftBase,
+    history: historyAfterEscalationChange(
+      existing,
+      "case_escalated",
+      {
+        reason: escalation.reason,
+        priority: escalation.priority,
+        responsibleTeam: escalation.responsibleTeam,
+        requestedAction: escalation.requestedAction,
+        dueDate: escalation.dueDate
+      },
+      now
+    )
+  };
+
+  if (storage && !writePromiseToStorage(record, storage)) {
+    return { ok: false, error: "Не вдалося зберегти ескалацію у браузері." };
+  }
+
+  return { ok: true, record };
+}
+
+export function updateCollectionEscalation(
+  invoiceId: string,
+  input: CollectionEscalationInput,
+  options?: { storage?: Storage | null; now?: Date }
+): { ok: true; record: PromiseToPayRecord } | { ok: false; error: string } {
+  const validation = validateCollectionEscalationInput(input);
+  if (!validation.ok) {
+    return validation;
+  }
+  if (!UUID_RE.test(invoiceId.trim())) {
+    return { ok: false, error: "Некоректний ідентифікатор рахунку." };
+  }
+
+  const storage = options?.storage === undefined ? defaultStorage() : options.storage;
+  const now = options?.now ?? new Date();
+  const existing = readPromiseFromStorage(invoiceId, storage);
+  if (!existing || !isActiveEscalation(existing.escalation)) {
+    return { ok: false, error: "Активну ескалацію для цього рахунку не знайдено." };
+  }
+
+  const previous = existing.escalation!;
+  const unchanged =
+    previous.reason === validation.reason &&
+    previous.priority === validation.priority &&
+    previous.responsibleTeam === validation.responsibleTeam &&
+    previous.requestedAction === validation.requestedAction &&
+    previous.dueDate === validation.dueDate;
+  if (unchanged) {
+    return { ok: true, record: existing };
+  }
+
+  const escalation: CollectionEscalation = {
+    ...previous,
+    reason: validation.reason,
+    priority: validation.priority,
+    responsibleTeam: validation.responsibleTeam,
+    requestedAction: validation.requestedAction,
+    dueDate: validation.dueDate,
+    updatedAtUtc: now.toISOString()
+  };
+
+  const record: PromiseToPayRecord = {
+    ...existing,
+    escalation,
+    updatedAtUtc: now.toISOString(),
+    history: historyAfterEscalationChange(
+      existing,
+      "escalation_updated",
+      {
+        reason: escalation.reason,
+        priority: escalation.priority,
+        responsibleTeam: escalation.responsibleTeam,
+        requestedAction: escalation.requestedAction,
+        dueDate: escalation.dueDate,
+        previousTeam: previous.responsibleTeam
+      },
+      now
+    )
+  };
+
+  if (storage && !writePromiseToStorage(record, storage)) {
+    return { ok: false, error: "Не вдалося оновити ескалацію у браузері." };
+  }
+
+  return { ok: true, record };
+}
+
+export function completeCollectionEscalation(
+  invoiceId: string,
+  input: EscalationCompleteInput,
+  options?: { storage?: Storage | null; now?: Date }
+): { ok: true; record: PromiseToPayRecord } | { ok: false; error: string } {
+  const validation = validateEscalationCompleteInput(input);
+  if (!validation.ok) {
+    return validation;
+  }
+  if (!UUID_RE.test(invoiceId.trim())) {
+    return { ok: false, error: "Некоректний ідентифікатор рахунку." };
+  }
+
+  const storage = options?.storage === undefined ? defaultStorage() : options.storage;
+  const now = options?.now ?? new Date();
+  const existing = readPromiseFromStorage(invoiceId, storage);
+  if (!existing || !isActiveEscalation(existing.escalation)) {
+    return { ok: false, error: "Активну ескалацію для цього рахунку не знайдено." };
+  }
+
+  const at = now.toISOString();
+  const escalation: CollectionEscalation = {
+    ...existing.escalation!,
+    status: "completed",
+    completionComment: validation.comment,
+    completedAtUtc: at,
+    updatedAtUtc: at
+  };
+
+  const record: PromiseToPayRecord = {
+    ...existing,
+    escalation,
+    updatedAtUtc: at,
+    history: historyAfterEscalationChange(
+      existing,
+      "escalation_completed",
+      {
+        reason: escalation.reason,
+        priority: escalation.priority,
+        responsibleTeam: escalation.responsibleTeam,
+        requestedAction: escalation.requestedAction,
+        dueDate: escalation.dueDate,
+        completionComment: validation.comment
+      },
+      now
+    )
+  };
+
+  if (storage && !writePromiseToStorage(record, storage)) {
+    return { ok: false, error: "Не вдалося завершити ескалацію у браузері." };
+  }
+
+  return { ok: true, record };
+}
+
 export function listPromiseRecordsFromStorage(
   storage: Storage | null | undefined = defaultStorage()
 ): PromiseToPayRecord[] {
@@ -1603,7 +2107,8 @@ export function buildPromiseFollowUpItem(
     record.resolution.remainingAmount != null
       ? record.resolution.remainingAmount
       : invoice.totalAmount;
-  const nextActionDate = resolveNextActionDate(record);
+  const nextAction = resolveNextAction(record);
+  const nextActionDate = nextAction?.date ?? record.promiseDate;
   return {
     invoiceId: invoice.id,
     documentNumber: invoice.documentNumber,
@@ -1629,7 +2134,15 @@ export function buildPromiseFollowUpItem(
     disputeReviewAt:
       isActiveDispute(record.dispute) && record.dispute?.nextReviewAt
         ? record.dispute.nextReviewAt
-        : null
+        : null,
+    escalation: record.escalation,
+    escalationDueAt:
+      isActiveEscalation(record.escalation) && record.escalation?.dueDate
+        ? record.escalation.dueDate
+        : null,
+    escalationOverdue: isEscalationOverdue(record.escalation, now),
+    nextActionKind: nextAction?.kind ?? null,
+    nextActionLabel: nextAction?.label ?? null
   };
 }
 
