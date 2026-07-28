@@ -60,9 +60,13 @@ import {
   filterPromiseFollowUps,
   groupPromiseFollowUps,
   listPromiseRecordsFromStorage,
+  raiseCollectionDispute,
   readPromiseFromStorage,
+  rejectCollectionDispute,
+  resolveCollectionDispute,
   saveCollectionContact,
   savePromiseToPay,
+  updateCollectionDispute,
   updateContactFollowUp,
   updatePromiseStatus,
   type CollectionResolutionKind,
@@ -84,9 +88,13 @@ import {
 } from "./collectionWorkbench";
 import {
   buildCaseHistoryView,
+  disputePartyLabel,
+  disputeReasonLabel,
   type CollectionActivityEventTypeFilter,
   type ContactChannel,
-  type ContactResult
+  type ContactResult,
+  type DisputeParty,
+  type DisputeReason
 } from "./collectionCaseHistory";
 import {
   canViewInvoiceDetails,
@@ -330,6 +338,14 @@ export function InvoicesView({
   const [contactResult, setContactResult] = useState<ContactResult | "">("");
   const [contactNote, setContactNote] = useState("");
   const [contactFollowUpAt, setContactFollowUpAt] = useState("");
+  const [disputeOpen, setDisputeOpen] = useState(false);
+  const [disputeEditMode, setDisputeEditMode] = useState(false);
+  const [disputeCloseMode, setDisputeCloseMode] = useState<"" | "resolve" | "reject">("");
+  const [disputeReason, setDisputeReason] = useState<DisputeReason | "">("");
+  const [disputeDescription, setDisputeDescription] = useState("");
+  const [disputeParty, setDisputeParty] = useState<DisputeParty | "">("");
+  const [disputeReviewAt, setDisputeReviewAt] = useState("");
+  const [disputeCloseComment, setDisputeCloseComment] = useState("");
   const [filterValidationError, setFilterValidationError] = useState<string | null>(null);
 
   const [page, setPage] = useState(() => (initialPage < 1 ? 1 : Math.floor(initialPage)));
@@ -609,6 +625,14 @@ export function InvoicesView({
     setContactResult("");
     setContactNote("");
     setContactFollowUpAt("");
+    setDisputeOpen(false);
+    setDisputeEditMode(false);
+    setDisputeCloseMode("");
+    setDisputeReason("");
+    setDisputeDescription("");
+    setDisputeParty("");
+    setDisputeReviewAt("");
+    setDisputeCloseComment("");
   }, [detailTargetId]);
 
   function publishDiscovery(
@@ -2645,6 +2669,7 @@ export function InvoicesView({
   function openPromiseForm(existing: PromiseToPayRecord | null) {
     setResolutionOpen(false);
     setContactOpen(false);
+    setDisputeOpen(false);
     setPromiseFormOpen(true);
     setPromiseDateInput(existing?.promiseDate ?? "");
     setPromiseNoteInput(existing?.note ?? "");
@@ -2660,6 +2685,7 @@ export function InvoicesView({
   function openResolutionForm() {
     setPromiseFormOpen(false);
     setContactOpen(false);
+    setDisputeOpen(false);
     setResolutionOpen(true);
     setResolutionKind("");
     setResolutionPaymentDate("");
@@ -2680,6 +2706,7 @@ export function InvoicesView({
   function openContactForm(existing: PromiseToPayRecord | null) {
     setPromiseFormOpen(false);
     setResolutionOpen(false);
+    setDisputeOpen(false);
     setContactOpen(true);
     setContactChannel("");
     setContactResult("");
@@ -2691,6 +2718,70 @@ export function InvoicesView({
 
   function closeContactForm() {
     setContactOpen(false);
+    setPromiseFormError(null);
+  }
+
+  function openRaiseDisputeForm() {
+    setPromiseFormOpen(false);
+    setResolutionOpen(false);
+    setContactOpen(false);
+    setDisputeOpen(true);
+    setDisputeEditMode(false);
+    setDisputeCloseMode("");
+    setDisputeReason("");
+    setDisputeDescription("");
+    setDisputeParty("");
+    setDisputeReviewAt("");
+    setDisputeCloseComment("");
+    setPromiseFormError(null);
+    setPromiseFormSuccess(null);
+  }
+
+  function openEditDisputeForm(existing: PromiseToPayRecord | null) {
+    const dispute = existing?.dispute;
+    setPromiseFormOpen(false);
+    setResolutionOpen(false);
+    setContactOpen(false);
+    setDisputeOpen(true);
+    setDisputeEditMode(true);
+    setDisputeCloseMode("");
+    setDisputeReason(dispute?.reason ?? "");
+    setDisputeDescription(dispute?.description ?? "");
+    setDisputeParty(dispute?.responsibleParty ?? "");
+    setDisputeReviewAt(dispute?.nextReviewAt ?? "");
+    setDisputeCloseComment("");
+    setPromiseFormError(null);
+    setPromiseFormSuccess(null);
+  }
+
+  function openResolveDisputeForm() {
+    setPromiseFormOpen(false);
+    setResolutionOpen(false);
+    setContactOpen(false);
+    setDisputeOpen(true);
+    setDisputeEditMode(false);
+    setDisputeCloseMode("resolve");
+    setDisputeCloseComment("");
+    setPromiseFormError(null);
+    setPromiseFormSuccess(null);
+  }
+
+  function openRejectDisputeForm() {
+    setPromiseFormOpen(false);
+    setResolutionOpen(false);
+    setContactOpen(false);
+    setDisputeOpen(true);
+    setDisputeEditMode(false);
+    setDisputeCloseMode("reject");
+    setDisputeCloseComment("");
+    setPromiseFormError(null);
+    setPromiseFormSuccess(null);
+  }
+
+  function closeDisputeForm() {
+    setDisputeOpen(false);
+    setDisputeEditMode(false);
+    setDisputeCloseMode("");
     setPromiseFormError(null);
   }
 
@@ -2800,6 +2891,63 @@ export function InvoicesView({
     }
     setContactFollowUpAt("");
     setPromiseFormSuccess("Follow-up очищено.");
+    bumpPromiseRevision();
+  }
+
+  function handleSaveDispute(invoiceId: string) {
+    setPromiseBusy(true);
+    setPromiseFormError(null);
+    setPromiseFormSuccess(null);
+    const input = {
+      reason: disputeReason,
+      description: disputeDescription,
+      responsibleParty: disputeParty,
+      nextReviewAt: disputeReviewAt
+    };
+    const result = disputeEditMode
+      ? updateCollectionDispute(invoiceId, input)
+      : raiseCollectionDispute(invoiceId, input);
+    setPromiseBusy(false);
+    if (!result.ok) {
+      setPromiseFormError(result.error);
+      return;
+    }
+    setPromiseFormSuccess(
+      disputeEditMode
+        ? "Спір оновлено."
+        : result.record.dispute?.nextReviewAt
+          ? `Спір зареєстровано. Review: ${result.record.dispute.nextReviewAt}.`
+          : "Спір зареєстровано."
+    );
+    setDisputeOpen(false);
+    setDisputeEditMode(false);
+    setDisputeCloseMode("");
+    bumpPromiseRevision();
+  }
+
+  function handleConfirmCloseDispute(invoiceId: string) {
+    if (!disputeCloseMode) {
+      setPromiseFormError("Оберіть Resolve або Reject.");
+      return;
+    }
+    setPromiseBusy(true);
+    setPromiseFormError(null);
+    setPromiseFormSuccess(null);
+    const result =
+      disputeCloseMode === "resolve"
+        ? resolveCollectionDispute(invoiceId, { comment: disputeCloseComment })
+        : rejectCollectionDispute(invoiceId, { comment: disputeCloseComment });
+    setPromiseBusy(false);
+    if (!result.ok) {
+      setPromiseFormError(result.error);
+      return;
+    }
+    setPromiseFormSuccess(
+      disputeCloseMode === "resolve" ? "Спір resolved." : "Спір rejected."
+    );
+    setDisputeOpen(false);
+    setDisputeCloseMode("");
+    setDisputeCloseComment("");
     bumpPromiseRevision();
   }
 
@@ -3922,6 +4070,14 @@ export function InvoicesView({
                     contactResult,
                     contactNote,
                     contactFollowUpAt,
+                    disputeOpen,
+                    disputeEditMode,
+                    disputeCloseMode,
+                    disputeReason,
+                    disputeDescription,
+                    disputeParty,
+                    disputeReviewAt,
+                    disputeCloseComment,
                     onOpenForm: () => openPromiseForm(detailPromiseRecord),
                     onCloseForm: closePromiseForm,
                     onPromiseDateChange: setPromiseDateInput,
@@ -3950,7 +4106,19 @@ export function InvoicesView({
                     onContactNoteChange: setContactNote,
                     onContactFollowUpAtChange: setContactFollowUpAt,
                     onSaveContact: () => handleSaveContact(detailTargetId),
-                    onClearFollowUp: () => handleClearFollowUp(detailTargetId)
+                    onClearFollowUp: () => handleClearFollowUp(detailTargetId),
+                    onOpenRaiseDispute: openRaiseDisputeForm,
+                    onOpenEditDispute: () => openEditDisputeForm(detailPromiseRecord),
+                    onOpenResolveDispute: openResolveDisputeForm,
+                    onOpenRejectDispute: openRejectDisputeForm,
+                    onCloseDisputeForm: closeDisputeForm,
+                    onDisputeReasonChange: setDisputeReason,
+                    onDisputeDescriptionChange: setDisputeDescription,
+                    onDisputePartyChange: setDisputeParty,
+                    onDisputeReviewAtChange: setDisputeReviewAt,
+                    onDisputeCloseCommentChange: setDisputeCloseComment,
+                    onSaveDispute: () => handleSaveDispute(detailTargetId),
+                    onConfirmCloseDispute: () => handleConfirmCloseDispute(detailTargetId)
                   }
                 : null
             }
@@ -4092,11 +4260,21 @@ export function InvoicesView({
                               {item.nextFollowUpAt ? (
                                 <span className="meta"> · follow-up</span>
                               ) : null}
+                              {item.disputeReviewAt ? (
+                                <span className="meta"> · dispute review</span>
+                              ) : null}
                             </td>
                             <td>
                               <span className="aging-badge aging-badge--promise aging-badge--nba">
                                 {item.nextBestActionLabel}
                               </span>
+                              {item.dispute && item.group === "disputed" ? (
+                                <p className="meta cell-wrap">
+                                  {disputeReasonLabel(item.dispute.reason)}
+                                  {" · "}
+                                  {disputePartyLabel(item.dispute.responsibleParty)}
+                                </p>
+                              ) : null}
                             </td>
                             <td>
                               <span

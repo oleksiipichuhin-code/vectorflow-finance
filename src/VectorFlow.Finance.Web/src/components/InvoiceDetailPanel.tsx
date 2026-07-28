@@ -18,11 +18,14 @@ import {
 import { formatDate, formatMoney } from "../format";
 import type {
   CollectionResolutionKind,
+  DisputeStatus,
   PromiseFollowUpStatus,
   PromiseToPayRecord
 } from "../promiseToPay";
 import {
   RESOLUTION_KIND_OPTIONS,
+  disputeStatusLabel,
+  isActiveDispute,
   promiseStatusLabel,
   resolutionKindLabel
 } from "../promiseToPay";
@@ -30,13 +33,19 @@ import {
   ACTIVITY_EVENT_TYPE_OPTIONS,
   CONTACT_CHANNEL_OPTIONS,
   CONTACT_RESULT_OPTIONS,
+  DISPUTE_PARTY_OPTIONS,
+  DISPUTE_REASON_OPTIONS,
   activityEventTypeLabel,
   contactChannelLabel,
   contactResultLabel,
+  disputePartyLabel,
+  disputeReasonLabel,
   type CaseHistoryView,
   type CollectionActivityEventTypeFilter,
   type ContactChannel,
-  type ContactResult
+  type ContactResult,
+  type DisputeParty,
+  type DisputeReason
 } from "../collectionCaseHistory";
 import { StatusMessage } from "./Panel";
 
@@ -75,6 +84,14 @@ type InvoiceDetailPromiseContext = {
   contactResult: ContactResult | "";
   contactNote: string;
   contactFollowUpAt: string;
+  disputeOpen: boolean;
+  disputeEditMode: boolean;
+  disputeCloseMode: "" | "resolve" | "reject";
+  disputeReason: DisputeReason | "";
+  disputeDescription: string;
+  disputeParty: DisputeParty | "";
+  disputeReviewAt: string;
+  disputeCloseComment: string;
   onOpenForm: () => void;
   onCloseForm: () => void;
   onPromiseDateChange: (value: string) => void;
@@ -102,6 +119,18 @@ type InvoiceDetailPromiseContext = {
   onContactFollowUpAtChange: (value: string) => void;
   onSaveContact: () => void;
   onClearFollowUp: () => void;
+  onOpenRaiseDispute: () => void;
+  onOpenEditDispute: () => void;
+  onOpenResolveDispute: () => void;
+  onOpenRejectDispute: () => void;
+  onCloseDisputeForm: () => void;
+  onDisputeReasonChange: (value: DisputeReason | "") => void;
+  onDisputeDescriptionChange: (value: string) => void;
+  onDisputePartyChange: (value: DisputeParty | "") => void;
+  onDisputeReviewAtChange: (value: string) => void;
+  onDisputeCloseCommentChange: (value: string) => void;
+  onSaveDispute: () => void;
+  onConfirmCloseDispute: () => void;
 };
 
 type InvoiceDetailHistoryContext = {
@@ -248,7 +277,8 @@ export function InvoiceDetailPanel({
     Boolean(promiseContext?.busy) ||
     Boolean(promiseContext?.formOpen) ||
     Boolean(promiseContext?.resolutionOpen) ||
-    Boolean(promiseContext?.contactOpen);
+    Boolean(promiseContext?.contactOpen) ||
+    Boolean(promiseContext?.disputeOpen);
 
   const relatedRows: RelatedAccrualRowView[] = relatedAccruals.map((accrual) =>
     buildRelatedAccrualRowView(accrual, formatMoney, formatDate)
@@ -511,6 +541,48 @@ export function InvoiceDetailPanel({
                           <dt>Contact note</dt>
                           <dd className="cell-wrap">
                             {promiseContext.record.lastContact.note}
+                          </dd>
+                        </div>
+                      ) : null}
+                    </>
+                  ) : null}
+                  {promiseContext.record.dispute ? (
+                    <>
+                      <div>
+                        <dt>Dispute</dt>
+                        <dd>
+                          <span
+                            className={`aging-badge aging-badge--promise aging-badge--dispute-${promiseContext.record.dispute.status as DisputeStatus}`}
+                          >
+                            {disputeStatusLabel(promiseContext.record.dispute.status)}
+                          </span>
+                          {" · "}
+                          {disputeReasonLabel(promiseContext.record.dispute.reason)}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Dispute owner</dt>
+                        <dd>
+                          {disputePartyLabel(promiseContext.record.dispute.responsibleParty)}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Dispute description</dt>
+                        <dd className="cell-wrap">
+                          {promiseContext.record.dispute.description}
+                        </dd>
+                      </div>
+                      {promiseContext.record.dispute.nextReviewAt ? (
+                        <div>
+                          <dt>Dispute review</dt>
+                          <dd>{promiseContext.record.dispute.nextReviewAt}</dd>
+                        </div>
+                      ) : null}
+                      {promiseContext.record.dispute.resolutionComment ? (
+                        <div>
+                          <dt>Dispute outcome</dt>
+                          <dd className="cell-wrap">
+                            {promiseContext.record.dispute.resolutionComment}
                           </dd>
                         </div>
                       ) : null}
@@ -834,9 +906,169 @@ export function InvoiceDetailPanel({
                 </form>
               ) : null}
 
+              {promiseContext.disputeOpen && !promiseContext.disputeCloseMode ? (
+                <form
+                  className="filter-form dispute-form"
+                  aria-labelledby="collection-dispute-heading"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    promiseContext.onSaveDispute();
+                  }}
+                >
+                  <h4 id="collection-dispute-heading">
+                    {promiseContext.disputeEditMode ? "Update dispute" : "Raise dispute"}
+                  </h4>
+                  <label>
+                    Reason *
+                    <select
+                      value={promiseContext.disputeReason}
+                      onChange={(event) =>
+                        promiseContext.onDisputeReasonChange(
+                          event.target.value as DisputeReason | ""
+                        )
+                      }
+                      disabled={promiseContext.busy}
+                      required
+                    >
+                      <option value="">Оберіть причину…</option>
+                      {DISPUTE_REASON_OPTIONS.map((option) => (
+                        <option key={option.id} value={option.id}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Description *
+                    <input
+                      value={promiseContext.disputeDescription}
+                      onChange={(event) =>
+                        promiseContext.onDisputeDescriptionChange(event.target.value)
+                      }
+                      placeholder="опис спору"
+                      autoComplete="off"
+                      disabled={promiseContext.busy}
+                      required
+                    />
+                  </label>
+                  <label>
+                    Responsible party *
+                    <select
+                      value={promiseContext.disputeParty}
+                      onChange={(event) =>
+                        promiseContext.onDisputePartyChange(
+                          event.target.value as DisputeParty | ""
+                        )
+                      }
+                      disabled={promiseContext.busy}
+                      required
+                    >
+                      <option value="">Оберіть сторону…</option>
+                      {DISPUTE_PARTY_OPTIONS.map((option) => (
+                        <option key={option.id} value={option.id}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Next review date
+                    <input
+                      type="date"
+                      value={promiseContext.disputeReviewAt}
+                      onChange={(event) =>
+                        promiseContext.onDisputeReviewAtChange(event.target.value)
+                      }
+                      disabled={promiseContext.busy}
+                    />
+                  </label>
+                  <div className="filter-actions">
+                    <button
+                      type="submit"
+                      disabled={
+                        promiseContext.busy ||
+                        closeDisabled ||
+                        !promiseContext.disputeReason ||
+                        !promiseContext.disputeDescription.trim() ||
+                        !promiseContext.disputeParty
+                      }
+                    >
+                      {promiseContext.busy
+                        ? "Збереження…"
+                        : promiseContext.disputeEditMode
+                          ? "Save dispute update"
+                          : "Save dispute"}
+                    </button>
+                    <button
+                      type="button"
+                      className="button-secondary"
+                      disabled={promiseContext.busy || closeDisabled}
+                      onClick={promiseContext.onCloseDisputeForm}
+                    >
+                      Скасувати
+                    </button>
+                  </div>
+                </form>
+              ) : null}
+
+              {promiseContext.disputeOpen && promiseContext.disputeCloseMode ? (
+                <form
+                  className="filter-form dispute-close-form"
+                  aria-labelledby="collection-dispute-close-heading"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    promiseContext.onConfirmCloseDispute();
+                  }}
+                >
+                  <h4 id="collection-dispute-close-heading">
+                    {promiseContext.disputeCloseMode === "resolve"
+                      ? "Resolve dispute"
+                      : "Reject dispute"}
+                  </h4>
+                  <label>
+                    Resolution comment *
+                    <input
+                      value={promiseContext.disputeCloseComment}
+                      onChange={(event) =>
+                        promiseContext.onDisputeCloseCommentChange(event.target.value)
+                      }
+                      placeholder="підсумковий коментар"
+                      autoComplete="off"
+                      disabled={promiseContext.busy}
+                      required
+                    />
+                  </label>
+                  <div className="filter-actions">
+                    <button
+                      type="submit"
+                      disabled={
+                        promiseContext.busy ||
+                        closeDisabled ||
+                        !promiseContext.disputeCloseComment.trim()
+                      }
+                    >
+                      {promiseContext.busy
+                        ? "Збереження…"
+                        : promiseContext.disputeCloseMode === "resolve"
+                          ? "Resolve dispute"
+                          : "Reject dispute"}
+                    </button>
+                    <button
+                      type="button"
+                      className="button-secondary"
+                      disabled={promiseContext.busy || closeDisabled}
+                      onClick={promiseContext.onCloseDisputeForm}
+                    >
+                      Скасувати
+                    </button>
+                  </div>
+                </form>
+              ) : null}
+
               {!promiseContext.formOpen &&
               !promiseContext.resolutionOpen &&
-              !promiseContext.contactOpen ? (
+              !promiseContext.contactOpen &&
+              !promiseContext.disputeOpen ? (
                 <div className="filter-actions">
                   <button
                     type="button"
@@ -845,6 +1077,40 @@ export function InvoiceDetailPanel({
                   >
                     Log contact
                   </button>
+                  {isActiveDispute(promiseContext.record?.dispute) ? (
+                    <>
+                      <button
+                        type="button"
+                        disabled={closeDisabled || promiseContext.busy}
+                        onClick={promiseContext.onOpenEditDispute}
+                      >
+                        Update dispute
+                      </button>
+                      <button
+                        type="button"
+                        disabled={closeDisabled || promiseContext.busy}
+                        onClick={promiseContext.onOpenResolveDispute}
+                      >
+                        Resolve dispute
+                      </button>
+                      <button
+                        type="button"
+                        className="button-secondary"
+                        disabled={closeDisabled || promiseContext.busy}
+                        onClick={promiseContext.onOpenRejectDispute}
+                      >
+                        Reject dispute
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={closeDisabled || promiseContext.busy}
+                      onClick={promiseContext.onOpenRaiseDispute}
+                    >
+                      Raise dispute
+                    </button>
+                  )}
                   <button
                     type="button"
                     disabled={closeDisabled || promiseContext.busy}
@@ -902,8 +1168,8 @@ export function InvoiceDetailPanel({
                 </div>
               ) : null}
               <p className="meta promise-persistence-note">
-                Contact, follow-up і resolution зберігаються локально в браузері (localStorage)
-                за invoice id.
+                Contact, dispute, follow-up і resolution зберігаються локально в браузері
+                (localStorage) за invoice id.
               </p>
             </section>
           ) : null}
@@ -1048,9 +1314,25 @@ export function InvoiceDetailPanel({
                             </p>
                           ) : null}
                           {event.followUpAt ? (
-                            <p className="meta">Follow-up: {event.followUpAt}</p>
+                            <p className="meta">
+                              {event.type.startsWith("dispute_")
+                                ? `Review: ${event.followUpAt}`
+                                : `Follow-up: ${event.followUpAt}`}
+                            </p>
                           ) : null}
-                          {event.promiseDate && event.type !== "contact_logged" ? (
+                          {event.disputeReason || event.disputeParty ? (
+                            <p className="meta">
+                              {event.disputeReason
+                                ? disputeReasonLabel(event.disputeReason)
+                                : "Dispute"}
+                              {event.disputeParty
+                                ? ` · ${disputePartyLabel(event.disputeParty)}`
+                                : ""}
+                            </p>
+                          ) : null}
+                          {event.promiseDate &&
+                          event.type !== "contact_logged" &&
+                          !event.type.startsWith("dispute_") ? (
                             <p className="meta">Promise date: {event.promiseDate}</p>
                           ) : null}
                         </li>

@@ -24,6 +24,10 @@ export type CollectionActivityEventType =
   | "partially_paid"
   | "new_promise"
   | "disputed"
+  | "dispute_raised"
+  | "dispute_updated"
+  | "dispute_resolved"
+  | "dispute_rejected"
   | "escalated"
   | "unable_to_contact"
   | "completed";
@@ -40,6 +44,21 @@ export type ContactResult =
   | "payment_promised"
   | "other";
 
+export type DisputeReason =
+  | "incorrect_amount"
+  | "duplicate_invoice"
+  | "service_not_received"
+  | "missing_documents"
+  | "contract_mismatch"
+  | "other";
+
+export type DisputeParty =
+  | "collections"
+  | "finance"
+  | "customer"
+  | "operations"
+  | "other";
+
 export type CollectionActivityEvent = {
   id: string;
   type: CollectionActivityEventType;
@@ -50,6 +69,8 @@ export type CollectionActivityEvent = {
   contactChannel: ContactChannel | null;
   contactResult: ContactResult | null;
   followUpAt: string | null;
+  disputeReason: DisputeReason | null;
+  disputeParty: DisputeParty | null;
 };
 
 export type CaseHistorySummary = {
@@ -93,6 +114,10 @@ export const ACTIVITY_EVENT_TYPE_OPTIONS: readonly {
   { id: "partially_paid", label: "Partially paid" },
   { id: "new_promise", label: "New promise" },
   { id: "disputed", label: "Disputed" },
+  { id: "dispute_raised", label: "Dispute raised" },
+  { id: "dispute_updated", label: "Dispute updated" },
+  { id: "dispute_resolved", label: "Dispute resolved" },
+  { id: "dispute_rejected", label: "Dispute rejected" },
   { id: "escalated", label: "Escalated" },
   { id: "unable_to_contact", label: "Unable to contact" },
   { id: "completed", label: "Completed" }
@@ -120,6 +145,29 @@ export const CONTACT_RESULT_OPTIONS: readonly {
   { id: "other", label: "Other" }
 ];
 
+export const DISPUTE_REASON_OPTIONS: readonly {
+  id: DisputeReason;
+  label: string;
+}[] = [
+  { id: "incorrect_amount", label: "Incorrect amount" },
+  { id: "duplicate_invoice", label: "Duplicate invoice" },
+  { id: "service_not_received", label: "Service not received" },
+  { id: "missing_documents", label: "Missing documents" },
+  { id: "contract_mismatch", label: "Contract mismatch" },
+  { id: "other", label: "Other" }
+];
+
+export const DISPUTE_PARTY_OPTIONS: readonly {
+  id: DisputeParty;
+  label: string;
+}[] = [
+  { id: "collections", label: "Collections" },
+  { id: "finance", label: "Finance" },
+  { id: "customer", label: "Customer" },
+  { id: "operations", label: "Operations" },
+  { id: "other", label: "Other" }
+];
+
 const EVENT_TYPE_SET: ReadonlySet<string> = new Set(
   ACTIVITY_EVENT_TYPE_OPTIONS.map((option) => option.id).filter(Boolean)
 );
@@ -130,6 +178,14 @@ const CONTACT_CHANNEL_SET: ReadonlySet<string> = new Set(
 
 const CONTACT_RESULT_SET: ReadonlySet<string> = new Set(
   CONTACT_RESULT_OPTIONS.map((option) => option.id)
+);
+
+const DISPUTE_REASON_SET: ReadonlySet<string> = new Set(
+  DISPUTE_REASON_OPTIONS.map((option) => option.id)
+);
+
+const DISPUTE_PARTY_SET: ReadonlySet<string> = new Set(
+  DISPUTE_PARTY_OPTIONS.map((option) => option.id)
 );
 
 const EVENT_LABELS: Record<CollectionActivityEventType, string> = {
@@ -143,6 +199,10 @@ const EVENT_LABELS: Record<CollectionActivityEventType, string> = {
   partially_paid: "Partially paid",
   new_promise: "New promise",
   disputed: "Disputed",
+  dispute_raised: "Dispute raised",
+  dispute_updated: "Dispute updated",
+  dispute_resolved: "Dispute resolved",
+  dispute_rejected: "Dispute rejected",
   escalated: "Escalated",
   unable_to_contact: "Unable to contact",
   completed: "Completed"
@@ -176,6 +236,14 @@ export function contactResultLabel(result: ContactResult): string {
   return CONTACT_RESULT_OPTIONS.find((option) => option.id === result)?.label ?? result;
 }
 
+export function disputeReasonLabel(reason: DisputeReason): string {
+  return DISPUTE_REASON_OPTIONS.find((option) => option.id === reason)?.label ?? reason;
+}
+
+export function disputePartyLabel(party: DisputeParty): string {
+  return DISPUTE_PARTY_OPTIONS.find((option) => option.id === party)?.label ?? party;
+}
+
 export function parseContactChannel(value: string | null | undefined): ContactChannel | null {
   if (value == null) {
     return null;
@@ -190,6 +258,22 @@ export function parseContactResult(value: string | null | undefined): ContactRes
   }
   const trimmed = value.trim();
   return CONTACT_RESULT_SET.has(trimmed) ? (trimmed as ContactResult) : null;
+}
+
+export function parseDisputeReason(value: string | null | undefined): DisputeReason | null {
+  if (value == null) {
+    return null;
+  }
+  const trimmed = value.trim();
+  return DISPUTE_REASON_SET.has(trimmed) ? (trimmed as DisputeReason) : null;
+}
+
+export function parseDisputeParty(value: string | null | undefined): DisputeParty | null {
+  if (value == null) {
+    return null;
+  }
+  const trimmed = value.trim();
+  return DISPUTE_PARTY_SET.has(trimmed) ? (trimmed as DisputeParty) : null;
 }
 
 export function parseHistoryEventTypeParam(
@@ -224,6 +308,8 @@ export function activityEventFingerprint(
     | "contactChannel"
     | "contactResult"
     | "followUpAt"
+    | "disputeReason"
+    | "disputeParty"
   >
 ): string {
   return [
@@ -234,7 +320,9 @@ export function activityEventFingerprint(
     event.description,
     event.contactChannel ?? "",
     event.contactResult ?? "",
-    event.followUpAt ?? ""
+    event.followUpAt ?? "",
+    event.disputeReason ?? "",
+    event.disputeParty ?? ""
   ].join("|");
 }
 
@@ -247,6 +335,8 @@ export function createActivityEvent(input: {
   contactChannel?: ContactChannel | null;
   contactResult?: ContactResult | null;
   followUpAt?: string | null;
+  disputeReason?: DisputeReason | null;
+  disputeParty?: DisputeParty | null;
   id?: string;
 }): CollectionActivityEvent {
   const note = input.note?.trim() ? input.note.trim() : null;
@@ -254,9 +344,20 @@ export function createActivityEvent(input: {
   const contactChannel = input.contactChannel ?? null;
   const contactResult = input.contactResult ?? null;
   const followUpAt = input.followUpAt?.trim() ? input.followUpAt.trim() : null;
+  const disputeReason = input.disputeReason ?? null;
+  const disputeParty = input.disputeParty ?? null;
   const description =
     input.description?.trim() ||
-    defaultDescription(input.type, promiseDate, note, contactChannel, contactResult, followUpAt);
+    defaultDescription(
+      input.type,
+      promiseDate,
+      note,
+      contactChannel,
+      contactResult,
+      followUpAt,
+      disputeReason,
+      disputeParty
+    );
   const draft = {
     type: input.type,
     atUtc: input.atUtc,
@@ -265,7 +366,9 @@ export function createActivityEvent(input: {
     promiseDate,
     contactChannel,
     contactResult,
-    followUpAt
+    followUpAt,
+    disputeReason,
+    disputeParty
   };
   return {
     id: input.id?.trim() || activityEventFingerprint(draft),
@@ -279,7 +382,9 @@ function defaultDescription(
   note: string | null,
   contactChannel: ContactChannel | null = null,
   contactResult: ContactResult | null = null,
-  followUpAt: string | null = null
+  followUpAt: string | null = null,
+  disputeReason: DisputeReason | null = null,
+  disputeParty: DisputeParty | null = null
 ): string {
   if (type === "contact_logged") {
     const channel = contactChannel ? contactChannelLabel(contactChannel) : "Contact";
@@ -292,6 +397,29 @@ function defaultDescription(
       parts.push(`follow-up ${followUpAt}`);
     }
     return parts.join(" — ");
+  }
+  if (
+    type === "dispute_raised" ||
+    type === "dispute_updated" ||
+    type === "dispute_resolved" ||
+    type === "dispute_rejected"
+  ) {
+    const label = activityEventTypeLabel(type);
+    const parts = [label];
+    if (disputeReason) {
+      parts.push(disputeReasonLabel(disputeReason));
+    }
+    if (disputeParty) {
+      parts.push(disputePartyLabel(disputeParty));
+    }
+    let text = parts.join(" · ");
+    if (note) {
+      text = `${text} — ${note.length > 80 ? `${note.slice(0, 77)}…` : note}`;
+    }
+    if (followUpAt && (type === "dispute_raised" || type === "dispute_updated")) {
+      text = `${text} (review ${followUpAt})`;
+    }
+    return text;
   }
   const label = activityEventTypeLabel(type);
   if (type === "promise_created" || type === "promise_updated" || type === "new_promise") {
@@ -340,6 +468,12 @@ export function sanitizeActivityEvent(raw: unknown): CollectionActivityEvent | n
     typeof candidate.followUpAt === "string" && candidate.followUpAt.trim()
       ? candidate.followUpAt.trim()
       : null;
+  const disputeReason = parseDisputeReason(
+    typeof candidate.disputeReason === "string" ? candidate.disputeReason : null
+  );
+  const disputeParty = parseDisputeParty(
+    typeof candidate.disputeParty === "string" ? candidate.disputeParty : null
+  );
   const description =
     typeof candidate.description === "string" && candidate.description.trim()
       ? candidate.description.trim()
@@ -349,7 +483,9 @@ export function sanitizeActivityEvent(raw: unknown): CollectionActivityEvent | n
           note,
           contactChannel,
           contactResult,
-          followUpAt
+          followUpAt,
+          disputeReason,
+          disputeParty
         );
   const id =
     typeof candidate.id === "string" && candidate.id.trim()
@@ -362,7 +498,9 @@ export function sanitizeActivityEvent(raw: unknown): CollectionActivityEvent | n
           description,
           contactChannel,
           contactResult,
-          followUpAt
+          followUpAt,
+          disputeReason,
+          disputeParty
         });
   return {
     id,
@@ -373,7 +511,9 @@ export function sanitizeActivityEvent(raw: unknown): CollectionActivityEvent | n
     promiseDate,
     contactChannel,
     contactResult,
-    followUpAt
+    followUpAt,
+    disputeReason,
+    disputeParty
   };
 }
 
@@ -497,7 +637,7 @@ export function filterCaseTimeline(
       return true;
     }
     const haystack =
-      `${event.description} ${event.note ?? ""} ${event.promiseDate ?? ""} ${event.followUpAt ?? ""} ${event.contactChannel ?? ""} ${event.contactResult ?? ""} ${activityEventTypeLabel(event.type)}`.toLowerCase();
+      `${event.description} ${event.note ?? ""} ${event.promiseDate ?? ""} ${event.followUpAt ?? ""} ${event.contactChannel ?? ""} ${event.contactResult ?? ""} ${event.disputeReason ?? ""} ${event.disputeParty ?? ""} ${activityEventTypeLabel(event.type)}`.toLowerCase();
     return haystack.includes(search);
   });
 }
@@ -700,6 +840,36 @@ export function historyAfterContact(
       contactChannel: contact.channel,
       contactResult: contact.result,
       followUpAt: contact.followUpAt
+    })
+  );
+}
+
+export function historyAfterDisputeChange(
+  existing: PromiseToPayRecord | null,
+  type: "dispute_raised" | "dispute_updated" | "dispute_resolved" | "dispute_rejected",
+  dispute: {
+    reason: DisputeReason;
+    responsibleParty: DisputeParty;
+    description: string;
+    nextReviewAt: string | null;
+    resolutionComment?: string | null;
+  },
+  now: Date = new Date()
+): CollectionActivityEvent[] {
+  const note =
+    type === "dispute_resolved" || type === "dispute_rejected"
+      ? dispute.resolutionComment?.trim() || dispute.description
+      : dispute.description;
+  return appendActivityEvent(
+    existing?.history ?? [],
+    createActivityEvent({
+      type,
+      atUtc: now.toISOString(),
+      note: note || null,
+      promiseDate: existing?.promiseDate ?? null,
+      followUpAt: dispute.nextReviewAt,
+      disputeReason: dispute.reason,
+      disputeParty: dispute.responsibleParty
     })
   );
 }

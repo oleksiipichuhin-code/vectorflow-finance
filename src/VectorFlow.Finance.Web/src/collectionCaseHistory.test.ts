@@ -13,10 +13,13 @@ import {
 } from "./collectionCaseHistory.ts";
 import {
   applyCollectionResolution,
+  raiseCollectionDispute,
   readPromiseFromStorage,
+  resolveCollectionDispute,
   saveCollectionContact,
   savePromiseToPay,
   storageKeyForInvoice,
+  updateCollectionDispute,
   updatePromiseStatus
 } from "./promiseToPay.ts";
 
@@ -238,6 +241,7 @@ describe("collectionCaseHistory events", () => {
   it("parses history URL helpers", () => {
     assert.equal(parseHistoryEventTypeParam("contacted"), "contacted");
     assert.equal(parseHistoryEventTypeParam("contact_logged"), "contact_logged");
+    assert.equal(parseHistoryEventTypeParam("dispute_raised"), "dispute_raised");
     assert.equal(parseHistoryEventTypeParam("nope"), "");
     assert.equal(parseHistoryFlagParam("1"), true);
     assert.equal(parseHistoryFlagParam("0"), false);
@@ -276,5 +280,50 @@ describe("collectionCaseHistory events", () => {
       ordered,
       [...ordered].sort((a, b) => (a < b ? 1 : a > b ? -1 : 0))
     );
+  });
+
+  it("maps dispute lifecycle into append-only history", () => {
+    const storage = new MemoryStorage();
+    savePromiseToPay(
+      INVOICE_A,
+      { promiseDate: "2026-08-01", note: "base" },
+      { storage, now: NOW }
+    );
+    const raised = raiseCollectionDispute(
+      INVOICE_A,
+      {
+        reason: "incorrect_amount",
+        description: "overcharged",
+        responsibleParty: "finance",
+        nextReviewAt: "2026-08-09"
+      },
+      { storage, now: new Date(NOW.getTime() + 1000) }
+    );
+    assert.equal(raised.ok, true);
+    if (!raised.ok) return;
+    updateCollectionDispute(
+      INVOICE_A,
+      {
+        reason: "incorrect_amount",
+        description: "overcharged by 50",
+        responsibleParty: "operations",
+        nextReviewAt: "2026-08-11"
+      },
+      { storage, now: new Date(NOW.getTime() + 2000) }
+    );
+    const resolved = resolveCollectionDispute(
+      INVOICE_A,
+      { comment: "credit note issued" },
+      { storage, now: new Date(NOW.getTime() + 3000) }
+    );
+    assert.equal(resolved.ok, true);
+    if (!resolved.ok) return;
+    const timeline = buildCaseTimeline(resolved.record, NOW);
+    const types = timeline.map((e) => e.type);
+    assert.ok(types.includes("dispute_raised"));
+    assert.ok(types.includes("dispute_updated"));
+    assert.ok(types.includes("dispute_resolved"));
+    assert.ok(types.includes("promise_created"));
+    assert.equal(timeline[0]?.type, "dispute_resolved");
   });
 });

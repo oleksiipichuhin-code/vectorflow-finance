@@ -8,16 +8,22 @@ import {
   filterPromiseFollowUps,
   groupPromiseFollowUps,
   listPromiseRecordsFromStorage,
+  raiseCollectionDispute,
   readPromiseFromStorage,
+  rejectCollectionDispute,
   removePromiseFromStorage,
+  resolveCollectionDispute,
   saveCollectionContact,
   savePromiseToPay,
   sanitizePromiseRecord,
   storageKeyForInvoice,
+  updateCollectionDispute,
   updateContactFollowUp,
   updatePromiseStatus,
   validateCollectionContactInput,
+  validateCollectionDisputeInput,
   validateCollectionResolutionInput,
+  validateDisputeCloseInput,
   validatePromiseToPayInput,
   type PromiseInvoiceLike,
   type PromiseToPayRecord
@@ -169,6 +175,7 @@ describe("promiseToPay classification", () => {
       resolution: null,
       nextFollowUpAt: null,
       lastContact: null,
+      dispute: null,
       history: [],
       ...overrides
     };
@@ -615,6 +622,7 @@ describe("collection resolution workflow", () => {
       resolution: null,
       nextFollowUpAt: null,
       lastContact: null,
+      dispute: null,
       history: []
     };
     assert.equal(
@@ -895,5 +903,249 @@ describe("collection contact follow-up", () => {
     assert.equal(result.needsPromise, true);
     assert.equal(result.record.resolution, null);
     assert.equal(result.record.status, "contacted");
+  });
+});
+
+describe("collection dispute workflow", () => {
+  const now = new Date("2026-07-28T12:00:00.000Z");
+
+  it("parses old records without dispute field", () => {
+    const storage = new MemoryStorage();
+    storage.setItem(
+      storageKeyForInvoice(INVOICE_A),
+      JSON.stringify({
+        invoiceId: INVOICE_A,
+        promiseDate: "2026-08-01",
+        status: "awaiting",
+        note: "",
+        updatedAtUtc: "2026-07-28T00:00:00.000Z",
+        completedAtUtc: null,
+        resolution: null,
+        history: []
+      })
+    );
+    const record = readPromiseFromStorage(INVOICE_A, storage);
+    assert.ok(record);
+    assert.equal(record?.dispute, null);
+  });
+
+  it("validates required dispute fields", () => {
+    assert.equal(
+      validateCollectionDisputeInput({
+        reason: "",
+        description: "",
+        responsibleParty: ""
+      }).ok,
+      false
+    );
+    assert.equal(
+      validateCollectionDisputeInput({
+        reason: "",
+        description: "x",
+        responsibleParty: "finance"
+      }).ok,
+      false
+    );
+    assert.equal(
+      validateCollectionDisputeInput({
+        reason: "incorrect_amount",
+        description: "",
+        responsibleParty: "finance"
+      }).ok,
+      false
+    );
+    assert.equal(
+      validateCollectionDisputeInput({
+        reason: "incorrect_amount",
+        description: "wrong total",
+        responsibleParty: ""
+      }).ok,
+      false
+    );
+    assert.equal(validateDisputeCloseInput({ comment: "" }).ok, false);
+  });
+
+  it("raises dispute with review date and maps workbench eligibility", () => {
+    const storage = new MemoryStorage();
+    const raised = raiseCollectionDispute(
+      INVOICE_A,
+      {
+        reason: "incorrect_amount",
+        description: "amount off by 100",
+        responsibleParty: "finance",
+        nextReviewAt: "2026-08-15"
+      },
+      { storage, now }
+    );
+    assert.equal(raised.ok, true);
+    if (!raised.ok) return;
+    assert.equal(raised.record.dispute?.status, "open");
+    assert.equal(raised.record.dispute?.nextReviewAt, "2026-08-15");
+    assert.equal(classifyPromiseGroup(raised.record, now), "disputed");
+    assert.ok(raised.record.history.some((e) => e.type === "dispute_raised"));
+
+    const items = buildPromiseFollowUpItems(
+      [invoice(INVOICE_A)],
+      [raised.record],
+      now
+    );
+    assert.equal(items[0]?.group, "disputed");
+    assert.equal(items[0]?.disputeReviewAt, "2026-08-15");
+    assert.equal(items[0]?.nextActionDate, "2026-08-15");
+    assert.equal(filterPromiseFollowUps(items, { group: "disputed" }).length, 1);
+  });
+
+  it("blocks second active dispute and updates without duplicating dispute entity", () => {
+    const storage = new MemoryStorage();
+    raiseCollectionDispute(
+      INVOICE_A,
+      {
+        reason: "duplicate_invoice",
+        description: "dup",
+        responsibleParty: "collections",
+        nextReviewAt: "2026-08-01"
+      },
+      { storage, now }
+    );
+    const second = raiseCollectionDispute(
+      INVOICE_A,
+      {
+        reason: "other",
+        description: "another",
+        responsibleParty: "customer"
+      },
+      { storage, now: new Date(now.getTime() + 1000) }
+    );
+    assert.equal(second.ok, false);
+
+    const updated = updateCollectionDispute(
+      INVOICE_A,
+      {
+        reason: "missing_documents",
+        description: "need PO",
+        responsibleParty: "operations",
+        nextReviewAt: "2026-08-20"
+      },
+      { storage, now: new Date(now.getTime() + 2000) }
+    );
+    assert.equal(updated.ok, true);
+    if (!updated.ok) return;
+    assert.equal(updated.record.dispute?.reason, "missing_documents");
+    assert.equal(updated.record.dispute?.nextReviewAt, "2026-08-20");
+    assert.equal(
+      updated.record.history.filter((e) => e.type === "dispute_raised").length,
+      1
+    );
+    assert.equal(
+      updated.record.history.filter((e) => e.type === "dispute_updated").length,
+      1
+    );
+
+    const noop = updateCollectionDispute(
+      INVOICE_A,
+      {
+        reason: "missing_documents",
+        description: "need PO",
+        responsibleParty: "operations",
+        nextReviewAt: "2026-08-20"
+      },
+      { storage, now: new Date(now.getTime() + 3000) }
+    );
+    assert.equal(noop.ok, true);
+    if (!noop.ok) return;
+    assert.equal(
+      noop.record.history.filter((e) => e.type === "dispute_updated").length,
+      1
+    );
+  });
+
+  it("coexists with contact follow-up dates and resolves with required comment", () => {
+    const storage = new MemoryStorage();
+    saveCollectionContact(
+      INVOICE_A,
+      {
+        channel: "phone",
+        result: "no_answer",
+        note: "busy",
+        followUpAt: "2026-08-05"
+      },
+      { storage, now }
+    );
+    const raised = raiseCollectionDispute(
+      INVOICE_A,
+      {
+        reason: "service_not_received",
+        description: "not delivered",
+        responsibleParty: "customer",
+        nextReviewAt: "2026-08-10"
+      },
+      { storage, now: new Date(now.getTime() + 1000) }
+    );
+    assert.equal(raised.ok, true);
+    if (!raised.ok) return;
+    assert.equal(raised.record.nextFollowUpAt, "2026-08-05");
+    assert.equal(raised.record.dispute?.nextReviewAt, "2026-08-10");
+    assert.equal(classifyPromiseGroup(raised.record, now), "disputed");
+    const item = buildPromiseFollowUpItems(
+      [invoice(INVOICE_A)],
+      [raised.record],
+      now
+    )[0];
+    assert.equal(item?.nextActionDate, "2026-08-05");
+    assert.equal(item?.nextFollowUpAt, "2026-08-05");
+    assert.equal(item?.disputeReviewAt, "2026-08-10");
+
+    assert.equal(
+      resolveCollectionDispute(INVOICE_A, { comment: "" }, { storage, now }).ok,
+      false
+    );
+    const resolved = resolveCollectionDispute(
+      INVOICE_A,
+      { comment: "docs received, cleared" },
+      { storage, now: new Date(now.getTime() + 2000) }
+    );
+    assert.equal(resolved.ok, true);
+    if (!resolved.ok) return;
+    assert.equal(resolved.record.dispute?.status, "resolved");
+    assert.equal(resolved.record.dispute?.nextReviewAt, null);
+    assert.ok(resolved.record.history.some((e) => e.type === "dispute_resolved"));
+    assert.ok(resolved.record.history.some((e) => e.type === "contact_logged"));
+    assert.notEqual(classifyPromiseGroup(resolved.record, now), "disputed");
+    assert.equal(
+      filterPromiseFollowUps(
+        buildPromiseFollowUpItems([invoice(INVOICE_A)], [resolved.record], now),
+        { group: "disputed" }
+      ).length,
+      0
+    );
+  });
+
+  it("rejects dispute with required comment and preserves prior history", () => {
+    const storage = new MemoryStorage();
+    savePromiseToPay(
+      INVOICE_A,
+      { promiseDate: "2026-08-01", note: "base" },
+      { storage, now }
+    );
+    raiseCollectionDispute(
+      INVOICE_A,
+      {
+        reason: "contract_mismatch",
+        description: "terms differ",
+        responsibleParty: "finance"
+      },
+      { storage, now: new Date(now.getTime() + 1000) }
+    );
+    const rejected = rejectCollectionDispute(
+      INVOICE_A,
+      { comment: "customer withdrew dispute" },
+      { storage, now: new Date(now.getTime() + 2000) }
+    );
+    assert.equal(rejected.ok, true);
+    if (!rejected.ok) return;
+    assert.equal(rejected.record.dispute?.status, "rejected");
+    assert.ok(rejected.record.history.some((e) => e.type === "promise_created"));
+    assert.ok(rejected.record.history.some((e) => e.type === "dispute_raised"));
+    assert.ok(rejected.record.history.some((e) => e.type === "dispute_rejected"));
   });
 });

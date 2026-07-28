@@ -11,15 +11,20 @@ import {
 } from "./invoiceDueDateAging.ts";
 import {
   historyAfterContact,
+  historyAfterDisputeChange,
   historyAfterPromiseSave,
   historyAfterResolution,
   historyAfterStatusChange,
   parseContactChannel,
   parseContactResult,
+  parseDisputeParty,
+  parseDisputeReason,
   sanitizeActivityHistory,
   type CollectionActivityEvent,
   type ContactChannel,
-  type ContactResult
+  type ContactResult,
+  type DisputeParty,
+  type DisputeReason
 } from "./collectionCaseHistory.ts";
 
 export const PROMISE_STORAGE_KEY_PREFIX = "vectorflow.finance.promiseToPay.";
@@ -68,6 +73,21 @@ export type CollectionContactAttempt = {
   contactedAtUtc: string;
 };
 
+export type DisputeStatus = "open" | "resolved" | "rejected";
+
+export type CollectionDispute = {
+  id: string;
+  status: DisputeStatus;
+  reason: DisputeReason;
+  description: string;
+  responsibleParty: DisputeParty;
+  openedAtUtc: string;
+  updatedAtUtc: string;
+  nextReviewAt: string | null;
+  resolutionComment: string | null;
+  resolvedAtUtc: string | null;
+};
+
 export type PromiseToPayRecord = {
   invoiceId: string;
   promiseDate: string;
@@ -80,6 +100,8 @@ export type PromiseToPayRecord = {
   nextFollowUpAt: string | null;
   /** Most recent logged contact attempt. */
   lastContact: CollectionContactAttempt | null;
+  /** Structured collection dispute lifecycle (separate from resolution.kind). */
+  dispute: CollectionDispute | null;
   /** Append-only activity timeline (same localStorage record). */
   history: CollectionActivityEvent[];
 };
@@ -121,6 +143,27 @@ export type ContactValidationResult =
     }
   | { ok: false; error: string };
 
+export type CollectionDisputeInput = {
+  reason: DisputeReason | "";
+  description?: string;
+  responsibleParty: DisputeParty | "";
+  nextReviewAt?: string;
+};
+
+export type DisputeValidationResult =
+  | {
+      ok: true;
+      reason: DisputeReason;
+      description: string;
+      responsibleParty: DisputeParty;
+      nextReviewAt: string | null;
+    }
+  | { ok: false; error: string };
+
+export type DisputeCloseInput = {
+  comment?: string;
+};
+
 export type PromiseInvoiceLike = {
   id: string;
   documentNumber: string;
@@ -153,6 +196,8 @@ export type PromiseFollowUpItem = {
   resolutionLabel: string | null;
   nextFollowUpAt: string | null;
   lastContact: CollectionContactAttempt | null;
+  dispute: CollectionDispute | null;
+  disputeReviewAt: string | null;
 };
 
 export type PromiseFollowUpSummary = {
@@ -290,6 +335,71 @@ export function validateCollectionContactInput(
   };
 }
 
+export function validateCollectionDisputeInput(
+  input: CollectionDisputeInput
+): DisputeValidationResult {
+  const reason = parseDisputeReason(input.reason);
+  const responsibleParty = parseDisputeParty(input.responsibleParty);
+  const description = (input.description ?? "").trim();
+  const reviewRaw = (input.nextReviewAt ?? "").trim();
+
+  if (!reason && !responsibleParty && !description && !reviewRaw) {
+    return { ok: false, error: "Заповніть обовʼязкові поля спору." };
+  }
+  if (!reason) {
+    return { ok: false, error: "Оберіть причину спору." };
+  }
+  if (!description) {
+    return { ok: false, error: "Вкажіть опис спору." };
+  }
+  if (!responsibleParty) {
+    return { ok: false, error: "Оберіть відповідальну сторону." };
+  }
+  if (reviewRaw && !isValidPromiseDate(reviewRaw)) {
+    return {
+      ok: false,
+      error: "Некоректна дата review. Використовуйте формат РРРР-ММ-ДД."
+    };
+  }
+
+  return {
+    ok: true,
+    reason,
+    description,
+    responsibleParty,
+    nextReviewAt: reviewRaw || null
+  };
+}
+
+export function validateDisputeCloseInput(
+  input: DisputeCloseInput
+): { ok: true; comment: string } | { ok: false; error: string } {
+  const comment = (input.comment ?? "").trim();
+  if (!comment) {
+    return { ok: false, error: "Вкажіть підсумковий коментар." };
+  }
+  return { ok: true, comment };
+}
+
+export function disputeStatusLabel(status: DisputeStatus): string {
+  switch (status) {
+    case "open":
+      return "Open";
+    case "resolved":
+      return "Resolved";
+    case "rejected":
+      return "Rejected";
+    default:
+      return status;
+  }
+}
+
+export function isActiveDispute(
+  dispute: CollectionDispute | null | undefined
+): boolean {
+  return dispute?.status === "open";
+}
+
 export function parsePromiseGroupParam(value: string | null | undefined): PromiseGroupFilter {
   if (value == null) {
     return "";
@@ -380,13 +490,19 @@ function classifyByPromiseDate(
 
 /**
  * Classify an active or completed promise into a follow-up workspace group.
- * Resolution outcomes take precedence over calendar buckets where specified.
- * Contact nextFollowUpAt places the case in follow_up_required when active.
+ * Resolution outcomes and open disputes take precedence over calendar buckets.
+ * Contact nextFollowUpAt places the case in follow_up_required when active
+ * (unless an open dispute or terminal resolution wins).
  */
 export function classifyPromiseGroup(
   record: Pick<
     PromiseToPayRecord,
-    "promiseDate" | "status" | "completedAtUtc" | "resolution" | "nextFollowUpAt"
+    | "promiseDate"
+    | "status"
+    | "completedAtUtc"
+    | "resolution"
+    | "nextFollowUpAt"
+    | "dispute"
   >,
   now: Date = new Date()
 ): PromiseGroupId | null {
@@ -398,7 +514,7 @@ export function classifyPromiseGroup(
       : null;
   }
 
-  if (resolution?.kind === "disputed") {
+  if (isActiveDispute(record.dispute) || resolution?.kind === "disputed") {
     return "disputed";
   }
 
@@ -455,6 +571,88 @@ function sanitizeContactAttempt(raw: unknown): CollectionContactAttempt | null {
     followUpAt,
     contactedAtUtc
   };
+}
+
+const DISPUTE_STATUS_SET: ReadonlySet<string> = new Set([
+  "open",
+  "resolved",
+  "rejected"
+]);
+
+export function sanitizeDispute(raw: unknown): CollectionDispute | null {
+  if (raw == null || typeof raw !== "object") {
+    return null;
+  }
+  const candidate = raw as Record<string, unknown>;
+  const id = typeof candidate.id === "string" ? candidate.id.trim() : "";
+  if (!id) {
+    return null;
+  }
+  const statusRaw = typeof candidate.status === "string" ? candidate.status.trim() : "";
+  if (!DISPUTE_STATUS_SET.has(statusRaw)) {
+    return null;
+  }
+  const reason = parseDisputeReason(
+    typeof candidate.reason === "string" ? candidate.reason : null
+  );
+  const responsibleParty = parseDisputeParty(
+    typeof candidate.responsibleParty === "string" ? candidate.responsibleParty : null
+  );
+  if (!reason || !responsibleParty) {
+    return null;
+  }
+  const description =
+    typeof candidate.description === "string" ? candidate.description.trim() : "";
+  if (!description) {
+    return null;
+  }
+  const openedAtUtc =
+    typeof candidate.openedAtUtc === "string" && candidate.openedAtUtc.trim()
+      ? candidate.openedAtUtc.trim()
+      : new Date(0).toISOString();
+  const updatedAtUtc =
+    typeof candidate.updatedAtUtc === "string" && candidate.updatedAtUtc.trim()
+      ? candidate.updatedAtUtc.trim()
+      : openedAtUtc;
+  const reviewRaw =
+    typeof candidate.nextReviewAt === "string" ? candidate.nextReviewAt.trim() : "";
+  const nextReviewAt =
+    reviewRaw && isValidPromiseDate(reviewRaw) ? reviewRaw : null;
+  const resolutionComment =
+    typeof candidate.resolutionComment === "string" && candidate.resolutionComment.trim()
+      ? candidate.resolutionComment.trim()
+      : null;
+  const resolvedAtUtc =
+    typeof candidate.resolvedAtUtc === "string" && candidate.resolvedAtUtc.trim()
+      ? candidate.resolvedAtUtc.trim()
+      : null;
+  return {
+    id,
+    status: statusRaw as DisputeStatus,
+    reason,
+    description,
+    responsibleParty,
+    openedAtUtc,
+    updatedAtUtc,
+    nextReviewAt,
+    resolutionComment,
+    resolvedAtUtc
+  };
+}
+
+/** Earliest actionable calendar date among contact follow-up and dispute review. */
+export function resolveNextActionDate(record: PromiseToPayRecord): string {
+  const candidates: string[] = [];
+  if (record.nextFollowUpAt) {
+    candidates.push(record.nextFollowUpAt);
+  }
+  if (isActiveDispute(record.dispute) && record.dispute?.nextReviewAt) {
+    candidates.push(record.dispute.nextReviewAt);
+  }
+  if (candidates.length === 0) {
+    return record.promiseDate;
+  }
+  return candidates.slice().sort()[0]!;
 }
 
 function parseAmount(value: string | number | null | undefined): number | null {
@@ -578,6 +776,11 @@ export function sanitizePromiseRecord(
       ? null
       : sanitizeContactAttempt(candidate.lastContact);
 
+  const dispute =
+    candidate.dispute === undefined || candidate.dispute === null
+      ? null
+      : sanitizeDispute(candidate.dispute);
+
   const history = sanitizeActivityHistory(candidate.history);
 
   return {
@@ -590,6 +793,7 @@ export function sanitizePromiseRecord(
     resolution,
     nextFollowUpAt,
     lastContact,
+    dispute,
     history
   };
 }
@@ -704,6 +908,7 @@ export function savePromiseToPay(
     resolution: keepResolution,
     nextFollowUpAt: existing?.nextFollowUpAt ?? null,
     lastContact: existing?.lastContact ?? null,
+    dispute: existing?.dispute ?? null,
     history: existing?.history ?? []
   };
 
@@ -967,6 +1172,7 @@ export function applyCollectionResolution(
         ? null
         : existing.nextFollowUpAt,
     lastContact: existing.lastContact,
+    dispute: existing.dispute,
     history: historyAfterResolution(
       existing,
       validated.resolution,
@@ -1052,6 +1258,7 @@ export function saveCollectionContact(
     resolution: keepResolution,
     nextFollowUpAt: followUpAt,
     lastContact,
+    dispute: existing?.dispute ?? null,
     history: existing?.history ?? []
   };
 
@@ -1128,6 +1335,226 @@ export function updateContactFollowUp(
   return { ok: true, record };
 }
 
+function createDisputeId(invoiceId: string, now: Date): string {
+  return `dispute|${invoiceId.trim().toLowerCase()}|${now.toISOString()}`;
+}
+
+/**
+ * Raise a structured collection dispute on the durable case record.
+ * Does not mark the invoice paid and does not apply Collection Resolution.
+ */
+export function raiseCollectionDispute(
+  invoiceId: string,
+  input: CollectionDisputeInput,
+  options?: { storage?: Storage | null; now?: Date }
+): { ok: true; record: PromiseToPayRecord } | { ok: false; error: string } {
+  const validation = validateCollectionDisputeInput(input);
+  if (!validation.ok) {
+    return validation;
+  }
+  if (!UUID_RE.test(invoiceId.trim())) {
+    return { ok: false, error: "Некоректний ідентифікатор рахунку." };
+  }
+
+  const storage = options?.storage === undefined ? defaultStorage() : options.storage;
+  const now = options?.now ?? new Date();
+  const existing = readPromiseFromStorage(invoiceId, storage);
+  if (isActiveDispute(existing?.dispute)) {
+    return {
+      ok: false,
+      error: "Активний спір уже існує. Оновіть або завершіть поточний спір."
+    };
+  }
+
+  const at = now.toISOString();
+  const dispute: CollectionDispute = {
+    id: createDisputeId(invoiceId, now),
+    status: "open",
+    reason: validation.reason,
+    description: validation.description,
+    responsibleParty: validation.responsibleParty,
+    openedAtUtc: at,
+    updatedAtUtc: at,
+    nextReviewAt: validation.nextReviewAt,
+    resolutionComment: null,
+    resolvedAtUtc: null
+  };
+
+  const promiseDate =
+    existing?.promiseDate ?? validation.nextReviewAt ?? localCalendarDateString(now);
+  const draftBase: PromiseToPayRecord = {
+    invoiceId: invoiceId.trim(),
+    promiseDate,
+    note: existing?.note ?? "",
+    status: existing?.status === "completed" ? "awaiting" : existing?.status ?? "awaiting",
+    updatedAtUtc: at,
+    completedAtUtc: null,
+    resolution:
+      existing?.resolution?.kind === "paid" ? null : existing?.resolution ?? null,
+    nextFollowUpAt: existing?.nextFollowUpAt ?? null,
+    lastContact: existing?.lastContact ?? null,
+    dispute,
+    history: existing?.history ?? []
+  };
+
+  const record: PromiseToPayRecord = {
+    ...draftBase,
+    history: historyAfterDisputeChange(
+      existing,
+      "dispute_raised",
+      {
+        reason: dispute.reason,
+        responsibleParty: dispute.responsibleParty,
+        description: dispute.description,
+        nextReviewAt: dispute.nextReviewAt
+      },
+      now
+    )
+  };
+
+  if (storage && !writePromiseToStorage(record, storage)) {
+    return { ok: false, error: "Не вдалося зберегти спір у браузері." };
+  }
+
+  return { ok: true, record };
+}
+
+export function updateCollectionDispute(
+  invoiceId: string,
+  input: CollectionDisputeInput,
+  options?: { storage?: Storage | null; now?: Date }
+): { ok: true; record: PromiseToPayRecord } | { ok: false; error: string } {
+  const validation = validateCollectionDisputeInput(input);
+  if (!validation.ok) {
+    return validation;
+  }
+  if (!UUID_RE.test(invoiceId.trim())) {
+    return { ok: false, error: "Некоректний ідентифікатор рахунку." };
+  }
+
+  const storage = options?.storage === undefined ? defaultStorage() : options.storage;
+  const now = options?.now ?? new Date();
+  const existing = readPromiseFromStorage(invoiceId, storage);
+  if (!existing || !isActiveDispute(existing.dispute)) {
+    return { ok: false, error: "Активний спір для цього рахунку не знайдено." };
+  }
+
+  const previous = existing.dispute!;
+  const unchanged =
+    previous.reason === validation.reason &&
+    previous.description === validation.description &&
+    previous.responsibleParty === validation.responsibleParty &&
+    previous.nextReviewAt === validation.nextReviewAt;
+  if (unchanged) {
+    return { ok: true, record: existing };
+  }
+
+  const dispute: CollectionDispute = {
+    ...previous,
+    reason: validation.reason,
+    description: validation.description,
+    responsibleParty: validation.responsibleParty,
+    nextReviewAt: validation.nextReviewAt,
+    updatedAtUtc: now.toISOString()
+  };
+
+  const record: PromiseToPayRecord = {
+    ...existing,
+    dispute,
+    updatedAtUtc: now.toISOString(),
+    history: historyAfterDisputeChange(
+      existing,
+      "dispute_updated",
+      {
+        reason: dispute.reason,
+        responsibleParty: dispute.responsibleParty,
+        description: dispute.description,
+        nextReviewAt: dispute.nextReviewAt
+      },
+      now
+    )
+  };
+
+  if (storage && !writePromiseToStorage(record, storage)) {
+    return { ok: false, error: "Не вдалося оновити спір у браузері." };
+  }
+
+  return { ok: true, record };
+}
+
+export function resolveCollectionDispute(
+  invoiceId: string,
+  input: DisputeCloseInput,
+  options?: { storage?: Storage | null; now?: Date }
+): { ok: true; record: PromiseToPayRecord } | { ok: false; error: string } {
+  return closeCollectionDispute(invoiceId, "resolved", input, options);
+}
+
+export function rejectCollectionDispute(
+  invoiceId: string,
+  input: DisputeCloseInput,
+  options?: { storage?: Storage | null; now?: Date }
+): { ok: true; record: PromiseToPayRecord } | { ok: false; error: string } {
+  return closeCollectionDispute(invoiceId, "rejected", input, options);
+}
+
+function closeCollectionDispute(
+  invoiceId: string,
+  status: "resolved" | "rejected",
+  input: DisputeCloseInput,
+  options?: { storage?: Storage | null; now?: Date }
+): { ok: true; record: PromiseToPayRecord } | { ok: false; error: string } {
+  const validation = validateDisputeCloseInput(input);
+  if (!validation.ok) {
+    return validation;
+  }
+  if (!UUID_RE.test(invoiceId.trim())) {
+    return { ok: false, error: "Некоректний ідентифікатор рахунку." };
+  }
+
+  const storage = options?.storage === undefined ? defaultStorage() : options.storage;
+  const now = options?.now ?? new Date();
+  const existing = readPromiseFromStorage(invoiceId, storage);
+  if (!existing || !isActiveDispute(existing.dispute)) {
+    return { ok: false, error: "Активний спір для цього рахунку не знайдено." };
+  }
+
+  const at = now.toISOString();
+  const dispute: CollectionDispute = {
+    ...existing.dispute!,
+    status,
+    resolutionComment: validation.comment,
+    resolvedAtUtc: at,
+    updatedAtUtc: at,
+    nextReviewAt: null
+  };
+
+  const eventType = status === "resolved" ? "dispute_resolved" : "dispute_rejected";
+  const record: PromiseToPayRecord = {
+    ...existing,
+    dispute,
+    updatedAtUtc: at,
+    history: historyAfterDisputeChange(
+      existing,
+      eventType,
+      {
+        reason: dispute.reason,
+        responsibleParty: dispute.responsibleParty,
+        description: dispute.description,
+        nextReviewAt: null,
+        resolutionComment: validation.comment
+      },
+      now
+    )
+  };
+
+  if (storage && !writePromiseToStorage(record, storage)) {
+    return { ok: false, error: "Не вдалося завершити спір у браузері." };
+  }
+
+  return { ok: true, record };
+}
+
 export function listPromiseRecordsFromStorage(
   storage: Storage | null | undefined = defaultStorage()
 ): PromiseToPayRecord[] {
@@ -1176,7 +1603,7 @@ export function buildPromiseFollowUpItem(
     record.resolution.remainingAmount != null
       ? record.resolution.remainingAmount
       : invoice.totalAmount;
-  const nextActionDate = record.nextFollowUpAt ?? record.promiseDate;
+  const nextActionDate = resolveNextActionDate(record);
   return {
     invoiceId: invoice.id,
     documentNumber: invoice.documentNumber,
@@ -1197,7 +1624,12 @@ export function buildPromiseFollowUpItem(
     resolution: record.resolution,
     resolutionLabel: record.resolution ? resolutionKindLabel(record.resolution.kind) : null,
     nextFollowUpAt: record.nextFollowUpAt,
-    lastContact: record.lastContact
+    lastContact: record.lastContact,
+    dispute: record.dispute,
+    disputeReviewAt:
+      isActiveDispute(record.dispute) && record.dispute?.nextReviewAt
+        ? record.dispute.nextReviewAt
+        : null
   };
 }
 

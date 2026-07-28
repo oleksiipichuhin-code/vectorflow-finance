@@ -98,6 +98,8 @@ function baseItem(
     resolutionLabel: null,
     nextFollowUpAt: null,
     lastContact: null,
+    dispute: null,
+    disputeReviewAt: null,
     ...overrides
   };
 }
