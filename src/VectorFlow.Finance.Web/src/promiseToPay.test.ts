@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  applyCollectionResolution,
   buildPromiseFollowUpItems,
   buildPromiseFollowUpSummary,
   classifyPromiseGroup,
@@ -13,6 +14,7 @@ import {
   sanitizePromiseRecord,
   storageKeyForInvoice,
   updatePromiseStatus,
+  validateCollectionResolutionInput,
   validatePromiseToPayInput,
   type PromiseInvoiceLike,
   type PromiseToPayRecord
@@ -161,6 +163,7 @@ describe("promiseToPay classification", () => {
       status: "awaiting",
       updatedAtUtc: "2026-07-28T10:00:00.000Z",
       completedAtUtc: null,
+      resolution: null,
       ...overrides
     };
   }
@@ -254,7 +257,8 @@ describe("promiseToPay KPI and search", () => {
         note: "",
         status: "awaiting",
         updatedAtUtc: "2026-07-28T00:00:00.000Z",
-        completedAtUtc: null
+        completedAtUtc: null,
+      resolution: null
       },
       {
         invoiceId: INVOICE_B,
@@ -262,7 +266,8 @@ describe("promiseToPay KPI and search", () => {
         note: "",
         status: "awaiting",
         updatedAtUtc: "2026-07-28T00:00:00.000Z",
-        completedAtUtc: null
+        completedAtUtc: null,
+      resolution: null
       },
       {
         invoiceId: "cccccccc-cccc-cccc-cccc-cccccccccccc",
@@ -270,7 +275,8 @@ describe("promiseToPay KPI and search", () => {
         note: "",
         status: "follow_up_required",
         updatedAtUtc: "2026-07-28T00:00:00.000Z",
-        completedAtUtc: null
+        completedAtUtc: null,
+      resolution: null
       },
       {
         invoiceId: "dddddddd-dddd-dddd-dddd-dddddddddddd",
@@ -278,16 +284,20 @@ describe("promiseToPay KPI and search", () => {
         note: "done",
         status: "completed",
         updatedAtUtc: "2026-07-27T00:00:00.000Z",
-        completedAtUtc: "2026-07-27T00:00:00.000Z"
+        completedAtUtc: "2026-07-27T00:00:00.000Z",
+      resolution: null
       }
     ];
 
     const items = buildPromiseFollowUpItems(invoices, records, now);
-    const summary = buildPromiseFollowUpSummary(items);
+    const summary = buildPromiseFollowUpSummary(items, now);
 
     assert.equal(summary.dueTodayCount, 1);
     assert.equal(summary.brokenCount, 1);
     assert.equal(summary.followUpRequiredCount, 1);
+    assert.equal(summary.completedCount, 1);
+    assert.equal(summary.escalatedCount, 0);
+    assert.equal(summary.disputedCount, 0);
     assert.deepEqual(summary.promisedTotalsByCurrency, [
       { currency: "EUR", amount: 50 },
       { currency: "UAH", amount: 300 }
@@ -307,7 +317,8 @@ describe("promiseToPay KPI and search", () => {
           note: "",
           status: "awaiting",
           updatedAtUtc: "2026-07-28T00:00:00.000Z",
-          completedAtUtc: null
+          completedAtUtc: null,
+        resolution: null
         },
         {
           invoiceId: INVOICE_B,
@@ -315,7 +326,8 @@ describe("promiseToPay KPI and search", () => {
           note: "",
           status: "awaiting",
           updatedAtUtc: "2026-07-28T00:00:00.000Z",
-          completedAtUtc: null
+          completedAtUtc: null,
+        resolution: null
         }
       ],
       now
@@ -339,7 +351,8 @@ describe("promiseToPay KPI and search", () => {
           note: "",
           status: "awaiting",
           updatedAtUtc: "2026-07-28T00:00:00.000Z",
-          completedAtUtc: null
+          completedAtUtc: null,
+        resolution: null
         },
         {
           invoiceId: INVOICE_B,
@@ -347,7 +360,8 @@ describe("promiseToPay KPI and search", () => {
           note: "",
           status: "awaiting",
           updatedAtUtc: "2026-07-28T00:00:00.000Z",
-          completedAtUtc: null
+          completedAtUtc: null,
+        resolution: null
         }
       ],
       now
@@ -368,7 +382,8 @@ describe("promiseToPay KPI and search", () => {
           note: "",
           status: "awaiting",
           updatedAtUtc: "2026-07-28T00:00:00.000Z",
-          completedAtUtc: null
+          completedAtUtc: null,
+        resolution: null
         },
         {
           invoiceId: INVOICE_B,
@@ -376,7 +391,8 @@ describe("promiseToPay KPI and search", () => {
           note: "",
           status: "awaiting",
           updatedAtUtc: "2026-07-28T00:00:00.000Z",
-          completedAtUtc: null
+          completedAtUtc: null,
+        resolution: null
         }
       ],
       now
@@ -451,5 +467,298 @@ describe("promiseToPay status actions and persistence safety", () => {
     savePromiseToPay(INVOICE_A, { promiseDate: "2026-08-01" }, { storage });
     removePromiseFromStorage(INVOICE_A, storage);
     assert.equal(readPromiseFromStorage(INVOICE_A, storage), null);
+  });
+});
+
+describe("collection resolution workflow", () => {
+  const now = new Date(2026, 6, 28, 15, 0, 0);
+
+  function seed(storage: MemoryStorage, promiseDate = "2026-08-05") {
+    const saved = savePromiseToPay(
+      INVOICE_A,
+      { promiseDate, note: "base" },
+      { storage, now: new Date("2026-07-28T10:00:00.000Z") }
+    );
+    assert.equal(saved.ok, true);
+    return saved;
+  }
+
+  it("resolves Paid → completed group", () => {
+    const storage = new MemoryStorage();
+    seed(storage);
+    const result = applyCollectionResolution(
+      INVOICE_A,
+      { kind: "paid", paymentDate: "2026-07-28", note: "wire received" },
+      { storage, now }
+    );
+    assert.equal(result.ok, true);
+    if (!result.ok) {
+      return;
+    }
+    assert.equal(result.record.status, "completed");
+    assert.equal(result.record.resolution?.kind, "paid");
+    assert.equal(classifyPromiseGroup(result.record, now), "completed");
+  });
+
+  it("resolves Partial Payment and keeps follow-up amount", () => {
+    const storage = new MemoryStorage();
+    seed(storage);
+    const result = applyCollectionResolution(
+      INVOICE_A,
+      {
+        kind: "partially_paid",
+        paymentDate: "2026-07-28",
+        paidAmount: "400",
+        remainingAmount: "600",
+        note: "partial"
+      },
+      { storage, now }
+    );
+    assert.equal(result.ok, true);
+    if (!result.ok) {
+      return;
+    }
+    assert.equal(result.record.resolution?.kind, "partially_paid");
+    assert.equal(result.record.resolution?.paidAmount, 400);
+    assert.equal(result.record.resolution?.remainingAmount, 600);
+    assert.equal(classifyPromiseGroup(result.record, now), "upcoming");
+
+    const item = buildPromiseFollowUpItems(
+      [invoice(INVOICE_A, { totalAmount: 1000 })],
+      [result.record],
+      now
+    )[0];
+    assert.equal(item?.overdueAmount, 600);
+    assert.equal(item?.group, "upcoming");
+  });
+
+  it("resolves New Promise → Upcoming", () => {
+    const storage = new MemoryStorage();
+    seed(storage, "2026-07-20");
+    const result = applyCollectionResolution(
+      INVOICE_A,
+      { kind: "new_promise", promiseDate: "2026-08-10", note: "rescheduled" },
+      { storage, now }
+    );
+    assert.equal(result.ok, true);
+    if (!result.ok) {
+      return;
+    }
+    assert.equal(result.record.promiseDate, "2026-08-10");
+    assert.equal(result.record.resolution?.kind, "new_promise");
+    assert.equal(classifyPromiseGroup(result.record, now), "upcoming");
+  });
+
+  it("resolves Disputed → disputed group", () => {
+    const storage = new MemoryStorage();
+    seed(storage);
+    const result = applyCollectionResolution(
+      INVOICE_A,
+      { kind: "disputed", reason: "Wrong amount", note: "legal" },
+      { storage, now }
+    );
+    assert.equal(result.ok, true);
+    if (!result.ok) {
+      return;
+    }
+    assert.equal(result.record.resolution?.kind, "disputed");
+    assert.equal(classifyPromiseGroup(result.record, now), "disputed");
+  });
+
+  it("resolves Escalated → escalated group", () => {
+    const storage = new MemoryStorage();
+    seed(storage);
+    const result = applyCollectionResolution(
+      INVOICE_A,
+      { kind: "escalated", reason: "Manager review", note: "" },
+      { storage, now }
+    );
+    assert.equal(result.ok, true);
+    if (!result.ok) {
+      return;
+    }
+    assert.equal(result.record.resolution?.kind, "escalated");
+    assert.equal(classifyPromiseGroup(result.record, now), "escalated");
+  });
+
+  it("resolves Unable to Contact → follow-up required", () => {
+    const storage = new MemoryStorage();
+    seed(storage);
+    const result = applyCollectionResolution(
+      INVOICE_A,
+      { kind: "unable_to_contact", note: "no answer" },
+      { storage, now }
+    );
+    assert.equal(result.ok, true);
+    if (!result.ok) {
+      return;
+    }
+    assert.equal(result.record.status, "follow_up_required");
+    assert.equal(result.record.resolution?.kind, "unable_to_contact");
+    assert.equal(classifyPromiseGroup(result.record, now), "follow_up_required");
+  });
+
+  it("validates required fields per resolution kind", () => {
+    const existing: PromiseToPayRecord = {
+      invoiceId: INVOICE_A,
+      promiseDate: "2026-08-01",
+      note: "",
+      status: "awaiting",
+      updatedAtUtc: "2026-07-28T00:00:00.000Z",
+      completedAtUtc: null,
+      resolution: null
+    };
+    assert.equal(
+      validateCollectionResolutionInput({ kind: "paid", paymentDate: "" }, existing, now).ok,
+      false
+    );
+    assert.equal(
+      validateCollectionResolutionInput(
+        { kind: "partially_paid", paymentDate: "2026-07-28", paidAmount: "0", remainingAmount: "1" },
+        existing,
+        now
+      ).ok,
+      false
+    );
+    assert.equal(
+      validateCollectionResolutionInput({ kind: "new_promise", promiseDate: "" }, existing, now)
+        .ok,
+      false
+    );
+    assert.equal(
+      validateCollectionResolutionInput({ kind: "disputed", reason: "" }, existing, now).ok,
+      false
+    );
+    assert.equal(
+      validateCollectionResolutionInput({ kind: "escalated", reason: "   " }, existing, now).ok,
+      false
+    );
+  });
+
+  it("calculates resolution KPI including resolved today / escalated / disputed", () => {
+    const invoices = [
+      invoice(INVOICE_A, { totalAmount: 100, currency: "UAH" }),
+      invoice(INVOICE_B, { totalAmount: 50, currency: "UAH" }),
+      invoice("cccccccc-cccc-cccc-cccc-cccccccccccc", {
+        totalAmount: 75,
+        currency: "UAH"
+      })
+    ];
+    const records: PromiseToPayRecord[] = [
+      {
+        invoiceId: INVOICE_A,
+        promiseDate: "2026-07-20",
+        note: "",
+        status: "completed",
+        updatedAtUtc: "2026-07-28T12:00:00.000Z",
+        completedAtUtc: "2026-07-28T12:00:00.000Z",
+        resolution: {
+          kind: "paid",
+          resolvedAtUtc: "2026-07-28T12:00:00.000Z",
+          paymentDate: "2026-07-28",
+          paidAmount: null,
+          remainingAmount: 0,
+          reason: null,
+          note: ""
+        }
+      },
+      {
+        invoiceId: INVOICE_B,
+        promiseDate: "2026-08-01",
+        note: "",
+        status: "follow_up_required",
+        updatedAtUtc: "2026-07-28T12:00:00.000Z",
+        completedAtUtc: null,
+        resolution: {
+          kind: "escalated",
+          resolvedAtUtc: "2026-07-28T12:00:00.000Z",
+          paymentDate: null,
+          paidAmount: null,
+          remainingAmount: null,
+          reason: "manager",
+          note: ""
+        }
+      },
+      {
+        invoiceId: "cccccccc-cccc-cccc-cccc-cccccccccccc",
+        promiseDate: "2026-08-01",
+        note: "",
+        status: "follow_up_required",
+        updatedAtUtc: "2026-07-28T12:00:00.000Z",
+        completedAtUtc: null,
+        resolution: {
+          kind: "disputed",
+          resolvedAtUtc: "2026-07-28T12:00:00.000Z",
+          paymentDate: null,
+          paidAmount: null,
+          remainingAmount: null,
+          reason: "amount",
+          note: ""
+        }
+      }
+    ];
+    const items = buildPromiseFollowUpItems(invoices, records, now);
+    const summary = buildPromiseFollowUpSummary(items, now);
+    assert.equal(summary.completedCount, 1);
+    assert.equal(summary.escalatedCount, 1);
+    assert.equal(summary.disputedCount, 1);
+    assert.equal(summary.resolvedTodayCount, 3);
+    const groups = groupPromiseFollowUps(items);
+    assert.equal(groups.completed.length, 1);
+    assert.equal(groups.escalated.length, 1);
+    assert.equal(groups.disputed.length, 1);
+  });
+
+  it("prevents duplicate records when re-applying resolution", () => {
+    const storage = new MemoryStorage();
+    seed(storage);
+    applyCollectionResolution(
+      INVOICE_A,
+      { kind: "paid", paymentDate: "2026-07-28" },
+      { storage, now }
+    );
+    applyCollectionResolution(
+      INVOICE_A,
+      { kind: "paid", paymentDate: "2026-07-29", note: "corrected" },
+      { storage, now }
+    );
+    assert.equal(listPromiseRecordsFromStorage(storage).length, 1);
+    assert.equal(readPromiseFromStorage(INVOICE_A, storage)?.resolution?.paymentDate, "2026-07-29");
+  });
+
+  it("ignores corrupted resolution payload without dropping valid promise core", () => {
+    const storage = new MemoryStorage();
+    storage.setItem(
+      storageKeyForInvoice(INVOICE_A),
+      JSON.stringify({
+        invoiceId: INVOICE_A,
+        promiseDate: "2026-08-01",
+        status: "awaiting",
+        note: "",
+        updatedAtUtc: "2026-07-28T00:00:00.000Z",
+        completedAtUtc: null,
+        resolution: { kind: "not-a-kind" }
+      })
+    );
+    const record = readPromiseFromStorage(INVOICE_A, storage);
+    assert.ok(record);
+    assert.equal(record?.resolution, null);
+    assert.equal(record?.promiseDate, "2026-08-01");
+  });
+
+  it("resolution transitions Broken → New Promise → Upcoming", () => {
+    const storage = new MemoryStorage();
+    seed(storage, "2026-07-10");
+    const before = readPromiseFromStorage(INVOICE_A, storage);
+    assert.equal(classifyPromiseGroup(before!, now), "broken");
+    const after = applyCollectionResolution(
+      INVOICE_A,
+      { kind: "new_promise", promiseDate: "2026-08-15" },
+      { storage, now }
+    );
+    assert.equal(after.ok, true);
+    if (after.ok) {
+      assert.equal(classifyPromiseGroup(after.record, now), "upcoming");
+    }
   });
 });

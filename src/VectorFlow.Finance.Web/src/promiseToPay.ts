@@ -1,5 +1,5 @@
 /**
- * Promise-to-pay follow-up workflow (browser-local persistence).
+ * Promise-to-pay follow-up + collection resolution workflow (browser-local persistence).
  * Keys are stable invoice ids — never row index or display number alone.
  * No server collection/follow-up contract exists yet.
  */
@@ -18,15 +18,35 @@ export type PromiseFollowUpStatus =
   | "contacted"
   | "completed";
 
+export type CollectionResolutionKind =
+  | "paid"
+  | "partially_paid"
+  | "new_promise"
+  | "disputed"
+  | "escalated"
+  | "unable_to_contact";
+
 /** Classification groups for the Promise Follow-ups workspace. */
 export type PromiseGroupId =
   | "due_today"
   | "upcoming"
   | "broken"
   | "follow_up_required"
-  | "completed";
+  | "completed"
+  | "disputed"
+  | "escalated";
 
 export type PromiseGroupFilter = "" | PromiseGroupId;
+
+export type CollectionResolution = {
+  kind: CollectionResolutionKind;
+  resolvedAtUtc: string;
+  paymentDate: string | null;
+  paidAmount: number | null;
+  remainingAmount: number | null;
+  reason: string | null;
+  note: string;
+};
 
 export type PromiseToPayRecord = {
   invoiceId: string;
@@ -35,6 +55,7 @@ export type PromiseToPayRecord = {
   status: PromiseFollowUpStatus;
   updatedAtUtc: string;
   completedAtUtc: string | null;
+  resolution: CollectionResolution | null;
 };
 
 export type PromiseToPayInput = {
@@ -45,6 +66,16 @@ export type PromiseToPayInput = {
 export type PromiseValidationResult =
   | { ok: true; promiseDate: string; note: string }
   | { ok: false; error: string };
+
+export type CollectionResolutionInput = {
+  kind: CollectionResolutionKind;
+  paymentDate?: string;
+  paidAmount?: string | number;
+  remainingAmount?: string | number;
+  promiseDate?: string;
+  reason?: string;
+  note?: string;
+};
 
 export type PromiseInvoiceLike = {
   id: string;
@@ -72,13 +103,19 @@ export type PromiseFollowUpItem = {
   statusLabel: string;
   note: string;
   completedAtUtc: string | null;
+  resolution: CollectionResolution | null;
+  resolutionLabel: string | null;
 };
 
 export type PromiseFollowUpSummary = {
   dueTodayCount: number;
   brokenCount: number;
   followUpRequiredCount: number;
-  /** Amounts by currency for active (non-completed) promises. */
+  completedCount: number;
+  resolvedTodayCount: number;
+  escalatedCount: number;
+  disputedCount: number;
+  /** Amounts by currency for active (non-completed / non-terminal) promises. */
   promisedTotalsByCurrency: { currency: string; amount: number }[];
 };
 
@@ -88,12 +125,26 @@ export type PromiseGroupOption = {
   shortLabel: string;
 };
 
+export const RESOLUTION_KIND_OPTIONS: readonly {
+  id: CollectionResolutionKind;
+  label: string;
+}[] = [
+  { id: "paid", label: "Paid" },
+  { id: "partially_paid", label: "Partially Paid" },
+  { id: "new_promise", label: "New Promise" },
+  { id: "disputed", label: "Disputed" },
+  { id: "escalated", label: "Escalated" },
+  { id: "unable_to_contact", label: "Unable to Contact" }
+];
+
 export const PROMISE_GROUP_OPTIONS: readonly PromiseGroupOption[] = [
   { id: "", label: "Усі follow-ups", shortLabel: "Усі" },
   { id: "due_today", label: "Due today", shortLabel: "Due today" },
   { id: "upcoming", label: "Upcoming", shortLabel: "Upcoming" },
   { id: "broken", label: "Broken promises", shortLabel: "Broken" },
   { id: "follow_up_required", label: "Follow-up required", shortLabel: "Follow-up" },
+  { id: "disputed", label: "Disputed", shortLabel: "Disputed" },
+  { id: "escalated", label: "Escalated", shortLabel: "Escalated" },
   { id: "completed", label: "Completed recently", shortLabel: "Completed" }
 ];
 
@@ -108,7 +159,26 @@ const STATUS_SET: ReadonlySet<string> = new Set([
   "completed"
 ]);
 
+const RESOLUTION_KIND_SET: ReadonlySet<string> = new Set([
+  "paid",
+  "partially_paid",
+  "new_promise",
+  "disputed",
+  "escalated",
+  "unable_to_contact"
+]);
+
 const COMPLETED_RECENT_DAYS = 14;
+
+const GROUP_IDS: readonly PromiseGroupId[] = [
+  "due_today",
+  "upcoming",
+  "broken",
+  "follow_up_required",
+  "completed",
+  "disputed",
+  "escalated"
+];
 
 export function storageKeyForInvoice(invoiceId: string): string {
   return `${PROMISE_STORAGE_KEY_PREFIX}${invoiceId.trim().toLowerCase()}`;
@@ -146,14 +216,9 @@ export function parsePromiseGroupParam(value: string | null | undefined): Promis
   if (!trimmed) {
     return "";
   }
-  const ids: PromiseGroupId[] = [
-    "due_today",
-    "upcoming",
-    "broken",
-    "follow_up_required",
-    "completed"
-  ];
-  return (ids as readonly string[]).includes(trimmed) ? (trimmed as PromiseGroupId) : "";
+  return (GROUP_IDS as readonly string[]).includes(trimmed)
+    ? (trimmed as PromiseGroupId)
+    : "";
 }
 
 export function promiseGroupLabel(group: PromiseGroupFilter): string {
@@ -173,6 +238,10 @@ export function promiseStatusLabel(status: PromiseFollowUpStatus): string {
     default:
       return status;
   }
+}
+
+export function resolutionKindLabel(kind: CollectionResolutionKind): string {
+  return RESOLUTION_KIND_OPTIONS.find((option) => option.id === kind)?.label ?? kind;
 }
 
 export function daysRelativeToPromiseDate(
@@ -198,32 +267,23 @@ export function daysRelativeLabel(days: number): string {
   return past === 1 ? "1 день прострочення" : `${past} днів прострочення`;
 }
 
-/**
- * Classify an active or completed promise into a follow-up workspace group.
- * Completed recently wins over date-based buckets.
- * Explicit follow_up_required status wins over date buckets (except completed).
- */
-export function classifyPromiseGroup(
-  record: Pick<PromiseToPayRecord, "promiseDate" | "status" | "completedAtUtc">,
-  now: Date = new Date()
+function isRecentCompleted(completedAtUtc: string | null | undefined, now: Date): boolean {
+  if (!completedAtUtc) {
+    return true;
+  }
+  const completedDay = dueDateCalendarString(completedAtUtc);
+  if (!completedDay) {
+    return true;
+  }
+  const age = calendarDayDiff(completedDay, localCalendarDateString(now));
+  return age >= 0 && age <= COMPLETED_RECENT_DAYS;
+}
+
+function classifyByPromiseDate(
+  promiseDate: string,
+  now: Date
 ): PromiseGroupId | null {
-  if (record.status === "completed") {
-    if (!record.completedAtUtc) {
-      return "completed";
-    }
-    const completedDay = dueDateCalendarString(record.completedAtUtc);
-    if (!completedDay) {
-      return "completed";
-    }
-    const age = calendarDayDiff(completedDay, localCalendarDateString(now));
-    return age >= 0 && age <= COMPLETED_RECENT_DAYS ? "completed" : null;
-  }
-
-  if (record.status === "follow_up_required") {
-    return "follow_up_required";
-  }
-
-  const relative = daysRelativeToPromiseDate(record.promiseDate, now);
+  const relative = daysRelativeToPromiseDate(promiseDate, now);
   if (relative == null) {
     return null;
   }
@@ -234,6 +294,113 @@ export function classifyPromiseGroup(
     return "due_today";
   }
   return "upcoming";
+}
+
+/**
+ * Classify an active or completed promise into a follow-up workspace group.
+ * Resolution outcomes take precedence over calendar buckets where specified.
+ */
+export function classifyPromiseGroup(
+  record: Pick<
+    PromiseToPayRecord,
+    "promiseDate" | "status" | "completedAtUtc" | "resolution"
+  >,
+  now: Date = new Date()
+): PromiseGroupId | null {
+  const resolution = record.resolution;
+
+  if (resolution?.kind === "paid") {
+    return isRecentCompleted(resolution.resolvedAtUtc ?? record.completedAtUtc, now)
+      ? "completed"
+      : null;
+  }
+
+  if (resolution?.kind === "disputed") {
+    return "disputed";
+  }
+
+  if (resolution?.kind === "escalated") {
+    return "escalated";
+  }
+
+  if (resolution?.kind === "unable_to_contact") {
+    return "follow_up_required";
+  }
+
+  if (resolution?.kind === "new_promise" || resolution?.kind === "partially_paid") {
+    return classifyByPromiseDate(record.promiseDate, now);
+  }
+
+  if (record.status === "completed") {
+    return isRecentCompleted(record.completedAtUtc, now) ? "completed" : null;
+  }
+
+  if (record.status === "follow_up_required") {
+    return "follow_up_required";
+  }
+
+  return classifyByPromiseDate(record.promiseDate, now);
+}
+
+function parseAmount(value: string | number | null | undefined): number | null {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (value == null) {
+    return null;
+  }
+  const trimmed = String(value).trim().replace(",", ".");
+  if (!trimmed) {
+    return null;
+  }
+  const amount = Number(trimmed);
+  return Number.isFinite(amount) ? amount : null;
+}
+
+export function sanitizeResolution(raw: unknown): CollectionResolution | null {
+  if (raw == null || typeof raw !== "object") {
+    return null;
+  }
+  const candidate = raw as Record<string, unknown>;
+  const kindRaw = typeof candidate.kind === "string" ? candidate.kind.trim() : "";
+  if (!RESOLUTION_KIND_SET.has(kindRaw)) {
+    return null;
+  }
+  const kind = kindRaw as CollectionResolutionKind;
+  const resolvedAtUtc =
+    typeof candidate.resolvedAtUtc === "string" && candidate.resolvedAtUtc.trim()
+      ? candidate.resolvedAtUtc.trim()
+      : new Date(0).toISOString();
+
+  const paymentDateRaw =
+    typeof candidate.paymentDate === "string" ? candidate.paymentDate.trim() : "";
+  const paymentDate =
+    paymentDateRaw && isValidPromiseDate(paymentDateRaw) ? paymentDateRaw : null;
+
+  const paidAmount =
+    typeof candidate.paidAmount === "number" && Number.isFinite(candidate.paidAmount)
+      ? candidate.paidAmount
+      : null;
+  const remainingAmount =
+    typeof candidate.remainingAmount === "number" &&
+    Number.isFinite(candidate.remainingAmount)
+      ? candidate.remainingAmount
+      : null;
+  const reason =
+    typeof candidate.reason === "string" && candidate.reason.trim()
+      ? candidate.reason.trim()
+      : null;
+  const note = typeof candidate.note === "string" ? candidate.note.trim() : "";
+
+  return {
+    kind,
+    resolvedAtUtc,
+    paymentDate,
+    paidAmount,
+    remainingAmount,
+    reason,
+    note
+  };
 }
 
 export function sanitizePromiseRecord(
@@ -281,13 +448,19 @@ export function sanitizePromiseRecord(
         ? updatedAtUtc
         : null;
 
+  const resolution =
+    candidate.resolution === undefined || candidate.resolution === null
+      ? null
+      : sanitizeResolution(candidate.resolution);
+
   return {
     invoiceId,
     promiseDate,
     note,
     status,
     updatedAtUtc,
-    completedAtUtc
+    completedAtUtc,
+    resolution
   };
 }
 
@@ -351,6 +524,7 @@ export function removePromiseFromStorage(
 
 /**
  * Upsert promise for an invoice. Replaces any prior record for the same id (no duplicates).
+ * Creating/updating a promise clears a terminal paid resolution so the case reopens cleanly.
  */
 export function savePromiseToPay(
   invoiceId: string,
@@ -373,9 +547,22 @@ export function savePromiseToPay(
   const now = options?.now ?? new Date();
   const existing = readPromiseFromStorage(invoiceId, storage);
   let status: PromiseFollowUpStatus = "awaiting";
-  if (options?.preserveStatus && existing && existing.status !== "completed") {
+  if (
+    options?.preserveStatus &&
+    existing &&
+    existing.status !== "completed" &&
+    existing.resolution?.kind !== "paid"
+  ) {
     status = existing.status;
   }
+
+  const keepResolution =
+    existing?.resolution &&
+    existing.resolution.kind !== "paid" &&
+    existing.resolution.kind !== "disputed" &&
+    existing.resolution.kind !== "escalated"
+      ? existing.resolution
+      : null;
 
   const record: PromiseToPayRecord = {
     invoiceId: invoiceId.trim(),
@@ -383,7 +570,8 @@ export function savePromiseToPay(
     note: validation.note,
     status,
     updatedAtUtc: now.toISOString(),
-    completedAtUtc: null
+    completedAtUtc: null,
+    resolution: keepResolution
   };
 
   if (storage && !writePromiseToStorage(record, storage)) {
@@ -409,11 +597,230 @@ export function updatePromiseStatus(
     ...existing,
     status: nextStatus,
     updatedAtUtc: now.toISOString(),
-    completedAtUtc: nextStatus === "completed" ? now.toISOString() : null
+    completedAtUtc: nextStatus === "completed" ? now.toISOString() : null,
+    resolution:
+      nextStatus === "completed"
+        ? existing.resolution?.kind === "paid"
+          ? existing.resolution
+          : {
+              kind: "paid",
+              resolvedAtUtc: now.toISOString(),
+              paymentDate: localCalendarDateString(now),
+              paidAmount: null,
+              remainingAmount: 0,
+              reason: null,
+              note: existing.note
+            }
+        : nextStatus === "awaiting"
+          ? null
+          : existing.resolution
   };
 
   if (storage && !writePromiseToStorage(record, storage)) {
     return { ok: false, error: "Не вдалося оновити follow-up у браузері." };
+  }
+
+  return { ok: true, record };
+}
+
+export type ResolutionValidationResult =
+  | { ok: true; resolution: CollectionResolution; promiseDate: string; note: string; status: PromiseFollowUpStatus }
+  | { ok: false; error: string };
+
+export function validateCollectionResolutionInput(
+  input: CollectionResolutionInput,
+  existing: PromiseToPayRecord,
+  now: Date = new Date()
+): ResolutionValidationResult {
+  const note = (input.note ?? "").trim();
+  const resolvedAtUtc = now.toISOString();
+
+  switch (input.kind) {
+    case "paid": {
+      const paymentDate = (input.paymentDate ?? "").trim();
+      if (!paymentDate) {
+        return { ok: false, error: "Вкажіть дату оплати." };
+      }
+      if (!isValidPromiseDate(paymentDate)) {
+        return { ok: false, error: "Некоректна дата оплати. Використовуйте формат РРРР-ММ-ДД." };
+      }
+      return {
+        ok: true,
+        promiseDate: existing.promiseDate,
+        note: note || existing.note,
+        status: "completed",
+        resolution: {
+          kind: "paid",
+          resolvedAtUtc,
+          paymentDate,
+          paidAmount: null,
+          remainingAmount: 0,
+          reason: null,
+          note
+        }
+      };
+    }
+    case "partially_paid": {
+      const paymentDate = (input.paymentDate ?? "").trim();
+      if (!paymentDate) {
+        return { ok: false, error: "Вкажіть дату часткової оплати." };
+      }
+      if (!isValidPromiseDate(paymentDate)) {
+        return {
+          ok: false,
+          error: "Некоректна дата часткової оплати. Використовуйте формат РРРР-ММ-ДД."
+        };
+      }
+      const paidAmount = parseAmount(input.paidAmount);
+      const remainingAmount = parseAmount(input.remainingAmount);
+      if (paidAmount == null || paidAmount <= 0) {
+        return { ok: false, error: "Вкажіть сплачену суму (більше нуля)." };
+      }
+      if (remainingAmount == null || remainingAmount < 0) {
+        return { ok: false, error: "Вкажіть залишок до сплати (нуль або більше)." };
+      }
+      return {
+        ok: true,
+        promiseDate: existing.promiseDate,
+        note: note || existing.note,
+        status: "awaiting",
+        resolution: {
+          kind: "partially_paid",
+          resolvedAtUtc,
+          paymentDate,
+          paidAmount,
+          remainingAmount,
+          reason: null,
+          note
+        }
+      };
+    }
+    case "new_promise": {
+      const promiseDate = (input.promiseDate ?? "").trim();
+      if (!promiseDate) {
+        return { ok: false, error: "Вкажіть нову дату обіцянки оплати." };
+      }
+      if (!isValidPromiseDate(promiseDate)) {
+        return {
+          ok: false,
+          error: "Некоректна нова дата обіцянки. Використовуйте формат РРРР-ММ-ДД."
+        };
+      }
+      return {
+        ok: true,
+        promiseDate,
+        note: note || existing.note,
+        status: "awaiting",
+        resolution: {
+          kind: "new_promise",
+          resolvedAtUtc,
+          paymentDate: null,
+          paidAmount: null,
+          remainingAmount: null,
+          reason: null,
+          note
+        }
+      };
+    }
+    case "disputed": {
+      const reason = (input.reason ?? "").trim();
+      if (!reason) {
+        return { ok: false, error: "Вкажіть причину спору." };
+      }
+      return {
+        ok: true,
+        promiseDate: existing.promiseDate,
+        note: note || existing.note,
+        status: "follow_up_required",
+        resolution: {
+          kind: "disputed",
+          resolvedAtUtc,
+          paymentDate: null,
+          paidAmount: null,
+          remainingAmount: null,
+          reason,
+          note
+        }
+      };
+    }
+    case "escalated": {
+      const reason = (input.reason ?? "").trim();
+      if (!reason) {
+        return { ok: false, error: "Вкажіть причину ескалації." };
+      }
+      return {
+        ok: true,
+        promiseDate: existing.promiseDate,
+        note: note || existing.note,
+        status: "follow_up_required",
+        resolution: {
+          kind: "escalated",
+          resolvedAtUtc,
+          paymentDate: null,
+          paidAmount: null,
+          remainingAmount: null,
+          reason,
+          note
+        }
+      };
+    }
+    case "unable_to_contact": {
+      return {
+        ok: true,
+        promiseDate: existing.promiseDate,
+        note: note || existing.note,
+        status: "follow_up_required",
+        resolution: {
+          kind: "unable_to_contact",
+          resolvedAtUtc,
+          paymentDate: null,
+          paidAmount: null,
+          remainingAmount: null,
+          reason: null,
+          note
+        }
+      };
+    }
+    default:
+      return { ok: false, error: "Невідомий тип resolution." };
+  }
+}
+
+/**
+ * Apply a collection resolution to an existing promise (upsert by invoice id — no duplicates).
+ */
+export function applyCollectionResolution(
+  invoiceId: string,
+  input: CollectionResolutionInput,
+  options?: { storage?: Storage | null; now?: Date }
+): { ok: true; record: PromiseToPayRecord } | { ok: false; error: string } {
+  if (!UUID_RE.test(invoiceId.trim())) {
+    return { ok: false, error: "Некоректний ідентифікатор рахунку." };
+  }
+  const storage = options?.storage === undefined ? defaultStorage() : options.storage;
+  const now = options?.now ?? new Date();
+  const existing = readPromiseFromStorage(invoiceId, storage);
+  if (!existing) {
+    return { ok: false, error: "Спочатку зафіксуйте обіцянку оплати." };
+  }
+
+  const validated = validateCollectionResolutionInput(input, existing, now);
+  if (!validated.ok) {
+    return validated;
+  }
+
+  const record: PromiseToPayRecord = {
+    invoiceId: existing.invoiceId,
+    promiseDate: validated.promiseDate,
+    note: validated.note,
+    status: validated.status,
+    updatedAtUtc: now.toISOString(),
+    completedAtUtc: validated.status === "completed" ? now.toISOString() : null,
+    resolution: validated.resolution
+  };
+
+  if (storage && !writePromiseToStorage(record, storage)) {
+    return { ok: false, error: "Не вдалося зберегти resolution у браузері." };
   }
 
   return { ok: true, record };
@@ -462,11 +869,16 @@ export function buildPromiseFollowUpItem(
     return null;
   }
   const relative = daysRelativeToPromiseDate(record.promiseDate, now) ?? 0;
+  const overdueAmount =
+    record.resolution?.kind === "partially_paid" &&
+    record.resolution.remainingAmount != null
+      ? record.resolution.remainingAmount
+      : invoice.totalAmount;
   return {
     invoiceId: invoice.id,
     documentNumber: invoice.documentNumber,
     counterpartyReference: invoice.counterpartyReference,
-    overdueAmount: invoice.totalAmount,
+    overdueAmount,
     currency: invoice.currency,
     originalDueDate: dueDateCalendarString(invoice.dueDateUtc),
     promiseDate: record.promiseDate,
@@ -477,7 +889,9 @@ export function buildPromiseFollowUpItem(
     status: record.status,
     statusLabel: promiseStatusLabel(record.status),
     note: record.note,
-    completedAtUtc: record.completedAtUtc
+    completedAtUtc: record.completedAtUtc,
+    resolution: record.resolution,
+    resolutionLabel: record.resolution ? resolutionKindLabel(record.resolution.kind) : null
   };
 }
 
@@ -511,8 +925,10 @@ export function comparePromiseFollowUpPriority(
     broken: 0,
     due_today: 1,
     follow_up_required: 2,
-    upcoming: 3,
-    completed: 4
+    disputed: 3,
+    escalated: 4,
+    upcoming: 5,
+    completed: 6
   };
   if (groupRank[a.group] !== groupRank[b.group]) {
     return groupRank[a.group] - groupRank[b.group];
@@ -548,16 +964,37 @@ export function filterPromiseFollowUps(
   });
 }
 
+function isResolvedToday(item: PromiseFollowUpItem, now: Date): boolean {
+  const resolvedAt =
+    item.resolution?.resolvedAtUtc ??
+    (item.group === "completed" ? item.completedAtUtc : null);
+  if (!resolvedAt) {
+    return false;
+  }
+  const day = dueDateCalendarString(resolvedAt);
+  return day === localCalendarDateString(now);
+}
+
 export function buildPromiseFollowUpSummary(
-  items: readonly PromiseFollowUpItem[]
+  items: readonly PromiseFollowUpItem[],
+  now: Date = new Date()
 ): PromiseFollowUpSummary {
   const dueTodayCount = items.filter((item) => item.group === "due_today").length;
   const brokenCount = items.filter((item) => item.group === "broken").length;
   const followUpRequiredCount = items.filter(
     (item) => item.group === "follow_up_required"
   ).length;
+  const completedCount = items.filter((item) => item.group === "completed").length;
+  const escalatedCount = items.filter((item) => item.group === "escalated").length;
+  const disputedCount = items.filter((item) => item.group === "disputed").length;
+  const resolvedTodayCount = items.filter((item) => isResolvedToday(item, now)).length;
 
-  const active = items.filter((item) => item.group !== "completed");
+  const active = items.filter(
+    (item) =>
+      item.group !== "completed" &&
+      item.group !== "disputed" &&
+      item.group !== "escalated"
+  );
   const totals = new Map<string, number>();
   for (const item of active) {
     const code = item.currency?.trim() || "—";
@@ -572,6 +1009,10 @@ export function buildPromiseFollowUpSummary(
     dueTodayCount,
     brokenCount,
     followUpRequiredCount,
+    completedCount,
+    resolvedTodayCount,
+    escalatedCount,
+    disputedCount,
     promisedTotalsByCurrency
   };
 }
@@ -584,7 +1025,9 @@ export function groupPromiseFollowUps(
     upcoming: [],
     broken: [],
     follow_up_required: [],
-    completed: []
+    completed: [],
+    disputed: [],
+    escalated: []
   };
   for (const item of items) {
     groups[item.group].push(item);

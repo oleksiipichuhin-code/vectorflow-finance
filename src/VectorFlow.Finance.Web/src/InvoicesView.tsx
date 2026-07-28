@@ -53,6 +53,7 @@ import {
 } from "./invoiceCollections";
 import {
   PROMISE_GROUP_OPTIONS,
+  applyCollectionResolution,
   buildPromiseFollowUpItems,
   buildPromiseFollowUpSummary,
   filterPromiseFollowUps,
@@ -61,6 +62,7 @@ import {
   readPromiseFromStorage,
   savePromiseToPay,
   updatePromiseStatus,
+  type CollectionResolutionKind,
   type PromiseFollowUpItem,
   type PromiseGroupFilter,
   type PromiseToPayRecord
@@ -233,6 +235,14 @@ export function InvoicesView({
   const [promiseFormError, setPromiseFormError] = useState<string | null>(null);
   const [promiseFormSuccess, setPromiseFormSuccess] = useState<string | null>(null);
   const [promiseBusy, setPromiseBusy] = useState(false);
+  const [resolutionOpen, setResolutionOpen] = useState(false);
+  const [resolutionKind, setResolutionKind] = useState<CollectionResolutionKind | "">("");
+  const [resolutionPaymentDate, setResolutionPaymentDate] = useState("");
+  const [resolutionPaidAmount, setResolutionPaidAmount] = useState("");
+  const [resolutionRemainingAmount, setResolutionRemainingAmount] = useState("");
+  const [resolutionPromiseDate, setResolutionPromiseDate] = useState("");
+  const [resolutionReason, setResolutionReason] = useState("");
+  const [resolutionNote, setResolutionNote] = useState("");
   const [filterValidationError, setFilterValidationError] = useState<string | null>(null);
 
   const [page, setPage] = useState(() => (initialPage < 1 ? 1 : Math.floor(initialPage)));
@@ -499,6 +509,14 @@ export function InvoicesView({
     setPromiseDateInput("");
     setPromiseNoteInput("");
     setPromiseBusy(false);
+    setResolutionOpen(false);
+    setResolutionKind("");
+    setResolutionPaymentDate("");
+    setResolutionPaidAmount("");
+    setResolutionRemainingAmount("");
+    setResolutionPromiseDate("");
+    setResolutionReason("");
+    setResolutionNote("");
   }, [detailTargetId]);
 
   function publishDiscovery(
@@ -2041,7 +2059,7 @@ export function InvoicesView({
     ? buildPromiseFollowUpItems(invoices, promiseRecords, collectionsNow)
     : [];
   const promiseSummary = followUpsPanelActive
-    ? buildPromiseFollowUpSummary(promiseFollowUpAll)
+    ? buildPromiseFollowUpSummary(promiseFollowUpAll, collectionsNow)
     : null;
   const promiseGroups = followUpsPanelActive
     ? groupPromiseFollowUps(promiseFollowUpItems)
@@ -2209,6 +2227,7 @@ export function InvoicesView({
   }
 
   function openPromiseForm(existing: PromiseToPayRecord | null) {
+    setResolutionOpen(false);
     setPromiseFormOpen(true);
     setPromiseDateInput(existing?.promiseDate ?? "");
     setPromiseNoteInput(existing?.note ?? "");
@@ -2218,6 +2237,25 @@ export function InvoicesView({
 
   function closePromiseForm() {
     setPromiseFormOpen(false);
+    setPromiseFormError(null);
+  }
+
+  function openResolutionForm() {
+    setPromiseFormOpen(false);
+    setResolutionOpen(true);
+    setResolutionKind("");
+    setResolutionPaymentDate("");
+    setResolutionPaidAmount("");
+    setResolutionRemainingAmount("");
+    setResolutionPromiseDate("");
+    setResolutionReason("");
+    setResolutionNote("");
+    setPromiseFormError(null);
+    setPromiseFormSuccess(null);
+  }
+
+  function closeResolutionForm() {
+    setResolutionOpen(false);
     setPromiseFormError(null);
   }
 
@@ -2235,11 +2273,7 @@ export function InvoicesView({
       setPromiseFormError(result.error);
       return;
     }
-    setPromiseFormSuccess(
-      result.record.note
-        ? `Обіцянку збережено на ${result.record.promiseDate}.`
-        : `Обіцянку збережено на ${result.record.promiseDate}.`
-    );
+    setPromiseFormSuccess(`Обіцянку збережено на ${result.record.promiseDate}.`);
     setPromiseFormOpen(false);
     bumpPromiseRevision();
   }
@@ -2255,6 +2289,33 @@ export function InvoicesView({
       return;
     }
     setPromiseFormSuccess(`Follow-up: ${result.record.status}.`);
+    bumpPromiseRevision();
+  }
+
+  function handleSaveResolution(invoiceId: string) {
+    if (!resolutionKind) {
+      setPromiseFormError("Оберіть тип resolution.");
+      return;
+    }
+    setPromiseBusy(true);
+    setPromiseFormError(null);
+    setPromiseFormSuccess(null);
+    const result = applyCollectionResolution(invoiceId, {
+      kind: resolutionKind,
+      paymentDate: resolutionPaymentDate,
+      paidAmount: resolutionPaidAmount,
+      remainingAmount: resolutionRemainingAmount,
+      promiseDate: resolutionPromiseDate,
+      reason: resolutionReason,
+      note: resolutionNote
+    });
+    setPromiseBusy(false);
+    if (!result.ok) {
+      setPromiseFormError(result.error);
+      return;
+    }
+    setPromiseFormSuccess(`Resolution збережено: ${result.record.resolution?.kind}.`);
+    setResolutionOpen(false);
     bumpPromiseRevision();
   }
 
@@ -2427,22 +2488,24 @@ export function InvoicesView({
                 {followUpsPanelActive && promiseSummary ? (
                   <dl className="collections-summary facts collections-kpi">
                     <div>
-                      <dt>Promises due today</dt>
-                      <dd>{promiseSummary.dueTodayCount}</dd>
+                      <dt>Promises Completed</dt>
+                      <dd>{promiseSummary.completedCount}</dd>
                     </div>
                     <div>
-                      <dt>Broken promises</dt>
+                      <dt>Broken Promises</dt>
                       <dd>{promiseSummary.brokenCount}</dd>
                     </div>
                     <div>
-                      <dt>Amount promised</dt>
-                      <dd>
-                        {formatTotals(promiseSummary.promisedTotalsByCurrency)}
-                      </dd>
+                      <dt>Collections Resolved Today</dt>
+                      <dd>{promiseSummary.resolvedTodayCount}</dd>
                     </div>
                     <div>
-                      <dt>Follow-ups required</dt>
-                      <dd>{promiseSummary.followUpRequiredCount}</dd>
+                      <dt>Escalated Cases</dt>
+                      <dd>{promiseSummary.escalatedCount}</dd>
+                    </div>
+                    <div>
+                      <dt>Disputed Cases</dt>
+                      <dd>{promiseSummary.disputedCount}</dd>
                     </div>
                   </dl>
                 ) : null}
@@ -3184,6 +3247,14 @@ export function InvoicesView({
                     error: promiseFormError,
                     success: promiseFormSuccess,
                     busy: promiseBusy,
+                    resolutionOpen,
+                    resolutionKind,
+                    resolutionPaymentDate,
+                    resolutionPaidAmount,
+                    resolutionRemainingAmount,
+                    resolutionPromiseDate,
+                    resolutionReason,
+                    resolutionNote,
                     onOpenForm: () => openPromiseForm(detailPromiseRecord),
                     onCloseForm: closePromiseForm,
                     onPromiseDateChange: setPromiseDateInput,
@@ -3194,7 +3265,17 @@ export function InvoicesView({
                     onMarkContacted: () =>
                       handlePromiseStatus(detailTargetId, "contacted"),
                     onComplete: () => handlePromiseStatus(detailTargetId, "completed"),
-                    onReopen: () => handlePromiseStatus(detailTargetId, "awaiting")
+                    onReopen: () => handlePromiseStatus(detailTargetId, "awaiting"),
+                    onOpenResolution: openResolutionForm,
+                    onCloseResolution: closeResolutionForm,
+                    onResolutionKindChange: setResolutionKind,
+                    onResolutionPaymentDateChange: setResolutionPaymentDate,
+                    onResolutionPaidAmountChange: setResolutionPaidAmount,
+                    onResolutionRemainingAmountChange: setResolutionRemainingAmount,
+                    onResolutionPromiseDateChange: setResolutionPromiseDate,
+                    onResolutionReasonChange: setResolutionReason,
+                    onResolutionNoteChange: setResolutionNote,
+                    onSaveResolution: () => handleSaveResolution(detailTargetId)
                   }
                 : null
             }
@@ -3238,6 +3319,8 @@ export function InvoicesView({
                 "upcoming",
                 "broken",
                 "follow_up_required",
+                "disputed",
+                "escalated",
                 "completed"
               ] as const
             )
@@ -3264,6 +3347,7 @@ export function InvoicesView({
                             <th>Promise date</th>
                             <th>Days to / past promise</th>
                             <th>Follow-up status</th>
+                            <th>Resolution</th>
                             <th>Note</th>
                             <th>Дія</th>
                           </tr>
@@ -3305,6 +3389,17 @@ export function InvoicesView({
                                   >
                                     {item.statusLabel}
                                   </span>
+                                </td>
+                                <td>
+                                  {item.resolutionLabel ? (
+                                    <span
+                                      className={`aging-badge aging-badge--promise aging-badge--resolution-${item.resolution?.kind ?? "none"}`}
+                                    >
+                                      {item.resolutionLabel}
+                                    </span>
+                                  ) : (
+                                    "—"
+                                  )}
                                 </td>
                                 <td className="cell-wrap">{item.note || "—"}</td>
                                 <td>

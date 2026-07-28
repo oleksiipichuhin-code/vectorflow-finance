@@ -531,6 +531,32 @@ describe("urlState", () => {
     assert.equal(parsed.discovery.collectionPanel, "followups");
     assert.equal(parsed.discovery.promiseGroup, "");
   });
+
+  it("round-trips disputed and escalated promise groups", () => {
+    for (const group of ["disputed", "escalated"] as const) {
+      const search = buildUrlSearch({
+        view: "invoices",
+        workspaceId: "11111111-1111-1111-1111-111111111111",
+        accrualId: null,
+        invoiceId: null,
+        discovery: {
+          page: 1,
+          invoiceFilters: {
+            ...EMPTY_INVOICE_FILTERS,
+            status: "Issued"
+          },
+          accrualFilters: { ...EMPTY_ACCRUAL_FILTERS },
+          invoiceQueue: "overdue",
+          agingBucket: "",
+          collectionPanel: "followups",
+          promiseGroup: group,
+          promiseSearch: ""
+        }
+      });
+      assert.match(search, new RegExp(`promiseGroup=${group}`));
+      assert.equal(parseUrlSearch(search).discovery.promiseGroup, group);
+    }
+  });
 });
 
 describe("accrual detail deep-link URL policy", () => {

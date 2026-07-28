@@ -15,8 +15,16 @@ import {
   type RelatedAccrualRowView
 } from "../invoiceAccrualBridge";
 import { formatDate, formatMoney } from "../format";
-import type { PromiseFollowUpStatus, PromiseToPayRecord } from "../promiseToPay";
-import { promiseStatusLabel } from "../promiseToPay";
+import type {
+  CollectionResolutionKind,
+  PromiseFollowUpStatus,
+  PromiseToPayRecord
+} from "../promiseToPay";
+import {
+  RESOLUTION_KIND_OPTIONS,
+  promiseStatusLabel,
+  resolutionKindLabel
+} from "../promiseToPay";
 import { StatusMessage } from "./Panel";
 
 type InvoiceDetailCollectionsContext = {
@@ -41,6 +49,14 @@ type InvoiceDetailPromiseContext = {
   error: string | null;
   success: string | null;
   busy: boolean;
+  resolutionOpen: boolean;
+  resolutionKind: CollectionResolutionKind | "";
+  resolutionPaymentDate: string;
+  resolutionPaidAmount: string;
+  resolutionRemainingAmount: string;
+  resolutionPromiseDate: string;
+  resolutionReason: string;
+  resolutionNote: string;
   onOpenForm: () => void;
   onCloseForm: () => void;
   onPromiseDateChange: (value: string) => void;
@@ -50,6 +66,16 @@ type InvoiceDetailPromiseContext = {
   onMarkContacted: () => void;
   onComplete: () => void;
   onReopen: () => void;
+  onOpenResolution: () => void;
+  onCloseResolution: () => void;
+  onResolutionKindChange: (value: CollectionResolutionKind | "") => void;
+  onResolutionPaymentDateChange: (value: string) => void;
+  onResolutionPaidAmountChange: (value: string) => void;
+  onResolutionRemainingAmountChange: (value: string) => void;
+  onResolutionPromiseDateChange: (value: string) => void;
+  onResolutionReasonChange: (value: string) => void;
+  onResolutionNoteChange: (value: string) => void;
+  onSaveResolution: () => void;
 };
 
 type InvoiceDetailPanelProps = {
@@ -179,7 +205,8 @@ export function InvoiceDetailPanel({
     createAccrualBusy ||
     createAccrualOpen ||
     Boolean(promiseContext?.busy) ||
-    Boolean(promiseContext?.formOpen);
+    Boolean(promiseContext?.formOpen) ||
+    Boolean(promiseContext?.resolutionOpen);
 
   const relatedRows: RelatedAccrualRowView[] = relatedAccruals.map((accrual) =>
     buildRelatedAccrualRowView(accrual, formatMoney, formatDate)
@@ -379,6 +406,42 @@ export function InvoiceDetailPanel({
                       </span>
                     </dd>
                   </div>
+                  {promiseContext.record.resolution ? (
+                    <div>
+                      <dt>Resolution</dt>
+                      <dd>
+                        <span
+                          className={`aging-badge aging-badge--promise aging-badge--resolution-${promiseContext.record.resolution.kind}`}
+                        >
+                          {resolutionKindLabel(promiseContext.record.resolution.kind)}
+                        </span>
+                      </dd>
+                    </div>
+                  ) : null}
+                  {promiseContext.record.resolution?.paymentDate ? (
+                    <div>
+                      <dt>Payment date</dt>
+                      <dd>{promiseContext.record.resolution.paymentDate}</dd>
+                    </div>
+                  ) : null}
+                  {promiseContext.record.resolution?.paidAmount != null ? (
+                    <div>
+                      <dt>Paid amount</dt>
+                      <dd>{promiseContext.record.resolution.paidAmount.toFixed(2)}</dd>
+                    </div>
+                  ) : null}
+                  {promiseContext.record.resolution?.remainingAmount != null ? (
+                    <div>
+                      <dt>Remaining amount</dt>
+                      <dd>{promiseContext.record.resolution.remainingAmount.toFixed(2)}</dd>
+                    </div>
+                  ) : null}
+                  {promiseContext.record.resolution?.reason ? (
+                    <div>
+                      <dt>Reason</dt>
+                      <dd className="cell-wrap">{promiseContext.record.resolution.reason}</dd>
+                    </div>
+                  ) : null}
                   {promiseContext.record.note ? (
                     <div>
                       <dt>Note</dt>
@@ -445,15 +508,169 @@ export function InvoiceDetailPanel({
                     </button>
                   </div>
                 </form>
-              ) : (
+              ) : null}
+
+              {promiseContext.resolutionOpen && promiseContext.record ? (
+                <form
+                  className="filter-form resolution-form"
+                  aria-labelledby="collection-resolution-heading"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    promiseContext.onSaveResolution();
+                  }}
+                >
+                  <h4 id="collection-resolution-heading">Resolution</h4>
+                  <label>
+                    Action
+                    <select
+                      value={promiseContext.resolutionKind}
+                      onChange={(event) =>
+                        promiseContext.onResolutionKindChange(
+                          event.target.value as CollectionResolutionKind | ""
+                        )
+                      }
+                      disabled={promiseContext.busy}
+                      required
+                    >
+                      <option value="">Оберіть результат…</option>
+                      {RESOLUTION_KIND_OPTIONS.map((option) => (
+                        <option key={option.id} value={option.id}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {promiseContext.resolutionKind === "paid" ||
+                  promiseContext.resolutionKind === "partially_paid" ? (
+                    <label>
+                      Payment date
+                      <input
+                        type="date"
+                        required
+                        value={promiseContext.resolutionPaymentDate}
+                        onChange={(event) =>
+                          promiseContext.onResolutionPaymentDateChange(event.target.value)
+                        }
+                        disabled={promiseContext.busy}
+                      />
+                    </label>
+                  ) : null}
+                  {promiseContext.resolutionKind === "partially_paid" ? (
+                    <>
+                      <label>
+                        Paid amount
+                        <input
+                          inputMode="decimal"
+                          required
+                          value={promiseContext.resolutionPaidAmount}
+                          onChange={(event) =>
+                            promiseContext.onResolutionPaidAmountChange(event.target.value)
+                          }
+                          disabled={promiseContext.busy}
+                          placeholder="0.00"
+                        />
+                      </label>
+                      <label>
+                        Remaining amount
+                        <input
+                          inputMode="decimal"
+                          required
+                          value={promiseContext.resolutionRemainingAmount}
+                          onChange={(event) =>
+                            promiseContext.onResolutionRemainingAmountChange(event.target.value)
+                          }
+                          disabled={promiseContext.busy}
+                          placeholder="0.00"
+                        />
+                      </label>
+                    </>
+                  ) : null}
+                  {promiseContext.resolutionKind === "new_promise" ? (
+                    <label>
+                      New promise date
+                      <input
+                        type="date"
+                        required
+                        value={promiseContext.resolutionPromiseDate}
+                        onChange={(event) =>
+                          promiseContext.onResolutionPromiseDateChange(event.target.value)
+                        }
+                        disabled={promiseContext.busy}
+                      />
+                    </label>
+                  ) : null}
+                  {promiseContext.resolutionKind === "disputed" ||
+                  promiseContext.resolutionKind === "escalated" ? (
+                    <label>
+                      {promiseContext.resolutionKind === "disputed"
+                        ? "Dispute reason"
+                        : "Escalation reason"}
+                      <input
+                        required
+                        value={promiseContext.resolutionReason}
+                        onChange={(event) =>
+                          promiseContext.onResolutionReasonChange(event.target.value)
+                        }
+                        disabled={promiseContext.busy}
+                        autoComplete="off"
+                      />
+                    </label>
+                  ) : null}
+                  {promiseContext.resolutionKind ? (
+                    <label>
+                      Note
+                      <input
+                        value={promiseContext.resolutionNote}
+                        onChange={(event) =>
+                          promiseContext.onResolutionNoteChange(event.target.value)
+                        }
+                        placeholder="коротка нотатка (необовʼязково)"
+                        autoComplete="off"
+                        disabled={promiseContext.busy}
+                      />
+                    </label>
+                  ) : null}
+                  <div className="filter-actions">
+                    <button
+                      type="submit"
+                      disabled={
+                        promiseContext.busy ||
+                        closeDisabled ||
+                        !promiseContext.resolutionKind
+                      }
+                    >
+                      {promiseContext.busy ? "Збереження…" : "Save resolution"}
+                    </button>
+                    <button
+                      type="button"
+                      className="button-secondary"
+                      disabled={promiseContext.busy || closeDisabled}
+                      onClick={promiseContext.onCloseResolution}
+                    >
+                      Скасувати
+                    </button>
+                  </div>
+                </form>
+              ) : null}
+
+              {!promiseContext.formOpen && !promiseContext.resolutionOpen ? (
                 <div className="filter-actions">
                   <button
                     type="button"
-                    disabled={actionsDisabled && !promiseContext.record}
+                    disabled={closeDisabled || promiseContext.busy}
                     onClick={promiseContext.onOpenForm}
                   >
                     {promiseContext.record ? "Update promise" : "Promise to pay"}
                   </button>
+                  {promiseContext.record ? (
+                    <button
+                      type="button"
+                      disabled={closeDisabled || promiseContext.busy}
+                      onClick={promiseContext.onOpenResolution}
+                    >
+                      Resolve collection
+                    </button>
+                  ) : null}
                   {promiseContext.record && promiseStatus !== "completed" ? (
                     <>
                       <button
@@ -493,9 +710,10 @@ export function InvoiceDetailPanel({
                     </button>
                   ) : null}
                 </div>
-              )}
+              ) : null}
               <p className="meta promise-persistence-note">
-                Follow-up зберігається локально в браузері (localStorage) за invoice id.
+                Follow-up і resolution зберігаються локально в браузері (localStorage) за invoice
+                id.
               </p>
             </section>
           ) : null}

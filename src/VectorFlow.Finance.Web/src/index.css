@@ -321,6 +321,50 @@ body {
   color: #445466;
 }
 
+.aging-badge--resolution-paid,
+.aging-badge--promise-group-completed {
+  border-color: rgba(31, 107, 69, 0.4);
+  background: rgba(31, 107, 69, 0.1);
+  color: #1f6b45;
+}
+
+.aging-badge--resolution-partially_paid,
+.aging-badge--resolution-new_promise {
+  border-color: rgba(36, 90, 158, 0.4);
+  background: rgba(36, 90, 158, 0.1);
+  color: #244a7a;
+}
+
+.aging-badge--resolution-disputed,
+.row-attention--promise-disputed {
+  border-color: rgba(158, 74, 36, 0.45);
+  background: rgba(158, 74, 36, 0.1);
+  color: #7a3418;
+}
+
+.aging-badge--resolution-escalated,
+.row-attention--promise-escalated {
+  border-color: rgba(120, 60, 140, 0.45);
+  background: rgba(120, 60, 140, 0.1);
+  color: #5a2f6a;
+}
+
+.aging-badge--resolution-unable_to_contact {
+  color: #445466;
+}
+
+.resolution-form {
+  margin-top: 0.35rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid rgba(27, 36, 48, 0.12);
+}
+
+.resolution-form h4 {
+  margin: 0 0 0.35rem;
+  font-size: 0.95rem;
+  color: #244a7a;
+}
+
 .row-selected {
   outline: 2px solid rgba(158, 74, 36, 0.45);
   outline-offset: -2px;
