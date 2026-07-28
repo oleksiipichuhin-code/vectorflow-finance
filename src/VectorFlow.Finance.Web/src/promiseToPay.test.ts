@@ -187,6 +187,7 @@ describe("promiseToPay classification", () => {
       lastContact: null,
       dispute: null,
       escalation: null,
+      paymentPlan: null,
       history: [],
       ...overrides
     };
@@ -635,6 +636,7 @@ describe("collection resolution workflow", () => {
       lastContact: null,
       dispute: null,
       escalation: null,
+      paymentPlan: null,
       history: []
     };
     assert.equal(
@@ -1192,6 +1194,7 @@ describe("collection escalation workflow", () => {
     assert.ok(record);
     assert.equal(record?.escalation, null);
     assert.equal(record?.dispute, null);
+    assert.equal(record?.paymentPlan, null);
   });
 
   it("validates required escalation fields", () => {
@@ -1468,6 +1471,7 @@ describe("collection escalation workflow", () => {
     assert.equal(resolveNextActionDate(raised.record), "2026-08-10");
     assert.deepEqual(NEXT_ACTION_TIE_BREAK, [
       "critical_escalation",
+      "payment_plan_installment",
       "dispute_review",
       "escalation",
       "contact_follow_up"
@@ -1516,6 +1520,7 @@ describe("collection escalation workflow", () => {
         completedAtUtc: null,
         completionComment: null
       },
+      paymentPlan: null,
       history: []
     };
     assert.equal(resolveNextAction(record)?.kind, "dispute_review");

@@ -19,18 +19,31 @@ import { formatDate, formatMoney } from "../format";
 import type {
   CollectionResolutionKind,
   EscalationStatus,
+  PaymentPlanStatus,
   PromiseFollowUpStatus,
   PromiseToPayRecord
 } from "../promiseToPay";
 import {
   RESOLUTION_KIND_OPTIONS,
+  computeInstallmentStatus,
+  countPaidInstallments,
   disputeStatusLabel,
   escalationStatusLabel,
+  hasOverdueInstallment,
+  installmentStatusLabel,
   isActiveDispute,
   isActiveEscalation,
+  isActivePaymentPlan,
+  listOverdueInstallments,
+  paymentPlanStatusLabel,
+  planInstallmentRemaining,
+  planPaidTotal,
+  planRemainingTotal,
   promiseStatusLabel,
-  resolutionKindLabel
+  resolutionKindLabel,
+  selectNextInstallment
 } from "../promiseToPay";
+import type { PaymentPlanInstallmentInput } from "../paymentPlan";
 import {
   ACTIVITY_EVENT_TYPE_OPTIONS,
   CONTACT_CHANNEL_OPTIONS,
@@ -114,6 +127,17 @@ type InvoiceDetailPromiseContext = {
   escalationDueDate: string;
   escalationNote: string;
   escalationCompleteComment: string;
+  paymentPlanOpen: boolean;
+  paymentPlanEditMode: boolean;
+  paymentPlanCancelMode: boolean;
+  paymentPlanRecordMode: boolean;
+  paymentPlanAmount: string;
+  paymentPlanInstallments: PaymentPlanInstallmentInput[];
+  paymentPlanReplacePromise: boolean;
+  paymentPlanCancelReason: string;
+  paymentPlanRecordInstallmentId: string;
+  paymentPlanRecordAmount: string;
+  paymentPlanRecordNote: string;
   onOpenForm: () => void;
   onCloseForm: () => void;
   onPromiseDateChange: (value: string) => void;
@@ -166,6 +190,23 @@ type InvoiceDetailPromiseContext = {
   onEscalationCompleteCommentChange: (value: string) => void;
   onSaveEscalation: () => void;
   onConfirmCompleteEscalation: () => void;
+  onOpenCreatePaymentPlan: () => void;
+  onOpenEditPaymentPlan: () => void;
+  onOpenCancelPaymentPlan: () => void;
+  onOpenRecordInstallmentPayment: (installmentId: string) => void;
+  onClosePaymentPlanForm: () => void;
+  onPaymentPlanAmountChange: (value: string) => void;
+  onPaymentPlanReplacePromiseChange: (value: boolean) => void;
+  onPaymentPlanCancelReasonChange: (value: string) => void;
+  onPaymentPlanRecordAmountChange: (value: string) => void;
+  onPaymentPlanRecordNoteChange: (value: string) => void;
+  onAddPaymentPlanInstallment: () => void;
+  onRemovePaymentPlanInstallment: (index: number) => void;
+  onPaymentPlanInstallmentDueDateChange: (index: number, value: string) => void;
+  onPaymentPlanInstallmentAmountChange: (index: number, value: string) => void;
+  onSavePaymentPlan: () => void;
+  onConfirmCancelPaymentPlan: () => void;
+  onConfirmRecordInstallmentPayment: () => void;
 };
 
 type InvoiceDetailHistoryContext = {
@@ -314,7 +355,8 @@ export function InvoiceDetailPanel({
     Boolean(promiseContext?.resolutionOpen) ||
     Boolean(promiseContext?.contactOpen) ||
     Boolean(promiseContext?.disputeOpen) ||
-    Boolean(promiseContext?.escalationOpen);
+    Boolean(promiseContext?.escalationOpen) ||
+    Boolean(promiseContext?.paymentPlanOpen);
 
   const relatedRows: RelatedAccrualRowView[] = relatedAccruals.map((accrual) =>
     buildRelatedAccrualRowView(accrual, formatMoney, formatDate)
@@ -677,6 +719,175 @@ export function InvoiceDetailPanel({
                           </dd>
                         </div>
                       ) : null}
+                    </>
+                  ) : null}
+                  {promiseContext.record.paymentPlan ? (
+                    <>
+                      <div>
+                        <dt>Payment plan</dt>
+                        <dd>
+                          <span
+                            className={`aging-badge aging-badge--promise aging-badge--payment-plan-${promiseContext.record.paymentPlan.status as PaymentPlanStatus}${
+                              hasOverdueInstallment(promiseContext.record.paymentPlan)
+                                ? " aging-badge--payment-plan-overdue"
+                                : ""
+                            }`}
+                          >
+                            {paymentPlanStatusLabel(promiseContext.record.paymentPlan.status)}
+                          </span>
+                          {hasOverdueInstallment(promiseContext.record.paymentPlan)
+                            ? " · overdue installment"
+                            : ""}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Plan amount</dt>
+                        <dd>
+                          {formatMoney(
+                            promiseContext.record.paymentPlan.planAmount,
+                            promiseContext.record.paymentPlan.currency
+                          )}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Paid / remaining</dt>
+                        <dd>
+                          {formatMoney(
+                            planPaidTotal(promiseContext.record.paymentPlan),
+                            promiseContext.record.paymentPlan.currency
+                          )}
+                          {" / "}
+                          {formatMoney(
+                            planRemainingTotal(promiseContext.record.paymentPlan),
+                            promiseContext.record.paymentPlan.currency
+                          )}
+                          {" · "}
+                          {(() => {
+                            const counts = countPaidInstallments(
+                              promiseContext.record.paymentPlan
+                            );
+                            return `${counts.paid}/${counts.total} paid`;
+                          })()}
+                        </dd>
+                      </div>
+                      {(() => {
+                        const next = selectNextInstallment(
+                          promiseContext.record.paymentPlan
+                        );
+                        return next ? (
+                          <div>
+                            <dt>Next installment</dt>
+                            <dd>
+                              #{next.sequence} · {next.dueDate} ·{" "}
+                              {formatMoney(
+                                planInstallmentRemaining(next),
+                                promiseContext.record.paymentPlan.currency
+                              )}{" "}
+                              remaining
+                            </dd>
+                          </div>
+                        ) : null;
+                      })()}
+                      {listOverdueInstallments(promiseContext.record.paymentPlan).length >
+                      0 ? (
+                        <div>
+                          <dt>Overdue installments</dt>
+                          <dd>
+                            {listOverdueInstallments(promiseContext.record.paymentPlan)
+                              .map((item) => `#${item.sequence}`)
+                              .join(", ")}
+                          </dd>
+                        </div>
+                      ) : null}
+                      {promiseContext.record.paymentPlan.cancellationReason ? (
+                        <div>
+                          <dt>Cancellation reason</dt>
+                          <dd className="cell-wrap">
+                            {promiseContext.record.paymentPlan.cancellationReason}
+                          </dd>
+                        </div>
+                      ) : null}
+                      <div className="payment-plan-schedule">
+                        <dt>Schedule</dt>
+                        <dd>
+                          <table className="data-table payment-plan-table">
+                            <thead>
+                              <tr>
+                                <th>#</th>
+                                <th>Due</th>
+                                <th>Expected</th>
+                                <th>Recorded</th>
+                                <th>Remaining</th>
+                                <th>Status</th>
+                                <th />
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {(() => {
+                                const plan = promiseContext.record!.paymentPlan!;
+                                const currency = plan.currency;
+                                return plan.installments.map((item) => {
+                                  const status = computeInstallmentStatus(item);
+                                  const remaining = planInstallmentRemaining(item);
+                                  const canRecord =
+                                    isActivePaymentPlan(plan) &&
+                                    status !== "Paid" &&
+                                    !promiseContext.paymentPlanOpen;
+                                  return (
+                                    <tr
+                                      key={item.id}
+                                      className={
+                                        status === "Overdue"
+                                          ? "row-attention row-attention--payment-overdue"
+                                          : undefined
+                                      }
+                                    >
+                                      <td>{item.sequence}</td>
+                                      <td>{item.dueDate}</td>
+                                      <td>
+                                        {formatMoney(item.expectedAmount, currency)}
+                                      </td>
+                                      <td>
+                                        {formatMoney(item.recordedPaidAmount, currency)}
+                                      </td>
+                                      <td>{formatMoney(remaining, currency)}</td>
+                                      <td>
+                                        <span
+                                          className={`aging-badge aging-badge--installment-${status === "Partially paid" ? "partial" : status.toLowerCase()}`}
+                                        >
+                                          {installmentStatusLabel(status)}
+                                        </span>
+                                      </td>
+                                      <td>
+                                        {canRecord ? (
+                                          <button
+                                            type="button"
+                                            className="button-secondary"
+                                            disabled={
+                                              closeDisabled || promiseContext.busy
+                                            }
+                                            onClick={() =>
+                                              promiseContext.onOpenRecordInstallmentPayment(
+                                                item.id
+                                              )
+                                            }
+                                          >
+                                            Record payment
+                                          </button>
+                                        ) : null}
+                                      </td>
+                                    </tr>
+                                  );
+                                });
+                              })()}
+                            </tbody>
+                          </table>
+                          <p className="meta">
+                            Recorded amounts are for collection tracking only — they do not
+                            post ledger payments.
+                          </p>
+                        </dd>
+                      </div>
                     </>
                   ) : null}
                 </dl>
@@ -1352,11 +1563,294 @@ export function InvoiceDetailPanel({
                 </form>
               ) : null}
 
+              {promiseContext.paymentPlanOpen &&
+              !promiseContext.paymentPlanCancelMode &&
+              !promiseContext.paymentPlanRecordMode ? (
+                <form
+                  className="filter-form payment-plan-form"
+                  aria-labelledby="collection-payment-plan-heading"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    promiseContext.onSavePaymentPlan();
+                  }}
+                >
+                  <h4 id="collection-payment-plan-heading">
+                    {promiseContext.paymentPlanEditMode
+                      ? "Edit payment plan"
+                      : "Create payment plan"}
+                  </h4>
+                  <p className="meta">
+                    Operational collection schedule only. Saving does not post a ledger
+                    payment or mark the invoice paid.
+                  </p>
+                  <label>
+                    Plan amount *
+                    <input
+                      type="number"
+                      min="0.01"
+                      step="0.01"
+                      required
+                      value={promiseContext.paymentPlanAmount}
+                      onChange={(event) =>
+                        promiseContext.onPaymentPlanAmountChange(event.target.value)
+                      }
+                      disabled={promiseContext.busy}
+                    />
+                  </label>
+                  {!promiseContext.paymentPlanEditMode ? (
+                    <label className="checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={promiseContext.paymentPlanReplacePromise}
+                        onChange={(event) =>
+                          promiseContext.onPaymentPlanReplacePromiseChange(
+                            event.target.checked
+                          )
+                        }
+                        disabled={promiseContext.busy}
+                      />
+                      Replace active Promise to Pay with this installment schedule
+                    </label>
+                  ) : null}
+                  <div className="payment-plan-installment-editor">
+                    <h5>Installments</h5>
+                    {promiseContext.paymentPlanInstallments.map((row, index) => {
+                      const locked =
+                        promiseContext.paymentPlanEditMode &&
+                        Number(row.recordedPaidAmount ?? 0) > 0;
+                      return (
+                        <div key={row.id ?? `new-${index}`} className="payment-plan-row">
+                          <label>
+                            Due date *
+                            <input
+                              type="date"
+                              required
+                              value={row.dueDate ?? ""}
+                              onChange={(event) =>
+                                promiseContext.onPaymentPlanInstallmentDueDateChange(
+                                  index,
+                                  event.target.value
+                                )
+                              }
+                              disabled={promiseContext.busy || locked}
+                            />
+                          </label>
+                          <label>
+                            Amount *
+                            <input
+                              type="number"
+                              min="0.01"
+                              step="0.01"
+                              required
+                              value={
+                                row.expectedAmount === undefined ||
+                                row.expectedAmount === null
+                                  ? ""
+                                  : String(row.expectedAmount)
+                              }
+                              onChange={(event) =>
+                                promiseContext.onPaymentPlanInstallmentAmountChange(
+                                  index,
+                                  event.target.value
+                                )
+                              }
+                              disabled={promiseContext.busy || locked}
+                            />
+                          </label>
+                          {locked ? (
+                            <p className="meta">Paid / partial — locked</p>
+                          ) : (
+                            <button
+                              type="button"
+                              className="button-secondary"
+                              disabled={
+                                promiseContext.busy ||
+                                promiseContext.paymentPlanInstallments.length <= 1
+                              }
+                              onClick={() =>
+                                promiseContext.onRemovePaymentPlanInstallment(index)
+                              }
+                            >
+                              Remove
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                    <button
+                      type="button"
+                      className="button-secondary"
+                      disabled={promiseContext.busy}
+                      onClick={promiseContext.onAddPaymentPlanInstallment}
+                    >
+                      Add installment
+                    </button>
+                    <p className="meta">
+                      Installment total:{" "}
+                      {promiseContext.paymentPlanInstallments
+                        .reduce((sum, row) => {
+                          const amount = Number(
+                            String(row.expectedAmount ?? "")
+                              .trim()
+                              .replace(",", ".")
+                          );
+                          return sum + (Number.isFinite(amount) ? amount : 0);
+                        }, 0)
+                        .toFixed(2)}
+                      {invoice ? ` ${invoice.currency}` : ""}
+                    </p>
+                  </div>
+                  <div className="filter-actions">
+                    <button
+                      type="submit"
+                      disabled={
+                        promiseContext.busy ||
+                        closeDisabled ||
+                        !promiseContext.paymentPlanAmount ||
+                        promiseContext.paymentPlanInstallments.length === 0 ||
+                        (!promiseContext.paymentPlanEditMode &&
+                          !promiseContext.paymentPlanReplacePromise &&
+                          Boolean(promiseContext.record))
+                      }
+                    >
+                      {promiseContext.busy
+                        ? "Збереження…"
+                        : promiseContext.paymentPlanEditMode
+                          ? "Save payment plan update"
+                          : "Save payment plan"}
+                    </button>
+                    <button
+                      type="button"
+                      className="button-secondary"
+                      disabled={promiseContext.busy || closeDisabled}
+                      onClick={promiseContext.onClosePaymentPlanForm}
+                    >
+                      Скасувати
+                    </button>
+                  </div>
+                </form>
+              ) : null}
+
+              {promiseContext.paymentPlanOpen && promiseContext.paymentPlanCancelMode ? (
+                <form
+                  className="filter-form payment-plan-cancel-form"
+                  aria-labelledby="collection-payment-plan-cancel-heading"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    promiseContext.onConfirmCancelPaymentPlan();
+                  }}
+                >
+                  <h4 id="collection-payment-plan-cancel-heading">
+                    Cancel payment plan
+                  </h4>
+                  <label>
+                    Cancellation reason *
+                    <input
+                      value={promiseContext.paymentPlanCancelReason}
+                      onChange={(event) =>
+                        promiseContext.onPaymentPlanCancelReasonChange(event.target.value)
+                      }
+                      placeholder="обовʼязкова причина"
+                      autoComplete="off"
+                      disabled={promiseContext.busy}
+                      required
+                    />
+                  </label>
+                  <div className="filter-actions">
+                    <button
+                      type="submit"
+                      disabled={
+                        promiseContext.busy ||
+                        closeDisabled ||
+                        !promiseContext.paymentPlanCancelReason.trim()
+                      }
+                    >
+                      {promiseContext.busy ? "Збереження…" : "Cancel payment plan"}
+                    </button>
+                    <button
+                      type="button"
+                      className="button-secondary"
+                      disabled={promiseContext.busy || closeDisabled}
+                      onClick={promiseContext.onClosePaymentPlanForm}
+                    >
+                      Скасувати
+                    </button>
+                  </div>
+                </form>
+              ) : null}
+
+              {promiseContext.paymentPlanOpen && promiseContext.paymentPlanRecordMode ? (
+                <form
+                  className="filter-form payment-plan-record-form"
+                  aria-labelledby="collection-payment-plan-record-heading"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    promiseContext.onConfirmRecordInstallmentPayment();
+                  }}
+                >
+                  <h4 id="collection-payment-plan-record-heading">
+                    Record payment for collection tracking
+                  </h4>
+                  <p className="meta">
+                    This records an operational payment against the installment. It does
+                    not create a ledger posting.
+                  </p>
+                  <label>
+                    Amount *
+                    <input
+                      type="number"
+                      min="0.01"
+                      step="0.01"
+                      required
+                      value={promiseContext.paymentPlanRecordAmount}
+                      onChange={(event) =>
+                        promiseContext.onPaymentPlanRecordAmountChange(event.target.value)
+                      }
+                      disabled={promiseContext.busy}
+                    />
+                  </label>
+                  <label>
+                    Note
+                    <input
+                      value={promiseContext.paymentPlanRecordNote}
+                      onChange={(event) =>
+                        promiseContext.onPaymentPlanRecordNoteChange(event.target.value)
+                      }
+                      disabled={promiseContext.busy}
+                      placeholder="optional"
+                    />
+                  </label>
+                  <div className="filter-actions">
+                    <button
+                      type="submit"
+                      disabled={
+                        promiseContext.busy ||
+                        closeDisabled ||
+                        !promiseContext.paymentPlanRecordAmount
+                      }
+                    >
+                      {promiseContext.busy
+                        ? "Збереження…"
+                        : "Payment recorded for collection tracking"}
+                    </button>
+                    <button
+                      type="button"
+                      className="button-secondary"
+                      disabled={promiseContext.busy || closeDisabled}
+                      onClick={promiseContext.onClosePaymentPlanForm}
+                    >
+                      Скасувати
+                    </button>
+                  </div>
+                </form>
+              ) : null}
+
               {!promiseContext.formOpen &&
               !promiseContext.resolutionOpen &&
               !promiseContext.contactOpen &&
               !promiseContext.disputeOpen &&
-              !promiseContext.escalationOpen ? (
+              !promiseContext.escalationOpen &&
+              !promiseContext.paymentPlanOpen ? (
                 <div className="filter-actions">
                   <button
                     type="button"
@@ -1425,10 +1919,46 @@ export function InvoiceDetailPanel({
                       Escalate case
                     </button>
                   )}
+                  {isActivePaymentPlan(promiseContext.record?.paymentPlan) ? (
+                    <>
+                      <button
+                        type="button"
+                        disabled={closeDisabled || promiseContext.busy}
+                        onClick={promiseContext.onOpenEditPaymentPlan}
+                      >
+                        Edit payment plan
+                      </button>
+                      <button
+                        type="button"
+                        className="button-secondary"
+                        disabled={closeDisabled || promiseContext.busy}
+                        onClick={promiseContext.onOpenCancelPaymentPlan}
+                      >
+                        Cancel payment plan
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={closeDisabled || promiseContext.busy}
+                      onClick={promiseContext.onOpenCreatePaymentPlan}
+                    >
+                      Create payment plan
+                    </button>
+                  )}
                   <button
                     type="button"
-                    disabled={closeDisabled || promiseContext.busy}
+                    disabled={
+                      closeDisabled ||
+                      promiseContext.busy ||
+                      isActivePaymentPlan(promiseContext.record?.paymentPlan)
+                    }
                     onClick={promiseContext.onOpenForm}
+                    title={
+                      isActivePaymentPlan(promiseContext.record?.paymentPlan)
+                        ? "Finish or cancel the active payment plan first"
+                        : undefined
+                    }
                   >
                     {promiseContext.record ? "Update promise" : "Promise to pay"}
                   </button>
@@ -1482,8 +2012,9 @@ export function InvoiceDetailPanel({
                 </div>
               ) : null}
               <p className="meta promise-persistence-note">
-                Contact, dispute, escalation, follow-up і resolution зберігаються локально в
-                браузері (localStorage) за invoice id.
+                Contact, dispute, escalation, payment plan, follow-up і resolution
+                зберігаються локально в браузері (localStorage) за invoice id. Payment plan
+                payments are operational tracking only.
               </p>
             </section>
           ) : null}

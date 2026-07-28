@@ -415,6 +415,80 @@ body {
   font-weight: 700;
 }
 
+.aging-badge--payment-plan-Active {
+  border-color: rgba(31, 77, 50, 0.4);
+  background: rgba(31, 77, 50, 0.1);
+  color: #1f4d32;
+}
+
+.aging-badge--payment-plan-Completed {
+  border-color: rgba(68, 84, 102, 0.35);
+  background: rgba(68, 84, 102, 0.08);
+  color: #445466;
+}
+
+.aging-badge--payment-plan-Cancelled {
+  border-color: rgba(106, 90, 78, 0.4);
+  background: rgba(106, 90, 78, 0.1);
+  color: #6a5a4e;
+}
+
+.aging-badge--payment-plan-overdue,
+.aging-badge--installment-overdue {
+  border-color: rgba(138, 47, 36, 0.45);
+  background: rgba(138, 47, 36, 0.1);
+  color: #8a2f24;
+}
+
+.aging-badge--installment-scheduled {
+  border-color: rgba(61, 74, 87, 0.3);
+  background: rgba(61, 74, 87, 0.08);
+  color: #3d4a57;
+}
+
+.aging-badge--installment-paid {
+  border-color: rgba(31, 77, 50, 0.35);
+  background: rgba(31, 77, 50, 0.1);
+  color: #1f4d32;
+}
+
+.aging-badge--installment-partial {
+  border-color: rgba(106, 90, 40, 0.4);
+  background: rgba(106, 90, 40, 0.1);
+  color: #6a5a28;
+}
+
+.payment-plan-schedule {
+  grid-column: 1 / -1;
+}
+
+.payment-plan-table {
+  width: 100%;
+  margin-top: 0.35rem;
+}
+
+.payment-plan-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: flex-end;
+  margin-bottom: 0.75rem;
+}
+
+.payment-plan-installment-editor h5 {
+  margin: 0.5rem 0;
+}
+
+.checkbox-label {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+
+.row-attention--payment-overdue td {
+  background: rgba(138, 47, 36, 0.06);
+}
+
 .aging-badge--resolution-unable_to_contact {
   color: #445466;
 }

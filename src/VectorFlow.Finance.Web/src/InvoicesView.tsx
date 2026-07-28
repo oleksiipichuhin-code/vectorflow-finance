@@ -66,17 +66,23 @@ import {
   rejectCollectionDispute,
   resolveCollectionDispute,
   completeCollectionEscalation,
+  createPaymentPlan,
+  cancelPaymentPlan,
+  emptyInstallmentDraft,
+  recordInstallmentPayment,
   saveCollectionContact,
   savePromiseToPay,
   updateCollectionDispute,
   updateCollectionEscalation,
   updateContactFollowUp,
+  updatePaymentPlan,
   updatePromiseStatus,
   type CollectionResolutionKind,
   type PromiseFollowUpItem,
   type PromiseGroupFilter,
   type PromiseToPayRecord
 } from "./promiseToPay";
+import type { PaymentPlanInstallmentInput } from "./paymentPlan";
 import {
   WORKBENCH_SECTION_OPTIONS,
   WORKBENCH_SORT_OPTIONS,
@@ -367,6 +373,20 @@ export function InvoicesView({
   const [escalationDueDate, setEscalationDueDate] = useState("");
   const [escalationNote, setEscalationNote] = useState("");
   const [escalationCompleteComment, setEscalationCompleteComment] = useState("");
+  const [paymentPlanOpen, setPaymentPlanOpen] = useState(false);
+  const [paymentPlanEditMode, setPaymentPlanEditMode] = useState(false);
+  const [paymentPlanCancelMode, setPaymentPlanCancelMode] = useState(false);
+  const [paymentPlanRecordMode, setPaymentPlanRecordMode] = useState(false);
+  const [paymentPlanAmount, setPaymentPlanAmount] = useState("");
+  const [paymentPlanInstallments, setPaymentPlanInstallments] = useState<
+    PaymentPlanInstallmentInput[]
+  >([emptyInstallmentDraft(), emptyInstallmentDraft(), emptyInstallmentDraft()]);
+  const [paymentPlanReplacePromise, setPaymentPlanReplacePromise] = useState(false);
+  const [paymentPlanCancelReason, setPaymentPlanCancelReason] = useState("");
+  const [paymentPlanRecordInstallmentId, setPaymentPlanRecordInstallmentId] =
+    useState("");
+  const [paymentPlanRecordAmount, setPaymentPlanRecordAmount] = useState("");
+  const [paymentPlanRecordNote, setPaymentPlanRecordNote] = useState("");
   const [filterValidationError, setFilterValidationError] = useState<string | null>(null);
 
   const [page, setPage] = useState(() => (initialPage < 1 ? 1 : Math.floor(initialPage)));
@@ -664,6 +684,21 @@ export function InvoicesView({
     setEscalationDueDate("");
     setEscalationNote("");
     setEscalationCompleteComment("");
+    setPaymentPlanOpen(false);
+    setPaymentPlanEditMode(false);
+    setPaymentPlanCancelMode(false);
+    setPaymentPlanRecordMode(false);
+    setPaymentPlanAmount("");
+    setPaymentPlanInstallments([
+      emptyInstallmentDraft(),
+      emptyInstallmentDraft(),
+      emptyInstallmentDraft()
+    ]);
+    setPaymentPlanReplacePromise(false);
+    setPaymentPlanCancelReason("");
+    setPaymentPlanRecordInstallmentId("");
+    setPaymentPlanRecordAmount("");
+    setPaymentPlanRecordNote("");
   }, [detailTargetId]);
 
   function publishDiscovery(
@@ -2702,6 +2737,7 @@ export function InvoicesView({
     setContactOpen(false);
     setDisputeOpen(false);
     setEscalationOpen(false);
+    setPaymentPlanOpen(false);
     setPromiseFormOpen(true);
     setPromiseDateInput(existing?.promiseDate ?? "");
     setPromiseNoteInput(existing?.note ?? "");
@@ -2719,6 +2755,7 @@ export function InvoicesView({
     setContactOpen(false);
     setDisputeOpen(false);
     setEscalationOpen(false);
+    setPaymentPlanOpen(false);
     setResolutionOpen(true);
     setResolutionKind("");
     setResolutionPaymentDate("");
@@ -2741,6 +2778,7 @@ export function InvoicesView({
     setResolutionOpen(false);
     setDisputeOpen(false);
     setEscalationOpen(false);
+    setPaymentPlanOpen(false);
     setContactOpen(true);
     setContactChannel("");
     setContactResult("");
@@ -2760,6 +2798,7 @@ export function InvoicesView({
     setResolutionOpen(false);
     setContactOpen(false);
     setEscalationOpen(false);
+    setPaymentPlanOpen(false);
     setDisputeOpen(true);
     setDisputeEditMode(false);
     setDisputeCloseMode("");
@@ -2778,6 +2817,7 @@ export function InvoicesView({
     setResolutionOpen(false);
     setContactOpen(false);
     setEscalationOpen(false);
+    setPaymentPlanOpen(false);
     setDisputeOpen(true);
     setDisputeEditMode(true);
     setDisputeCloseMode("");
@@ -2795,6 +2835,7 @@ export function InvoicesView({
     setResolutionOpen(false);
     setContactOpen(false);
     setEscalationOpen(false);
+    setPaymentPlanOpen(false);
     setDisputeOpen(true);
     setDisputeEditMode(false);
     setDisputeCloseMode("resolve");
@@ -2808,6 +2849,7 @@ export function InvoicesView({
     setResolutionOpen(false);
     setContactOpen(false);
     setEscalationOpen(false);
+    setPaymentPlanOpen(false);
     setDisputeOpen(true);
     setDisputeEditMode(false);
     setDisputeCloseMode("reject");
@@ -2828,6 +2870,7 @@ export function InvoicesView({
     setResolutionOpen(false);
     setContactOpen(false);
     setDisputeOpen(false);
+    setPaymentPlanOpen(false);
     setEscalationOpen(true);
     setEscalationEditMode(false);
     setEscalationCompleteMode(false);
@@ -2848,6 +2891,7 @@ export function InvoicesView({
     setResolutionOpen(false);
     setContactOpen(false);
     setDisputeOpen(false);
+    setPaymentPlanOpen(false);
     setEscalationOpen(true);
     setEscalationEditMode(true);
     setEscalationCompleteMode(false);
@@ -2867,6 +2911,7 @@ export function InvoicesView({
     setResolutionOpen(false);
     setContactOpen(false);
     setDisputeOpen(false);
+    setPaymentPlanOpen(false);
     setEscalationOpen(true);
     setEscalationEditMode(false);
     setEscalationCompleteMode(true);
@@ -2880,6 +2925,161 @@ export function InvoicesView({
     setEscalationEditMode(false);
     setEscalationCompleteMode(false);
     setPromiseFormError(null);
+  }
+
+  function closeOtherCollectionFormsForPaymentPlan() {
+    setPromiseFormOpen(false);
+    setResolutionOpen(false);
+    setContactOpen(false);
+    setDisputeOpen(false);
+    setEscalationOpen(false);
+  }
+
+  function openCreatePaymentPlanForm() {
+    closeOtherCollectionFormsForPaymentPlan();
+    setPaymentPlanOpen(true);
+    setPaymentPlanEditMode(false);
+    setPaymentPlanCancelMode(false);
+    setPaymentPlanRecordMode(false);
+    setPaymentPlanAmount(detailInvoice ? String(detailInvoice.totalAmount) : "");
+    setPaymentPlanInstallments([
+      emptyInstallmentDraft(),
+      emptyInstallmentDraft(),
+      emptyInstallmentDraft()
+    ]);
+    setPaymentPlanReplacePromise(Boolean(detailPromiseRecord));
+    setPaymentPlanCancelReason("");
+    setPaymentPlanRecordInstallmentId("");
+    setPaymentPlanRecordAmount("");
+    setPaymentPlanRecordNote("");
+    setPromiseFormError(null);
+    setPromiseFormSuccess(null);
+  }
+
+  function openEditPaymentPlanForm(existing: PromiseToPayRecord | null) {
+    const plan = existing?.paymentPlan;
+    if (!plan || plan.status !== "Active") {
+      return;
+    }
+    closeOtherCollectionFormsForPaymentPlan();
+    setPaymentPlanOpen(true);
+    setPaymentPlanEditMode(true);
+    setPaymentPlanCancelMode(false);
+    setPaymentPlanRecordMode(false);
+    setPaymentPlanAmount(String(plan.planAmount));
+    setPaymentPlanInstallments(
+      plan.installments.map((item) => ({
+        id: item.id,
+        dueDate: item.dueDate,
+        expectedAmount: item.expectedAmount,
+        recordedPaidAmount: item.recordedPaidAmount
+      }))
+    );
+    setPaymentPlanReplacePromise(true);
+    setPromiseFormError(null);
+    setPromiseFormSuccess(null);
+  }
+
+  function openCancelPaymentPlanForm() {
+    closeOtherCollectionFormsForPaymentPlan();
+    setPaymentPlanOpen(true);
+    setPaymentPlanEditMode(false);
+    setPaymentPlanCancelMode(true);
+    setPaymentPlanRecordMode(false);
+    setPaymentPlanCancelReason("");
+    setPromiseFormError(null);
+    setPromiseFormSuccess(null);
+  }
+
+  function openRecordInstallmentPaymentForm(installmentId: string) {
+    closeOtherCollectionFormsForPaymentPlan();
+    setPaymentPlanOpen(true);
+    setPaymentPlanEditMode(false);
+    setPaymentPlanCancelMode(false);
+    setPaymentPlanRecordMode(true);
+    setPaymentPlanRecordInstallmentId(installmentId);
+    setPaymentPlanRecordAmount("");
+    setPaymentPlanRecordNote("");
+    setPromiseFormError(null);
+    setPromiseFormSuccess(null);
+  }
+
+  function closePaymentPlanForm() {
+    setPaymentPlanOpen(false);
+    setPaymentPlanEditMode(false);
+    setPaymentPlanCancelMode(false);
+    setPaymentPlanRecordMode(false);
+    setPromiseFormError(null);
+  }
+
+  function handleSavePaymentPlan(invoiceId: string) {
+    setPromiseBusy(true);
+    setPromiseFormError(null);
+    setPromiseFormSuccess(null);
+    const currency = detailInvoice?.currency?.trim() || "UAH";
+    const result = paymentPlanEditMode
+      ? updatePaymentPlan(invoiceId, {
+          planAmount: paymentPlanAmount,
+          installments: paymentPlanInstallments
+        })
+      : createPaymentPlan(invoiceId, {
+          planAmount: paymentPlanAmount,
+          currency,
+          originalInvoiceAmount: detailInvoice?.totalAmount ?? null,
+          installments: paymentPlanInstallments,
+          replaceActivePromise: paymentPlanReplacePromise
+        });
+    setPromiseBusy(false);
+    if (!result.ok) {
+      setPromiseFormError(result.error);
+      return;
+    }
+    setPromiseFormSuccess(
+      paymentPlanEditMode
+        ? "Payment plan updated."
+        : `Payment plan created · ${result.record.paymentPlan?.planAmount.toFixed(2)} ${result.record.paymentPlan?.currency}.`
+    );
+    closePaymentPlanForm();
+    bumpPromiseRevision();
+  }
+
+  function handleConfirmCancelPaymentPlan(invoiceId: string) {
+    setPromiseBusy(true);
+    setPromiseFormError(null);
+    setPromiseFormSuccess(null);
+    const result = cancelPaymentPlan(invoiceId, { reason: paymentPlanCancelReason });
+    setPromiseBusy(false);
+    if (!result.ok) {
+      setPromiseFormError(result.error);
+      return;
+    }
+    setPromiseFormSuccess("Payment plan cancelled.");
+    closePaymentPlanForm();
+    bumpPromiseRevision();
+  }
+
+  function handleConfirmRecordInstallmentPayment(invoiceId: string) {
+    setPromiseBusy(true);
+    setPromiseFormError(null);
+    setPromiseFormSuccess(null);
+    const result = recordInstallmentPayment(invoiceId, {
+      installmentId: paymentPlanRecordInstallmentId,
+      amount: paymentPlanRecordAmount,
+      note: paymentPlanRecordNote
+    });
+    setPromiseBusy(false);
+    if (!result.ok) {
+      setPromiseFormError(result.error);
+      return;
+    }
+    const status = result.record.paymentPlan?.status;
+    setPromiseFormSuccess(
+      status === "Completed"
+        ? "Payment recorded for collection tracking. Payment plan completed."
+        : "Payment recorded for collection tracking."
+    );
+    closePaymentPlanForm();
+    bumpPromiseRevision();
   }
 
   function handleSavePromise(invoiceId: string) {
@@ -3074,6 +3274,7 @@ export function InvoicesView({
         : `Ескалацію створено. Due: ${result.record.escalation?.dueDate}.`
     );
     setEscalationOpen(false);
+    setPaymentPlanOpen(false);
     setEscalationEditMode(false);
     setEscalationCompleteMode(false);
     bumpPromiseRevision();
@@ -3093,6 +3294,7 @@ export function InvoicesView({
     }
     setPromiseFormSuccess("Ескалацію завершено.");
     setEscalationOpen(false);
+    setPaymentPlanOpen(false);
     setEscalationCompleteMode(false);
     setEscalationCompleteComment("");
     bumpPromiseRevision();
@@ -3298,6 +3500,10 @@ export function InvoicesView({
                     <div>
                       <dt>Disputed</dt>
                       <dd>{workbenchKpi.disputedCount}</dd>
+                    </div>
+                    <div>
+                      <dt>Payment plans</dt>
+                      <dd>{workbenchKpi.paymentPlanCount}</dd>
                     </div>
                     <div>
                       <dt>Completed Today</dt>
@@ -4289,7 +4495,55 @@ export function InvoicesView({
                     onEscalationCompleteCommentChange: setEscalationCompleteComment,
                     onSaveEscalation: () => handleSaveEscalation(detailTargetId),
                     onConfirmCompleteEscalation: () =>
-                      handleConfirmCompleteEscalation(detailTargetId)
+                      handleConfirmCompleteEscalation(detailTargetId),
+                    paymentPlanOpen,
+                    paymentPlanEditMode,
+                    paymentPlanCancelMode,
+                    paymentPlanRecordMode,
+                    paymentPlanAmount,
+                    paymentPlanInstallments,
+                    paymentPlanReplacePromise,
+                    paymentPlanCancelReason,
+                    paymentPlanRecordInstallmentId,
+                    paymentPlanRecordAmount,
+                    paymentPlanRecordNote,
+                    onOpenCreatePaymentPlan: openCreatePaymentPlanForm,
+                    onOpenEditPaymentPlan: () =>
+                      openEditPaymentPlanForm(detailPromiseRecord),
+                    onOpenCancelPaymentPlan: openCancelPaymentPlanForm,
+                    onOpenRecordInstallmentPayment: openRecordInstallmentPaymentForm,
+                    onClosePaymentPlanForm: closePaymentPlanForm,
+                    onPaymentPlanAmountChange: setPaymentPlanAmount,
+                    onPaymentPlanReplacePromiseChange: setPaymentPlanReplacePromise,
+                    onPaymentPlanCancelReasonChange: setPaymentPlanCancelReason,
+                    onPaymentPlanRecordAmountChange: setPaymentPlanRecordAmount,
+                    onPaymentPlanRecordNoteChange: setPaymentPlanRecordNote,
+                    onAddPaymentPlanInstallment: () =>
+                      setPaymentPlanInstallments((rows) => [
+                        ...rows,
+                        emptyInstallmentDraft()
+                      ]),
+                    onRemovePaymentPlanInstallment: (index) =>
+                      setPaymentPlanInstallments((rows) =>
+                        rows.filter((_, rowIndex) => rowIndex !== index)
+                      ),
+                    onPaymentPlanInstallmentDueDateChange: (index, value) =>
+                      setPaymentPlanInstallments((rows) =>
+                        rows.map((row, rowIndex) =>
+                          rowIndex === index ? { ...row, dueDate: value } : row
+                        )
+                      ),
+                    onPaymentPlanInstallmentAmountChange: (index, value) =>
+                      setPaymentPlanInstallments((rows) =>
+                        rows.map((row, rowIndex) =>
+                          rowIndex === index ? { ...row, expectedAmount: value } : row
+                        )
+                      ),
+                    onSavePaymentPlan: () => handleSavePaymentPlan(detailTargetId),
+                    onConfirmCancelPaymentPlan: () =>
+                      handleConfirmCancelPaymentPlan(detailTargetId),
+                    onConfirmRecordInstallmentPayment: () =>
+                      handleConfirmRecordInstallmentPayment(detailTargetId)
                   }
                 : null
             }
@@ -4441,6 +4695,13 @@ export function InvoicesView({
                                   {item.escalationOverdue ? " overdue" : ""}
                                 </span>
                               ) : null}
+                              {item.paymentPlanNextDueAt ? (
+                                <span className="meta">
+                                  {" "}
+                                  · plan
+                                  {item.paymentPlanOverdue ? " overdue" : ""}
+                                </span>
+                              ) : null}
                             </td>
                             <td>
                               <span className="aging-badge aging-badge--promise aging-badge--nba">
@@ -4468,6 +4729,26 @@ export function InvoicesView({
                                   {item.escalation.requestedAction.length > 60
                                     ? `${item.escalation.requestedAction.slice(0, 57)}…`
                                     : item.escalation.requestedAction}
+                                </p>
+                              ) : null}
+                              {item.paymentPlan && item.group === "payment_plans" ? (
+                                <p className="meta cell-wrap">
+                                  {formatMoney(
+                                    item.paymentPlanPaidTotal ?? 0,
+                                    item.currency
+                                  )}
+                                  {" / "}
+                                  {formatMoney(
+                                    item.paymentPlanAmount ?? item.paymentPlan.planAmount,
+                                    item.currency
+                                  )}
+                                  {item.paymentPlanProgress != null
+                                    ? ` · ${Math.round(item.paymentPlanProgress * 100)}%`
+                                    : ""}
+                                  {item.paymentPlanNextDueAt
+                                    ? ` · next ${item.paymentPlanNextDueAt}`
+                                    : ""}
+                                  {item.paymentPlanOverdue ? " · overdue" : ""}
                                 </p>
                               ) : null}
                             </td>

@@ -27,6 +27,7 @@ export type WorkbenchSectionId =
   | "broken"
   | "escalated"
   | "disputed"
+  | "payment_plans"
   | "follow_up_required";
 
 export type WorkbenchSectionFilter = "" | WorkbenchSectionId;
@@ -44,6 +45,7 @@ export type NextBestActionId =
   | "verify_payment"
   | "review_escalation"
   | "review_dispute"
+  | "track_payment_plan"
   | "retry_contact"
   | "follow_up"
   | "none";
@@ -72,6 +74,7 @@ export type WorkbenchKpi = {
   brokenCount: number;
   escalatedCount: number;
   disputedCount: number;
+  paymentPlanCount: number;
   completedTodayCount: number;
 };
 
@@ -91,6 +94,7 @@ export const WORKBENCH_SECTION_IDS: readonly WorkbenchSectionId[] = [
   "broken",
   "escalated",
   "disputed",
+  "payment_plans",
   "follow_up_required"
 ];
 
@@ -100,6 +104,7 @@ export const WORKBENCH_SECTION_OPTIONS: readonly WorkbenchSectionOption[] = [
   { id: "broken", label: "Broken Promises", shortLabel: "Broken" },
   { id: "escalated", label: "Escalated", shortLabel: "Escalated" },
   { id: "disputed", label: "Disputed", shortLabel: "Disputed" },
+  { id: "payment_plans", label: "Payment plans", shortLabel: "Plans" },
   {
     id: "follow_up_required",
     label: "Follow-up Required",
@@ -131,6 +136,7 @@ const NBA_LABELS: Record<NextBestActionId, string> = {
   verify_payment: "Verify Payment",
   review_escalation: "Review Escalation",
   review_dispute: "Review Dispute",
+  track_payment_plan: "Track Payment Plan",
   retry_contact: "Retry Contact",
   follow_up: "Follow Up",
   none: "—"
@@ -209,6 +215,8 @@ export function resolveNextBestAction(
       return "review_escalation";
     case "disputed":
       return "review_dispute";
+    case "payment_plans":
+      return "track_payment_plan";
     case "follow_up_required":
       return "contact_customer";
     default:
@@ -352,6 +360,7 @@ export function buildWorkbenchKpi(
     brokenCount: cases.filter((item) => item.group === "broken").length,
     escalatedCount: cases.filter((item) => item.group === "escalated").length,
     disputedCount: cases.filter((item) => item.group === "disputed").length,
+    paymentPlanCount: cases.filter((item) => item.group === "payment_plans").length,
     completedTodayCount: cases.filter((item) => isCompletedToday(item, now))
       .length
   };

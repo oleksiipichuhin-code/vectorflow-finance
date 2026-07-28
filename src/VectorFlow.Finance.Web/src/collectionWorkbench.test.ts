@@ -103,6 +103,13 @@ function baseItem(
     escalation: null,
     escalationDueAt: null,
     escalationOverdue: false,
+    paymentPlan: null,
+    paymentPlanAmount: null,
+    paymentPlanPaidTotal: null,
+    paymentPlanRemainingTotal: null,
+    paymentPlanNextDueAt: null,
+    paymentPlanOverdue: false,
+    paymentPlanProgress: null,
     nextActionKind: null,
     nextActionLabel: null,
     ...overrides
@@ -221,6 +228,7 @@ describe("collectionWorkbench grouping and KPI", () => {
     assert.equal(kpi.brokenCount, 1);
     assert.equal(kpi.escalatedCount, 1);
     assert.equal(kpi.disputedCount, 1);
+    assert.equal(kpi.paymentPlanCount, 0);
     assert.equal(kpi.completedTodayCount, 0);
 
     updatePromiseStatus(INVOICE_A, "completed", { storage, now: NOW });

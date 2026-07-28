@@ -32,6 +32,11 @@ export type CollectionActivityEventType =
   | "case_escalated"
   | "escalation_updated"
   | "escalation_completed"
+  | "payment_plan_created"
+  | "payment_plan_updated"
+  | "installment_payment_recorded"
+  | "payment_plan_completed"
+  | "payment_plan_cancelled"
   | "unable_to_contact"
   | "completed";
 
@@ -147,6 +152,11 @@ export const ACTIVITY_EVENT_TYPE_OPTIONS: readonly {
   { id: "case_escalated", label: "Case escalated" },
   { id: "escalation_updated", label: "Escalation updated" },
   { id: "escalation_completed", label: "Escalation completed" },
+  { id: "payment_plan_created", label: "Payment plan created" },
+  { id: "payment_plan_updated", label: "Payment plan updated" },
+  { id: "installment_payment_recorded", label: "Installment payment recorded" },
+  { id: "payment_plan_completed", label: "Payment plan completed" },
+  { id: "payment_plan_cancelled", label: "Payment plan cancelled" },
   { id: "unable_to_contact", label: "Unable to contact" },
   { id: "completed", label: "Completed" }
 ];
@@ -281,6 +291,11 @@ const EVENT_LABELS: Record<CollectionActivityEventType, string> = {
   case_escalated: "Case escalated",
   escalation_updated: "Escalation updated",
   escalation_completed: "Escalation completed",
+  payment_plan_created: "Payment plan created",
+  payment_plan_updated: "Payment plan updated",
+  installment_payment_recorded: "Installment payment recorded",
+  payment_plan_completed: "Payment plan completed",
+  payment_plan_cancelled: "Payment plan cancelled",
   unable_to_contact: "Unable to contact",
   completed: "Completed"
 };
@@ -588,6 +603,19 @@ function defaultDescription(
       text = `${text} (due ${followUpAt})`;
     }
     return text;
+  }
+  if (
+    type === "payment_plan_created" ||
+    type === "payment_plan_updated" ||
+    type === "installment_payment_recorded" ||
+    type === "payment_plan_completed" ||
+    type === "payment_plan_cancelled"
+  ) {
+    const label = activityEventTypeLabel(type);
+    if (note) {
+      return `${label} — ${note.length > 120 ? `${note.slice(0, 117)}…` : note}`;
+    }
+    return label;
   }
   const label = activityEventTypeLabel(type);
   if (type === "promise_created" || type === "promise_updated" || type === "new_promise") {
@@ -1104,6 +1132,33 @@ export function historyAfterEscalationChange(
       escalationTeam: escalation.responsibleTeam,
       escalationPriority: escalation.priority,
       description
+    })
+  );
+}
+
+export function historyAfterPaymentPlanChange(
+  existing: PromiseToPayRecord | null,
+  type:
+    | "payment_plan_created"
+    | "payment_plan_updated"
+    | "installment_payment_recorded"
+    | "payment_plan_completed"
+    | "payment_plan_cancelled",
+  detail: {
+    note?: string | null;
+    promiseDate?: string | null;
+    followUpAt?: string | null;
+  },
+  now: Date = new Date()
+): CollectionActivityEvent[] {
+  return appendActivityEvent(
+    existing?.history ?? [],
+    createActivityEvent({
+      type,
+      atUtc: now.toISOString(),
+      note: detail.note?.trim() ? detail.note.trim() : null,
+      promiseDate: detail.promiseDate ?? existing?.promiseDate ?? null,
+      followUpAt: detail.followUpAt ?? null
     })
   );
 }
