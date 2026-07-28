@@ -19,6 +19,7 @@ import { formatDate, formatMoney } from "../format";
 import type {
   CollectionResolutionKind,
   CollectionNoteCategory,
+  AttachmentCategory,
   EscalationStatus,
   PaymentPlanStatus,
   PromiseFollowUpStatus,
@@ -36,10 +37,12 @@ import {
   isActiveDispute,
   isActiveEscalation,
   isActiveCollectionNote,
+  isActiveCollectionAttachment,
   isActivePaymentPlan,
   isOpenCollectionReminder,
   isReminderDueOrOverdue,
   listActiveCollectionNotes,
+  listActiveCollectionAttachments,
   listOpenCollectionReminders,
   listOverdueInstallments,
   paymentPlanStatusLabel,
@@ -47,14 +50,19 @@ import {
   planPaidTotal,
   planRemainingTotal,
   noteCategoryLabel,
+  attachmentCategoryLabel,
+  formatAttachmentSize,
   promiseStatusLabel,
   reminderKindLabel,
   reminderStatusLabel,
   resolutionKindLabel,
   sortCollectionNotesForDisplay,
   sortCollectionRemindersForDisplay,
+  sortCollectionAttachmentsForDisplay,
   NOTE_CATEGORY_OPTIONS,
   REMINDER_KIND_OPTIONS,
+  ATTACHMENT_CATEGORY_OPTIONS,
+  ATTACHMENT_MAX_BYTES,
   selectNextInstallment
 } from "../promiseToPay";
 import type { PaymentPlanInstallmentInput } from "../paymentPlan";
@@ -153,6 +161,15 @@ type InvoiceDetailPromiseContext = {
   reminderNote: string;
   reminderKind: ReminderKind | "";
   reminderDueDate: string;
+  attachmentsOpen: boolean;
+  attachmentsEditId: string;
+  attachmentFileName: string;
+  attachmentContentType: string;
+  attachmentSizeBytes: number;
+  attachmentCategory: AttachmentCategory | "";
+  attachmentDescription: string;
+  attachmentUploadedBy: string;
+  attachmentHasNewFile: boolean;
   paymentPlanOpen: boolean;
   paymentPlanEditMode: boolean;
   paymentPlanCancelMode: boolean;
@@ -235,6 +252,15 @@ type InvoiceDetailPromiseContext = {
   onSaveReminder: () => void;
   onCompleteReminder: (reminderId: string) => void;
   onCancelReminder: (reminderId: string) => void;
+  onOpenAddAttachment: () => void;
+  onOpenEditAttachment: (attachmentId: string) => void;
+  onCloseAttachmentsForm: () => void;
+  onAttachmentFileSelected: (file: File | null) => void;
+  onAttachmentCategoryChange: (value: AttachmentCategory | "") => void;
+  onAttachmentDescriptionChange: (value: string) => void;
+  onAttachmentUploadedByChange: (value: string) => void;
+  onSaveAttachment: () => void;
+  onArchiveAttachment: (attachmentId: string) => void;
   onOpenCreatePaymentPlan: () => void;
   onOpenEditPaymentPlan: () => void;
   onOpenCancelPaymentPlan: () => void;
@@ -709,6 +735,38 @@ export function InvoiceDetailPanel({
                                 ) : null}
                                 {reminderKindLabel(reminder.kind)} · due {reminder.dueDate} ·{" "}
                                 {reminder.title}
+                              </span>
+                            ))}
+                          </>
+                        );
+                      })()}
+                    </dd>
+                  </div>
+                  <div className="collection-notes-list">
+                    <dt>Evidence</dt>
+                    <dd>
+                      {(() => {
+                        const activeAttachments = sortCollectionAttachmentsForDisplay(
+                          listActiveCollectionAttachments(
+                            promiseContext.record.attachments
+                          )
+                        );
+                        if (activeAttachments.length === 0) {
+                          return "0 active";
+                        }
+                        return (
+                          <>
+                            <span>{activeAttachments.length} active</span>
+                            {activeAttachments.map((attachment) => (
+                              <span
+                                key={attachment.id}
+                                className="collection-note-item collection-attachment-item"
+                              >
+                                <span className="aging-badge aging-badge--evidence">
+                                  {attachmentCategoryLabel(attachment.category)}
+                                </span>
+                                {attachment.fileName} ·{" "}
+                                {formatAttachmentSize(attachment.sizeBytes)}
                               </span>
                             ))}
                           </>
@@ -2156,6 +2214,128 @@ export function InvoiceDetailPanel({
                 </form>
               ) : null}
 
+              {promiseContext.attachmentsOpen ? (
+                <form
+                  className="stack-form"
+                  aria-labelledby="collection-attachments-heading"
+                  onSubmit={(event: FormEvent) => {
+                    event.preventDefault();
+                    promiseContext.onSaveAttachment();
+                  }}
+                >
+                  <h4 id="collection-attachments-heading">
+                    {promiseContext.attachmentsEditId
+                      ? "Edit attachment"
+                      : "Add supporting evidence"}
+                  </h4>
+                  <label>
+                    File
+                    <input
+                      type="file"
+                      disabled={promiseContext.busy || closeDisabled}
+                      onChange={(event) =>
+                        promiseContext.onAttachmentFileSelected(
+                          event.target.files?.[0] ?? null
+                        )
+                      }
+                    />
+                  </label>
+                  {promiseContext.attachmentFileName ? (
+                    <p className="meta">
+                      {promiseContext.attachmentFileName}
+                      {promiseContext.attachmentContentType
+                        ? ` · ${promiseContext.attachmentContentType}`
+                        : ""}
+                      {promiseContext.attachmentSizeBytes
+                        ? ` · ${formatAttachmentSize(promiseContext.attachmentSizeBytes)}`
+                        : ""}
+                      {promiseContext.attachmentsEditId &&
+                      !promiseContext.attachmentHasNewFile
+                        ? " · existing file retained"
+                        : ""}
+                    </p>
+                  ) : (
+                    <p className="meta">
+                      Max {formatAttachmentSize(ATTACHMENT_MAX_BYTES)}.
+                      {promiseContext.attachmentsEditId
+                        ? " Leave empty to keep the current file."
+                        : ""}
+                    </p>
+                  )}
+                  <label>
+                    Category
+                    <select
+                      value={promiseContext.attachmentCategory}
+                      disabled={promiseContext.busy || closeDisabled}
+                      onChange={(event) =>
+                        promiseContext.onAttachmentCategoryChange(
+                          event.target.value as AttachmentCategory | ""
+                        )
+                      }
+                    >
+                      <option value="">Select category</option>
+                      {ATTACHMENT_CATEGORY_OPTIONS.map((option) => (
+                        <option key={option.id} value={option.id}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Uploaded by
+                    <input
+                      type="text"
+                      value={promiseContext.attachmentUploadedBy}
+                      disabled={promiseContext.busy || closeDisabled}
+                      onChange={(event) =>
+                        promiseContext.onAttachmentUploadedByChange(event.target.value)
+                      }
+                    />
+                  </label>
+                  <label>
+                    Description
+                    <textarea
+                      rows={3}
+                      value={promiseContext.attachmentDescription}
+                      disabled={promiseContext.busy || closeDisabled}
+                      onChange={(event) =>
+                        promiseContext.onAttachmentDescriptionChange(event.target.value)
+                      }
+                    />
+                  </label>
+                  <div className="filter-actions">
+                    <button
+                      type="submit"
+                      disabled={
+                        promiseContext.busy ||
+                        closeDisabled ||
+                        !promiseContext.attachmentCategory ||
+                        !promiseContext.attachmentUploadedBy.trim() ||
+                        (!promiseContext.attachmentsEditId &&
+                          !promiseContext.attachmentHasNewFile) ||
+                        (promiseContext.attachmentsEditId
+                          ? !promiseContext.attachmentFileName.trim()
+                          : !promiseContext.attachmentFileName.trim())
+                      }
+                    >
+                      {promiseContext.busy
+                        ? "Збереження…"
+                        : promiseContext.attachmentsEditId
+                          ? "Update attachment"
+                          : "Save attachment"}
+                    </button>
+                    <button
+                      type="button"
+                      className="button-secondary"
+                      disabled={promiseContext.busy || closeDisabled}
+                      onClick={promiseContext.onCloseAttachmentsForm}
+                    >
+                      Скасувати
+                    </button>
+                  </div>
+                </form>
+              ) : null}
+
               {!promiseContext.formOpen &&
               !promiseContext.resolutionOpen &&
               !promiseContext.contactOpen &&
@@ -2163,7 +2343,8 @@ export function InvoiceDetailPanel({
               !promiseContext.escalationOpen &&
               !promiseContext.paymentPlanOpen &&
               !promiseContext.notesOpen &&
-              !promiseContext.remindersOpen ? (
+              !promiseContext.remindersOpen &&
+              !promiseContext.attachmentsOpen ? (
                 <div className="filter-actions">
                   <button
                     type="button"
@@ -2185,6 +2366,13 @@ export function InvoiceDetailPanel({
                     onClick={promiseContext.onOpenAddReminder}
                   >
                     Schedule reminder
+                  </button>
+                  <button
+                    type="button"
+                    disabled={closeDisabled || promiseContext.busy}
+                    onClick={promiseContext.onOpenAddAttachment}
+                  >
+                    Add evidence
                   </button>
                   {isActiveDispute(promiseContext.record?.dispute) ? (
                     <>
@@ -2431,12 +2619,60 @@ export function InvoiceDetailPanel({
                         </div>
                       </article>
                     ))}
+                  {sortCollectionAttachmentsForDisplay(promiseContext.record.attachments)
+                    .filter((attachment) => isActiveCollectionAttachment(attachment))
+                    .map((attachment) => (
+                      <article
+                        key={attachment.id}
+                        className="collection-note-item collection-attachment-item"
+                      >
+                        <div>
+                          <span className="aging-badge aging-badge--evidence">
+                            {attachmentCategoryLabel(attachment.category)}
+                          </span>
+                          <strong>{attachment.fileName}</strong> ·{" "}
+                          {formatAttachmentSize(attachment.sizeBytes)} ·{" "}
+                          {attachment.uploadedBy}
+                        </div>
+                        {attachment.description ? <p>{attachment.description}</p> : null}
+                        <div className="row-actions">
+                          <a
+                            className="button-secondary"
+                            href={attachment.contentDataUrl}
+                            download={attachment.fileName}
+                          >
+                            Download
+                          </a>
+                          <button
+                            type="button"
+                            className="button-secondary"
+                            disabled={closeDisabled || promiseContext.busy}
+                            onClick={() =>
+                              promiseContext.onOpenEditAttachment(attachment.id)
+                            }
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            className="button-secondary"
+                            disabled={closeDisabled || promiseContext.busy}
+                            onClick={() =>
+                              promiseContext.onArchiveAttachment(attachment.id)
+                            }
+                          >
+                            Archive
+                          </button>
+                        </div>
+                      </article>
+                    ))}
                 </div>
               ) : null}
               <p className="meta promise-persistence-note">
-                Contact, dispute, escalation, payment plan, internal notes, reminders, follow-up і
-                resolution зберігаються локально в браузері (localStorage) за invoice id. Payment
-                plan payments are operational tracking only.
+                Contact, dispute, escalation, payment plan, internal notes, reminders,
+                attachments, follow-up і resolution зберігаються локально в браузері
+                (localStorage) за invoice id. Payment plan payments are operational tracking
+                only.
               </p>
             </section>
           ) : null}

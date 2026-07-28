@@ -16,6 +16,7 @@ import {
   historyAfterNoteChange,
   historyAfterPaymentPlanChange,
   historyAfterPromiseSave,
+  historyAfterAttachmentChange,
   historyAfterReminderChange,
   historyAfterResolution,
   historyAfterStatusChange,
@@ -82,6 +83,18 @@ import {
   type CollectionReminderInput,
   type CollectionReminderUpdateInput
 } from "./collectionReminders.ts";
+import {
+  createCollectionAttachmentEntity,
+  hasActiveCollectionAttachments,
+  isActiveCollectionAttachment,
+  listActiveCollectionAttachments,
+  sanitizeCollectionAttachments,
+  summarizeAttachmentForHistory,
+  validateCollectionAttachmentInput,
+  type CollectionAttachment,
+  type CollectionAttachmentInput,
+  type CollectionAttachmentUpdateInput
+} from "./collectionAttachments.ts";
 
 export type {
   CollectionPaymentInstallment,
@@ -109,6 +122,13 @@ export type {
   ReminderKind,
   ReminderStatus
 } from "./collectionReminders.ts";
+
+export type {
+  AttachmentCategory,
+  CollectionAttachment,
+  CollectionAttachmentInput,
+  CollectionAttachmentUpdateInput
+} from "./collectionAttachments.ts";
 
 export {
   computeInstallmentStatus,
@@ -161,7 +181,24 @@ export {
   validateCollectionReminderInput
 } from "./collectionReminders.ts";
 
+export {
+  ATTACHMENT_CATEGORY_OPTIONS,
+  ATTACHMENT_MAX_BYTES,
+  attachmentCategoryLabel,
+  countActiveCollectionAttachments,
+  formatAttachmentSize,
+  hasActiveCollectionAttachments,
+  isActiveCollectionAttachment,
+  listActiveCollectionAttachments,
+  minimalAttachmentDataUrl,
+  parseAttachmentCategory,
+  sortCollectionAttachmentsForDisplay,
+  validateCollectionAttachmentInput
+} from "./collectionAttachments.ts";
+
 export const PROMISE_STORAGE_KEY_PREFIX = "vectorflow.finance.promiseToPay.";
+export const ATTACHMENT_AUTHOR_STORAGE_KEY =
+  "vectorflow.finance.collectionAttachment.author";
 
 export type PromiseFollowUpStatus =
   | "awaiting"
@@ -261,6 +298,8 @@ export type PromiseToPayRecord = {
   notes: CollectionNote[];
   /** Scheduled collector reminders (create / reschedule / complete / cancel). */
   reminders: CollectionReminder[];
+  /** Supporting evidence / file attachments (create / edit / archive). */
+  attachments: CollectionAttachment[];
   /** Append-only activity timeline (same localStorage record). */
   history: CollectionActivityEvent[];
 };
@@ -417,6 +456,9 @@ export type PromiseFollowUpItem = {
   openRemindersCount: number;
   hasDueOpenReminders: boolean;
   nextReminderDueAt: string | null;
+  attachments: CollectionAttachment[];
+  activeAttachmentsCount: number;
+  hasActiveAttachments: boolean;
   nextActionKind: NextActionKind | null;
   nextActionLabel: string | null;
 };
@@ -1272,6 +1314,7 @@ export function sanitizePromiseRecord(
 
   const notes = sanitizeCollectionNotes(candidate.notes);
   const reminders = sanitizeCollectionReminders(candidate.reminders);
+  const attachments = sanitizeCollectionAttachments(candidate.attachments);
   const history = sanitizeActivityHistory(candidate.history);
 
   return {
@@ -1289,6 +1332,7 @@ export function sanitizePromiseRecord(
     paymentPlan,
     notes,
     reminders,
+    attachments,
     history
   };
 }
@@ -1415,6 +1459,7 @@ export function savePromiseToPay(
     paymentPlan: existing?.paymentPlan ?? null,
     notes: existing?.notes ?? [],
     reminders: existing?.reminders ?? [],
+    attachments: existing?.attachments ?? [],
     history: existing?.history ?? []
   };
 
@@ -1683,6 +1728,7 @@ export function applyCollectionResolution(
     paymentPlan: existing.paymentPlan,
     notes: existing.notes,
     reminders: existing.reminders,
+    attachments: existing.attachments,
     history: historyAfterResolution(
       existing,
       validated.resolution,
@@ -1773,6 +1819,7 @@ export function saveCollectionContact(
     paymentPlan: existing?.paymentPlan ?? null,
     notes: existing?.notes ?? [],
     reminders: existing?.reminders ?? [],
+    attachments: existing?.attachments ?? [],
     history: existing?.history ?? []
   };
 
@@ -1912,6 +1959,7 @@ export function raiseCollectionDispute(
     paymentPlan: existing?.paymentPlan ?? null,
     notes: existing?.notes ?? [],
     reminders: existing?.reminders ?? [],
+    attachments: existing?.attachments ?? [],
     history: existing?.history ?? []
   };
 
@@ -2137,6 +2185,7 @@ export function raiseCollectionEscalation(
     paymentPlan: existing?.paymentPlan ?? null,
     notes: existing?.notes ?? [],
     reminders: existing?.reminders ?? [],
+    attachments: existing?.attachments ?? [],
     history: existing?.history ?? []
   };
 
@@ -2363,6 +2412,7 @@ export function createPaymentPlan(
     paymentPlan,
     notes: existing?.notes ?? [],
     reminders: existing?.reminders ?? [],
+    attachments: existing?.attachments ?? [],
     history: existing?.history ?? []
   };
 
@@ -2660,6 +2710,7 @@ function ensureCaseShell(
     paymentPlan: null,
     notes: [],
     reminders: [],
+    attachments: [],
     history: []
   };
 }
@@ -3130,6 +3181,250 @@ export function cancelCollectionReminder(
   return { ok: true, record };
 }
 
+export function readLastCollectionAttachmentAuthor(
+  storage: Storage | null | undefined = defaultStorage()
+): string {
+  if (!storage) {
+    return "";
+  }
+  try {
+    const raw = storage.getItem(ATTACHMENT_AUTHOR_STORAGE_KEY);
+    return typeof raw === "string" ? raw.trim() : "";
+  } catch {
+    return "";
+  }
+}
+
+function writeLastCollectionAttachmentAuthor(
+  author: string,
+  storage: Storage | null | undefined
+): void {
+  if (!storage) {
+    return;
+  }
+  try {
+    const trimmed = author.trim();
+    if (!trimmed) {
+      storage.removeItem(ATTACHMENT_AUTHOR_STORAGE_KEY);
+      return;
+    }
+    storage.setItem(ATTACHMENT_AUTHOR_STORAGE_KEY, trimmed);
+  } catch {
+    // Ignore author preference write failures.
+  }
+}
+
+/**
+ * Add supporting evidence to the durable case record.
+ * Creates a minimal case when none exists.
+ */
+export function addCollectionAttachment(
+  invoiceId: string,
+  input: CollectionAttachmentInput,
+  options?: { storage?: Storage | null; now?: Date }
+): { ok: true; record: PromiseToPayRecord } | { ok: false; error: string } {
+  const validation = validateCollectionAttachmentInput(input, {
+    requireContent: true
+  });
+  if (!validation.ok) {
+    return validation;
+  }
+  if (!UUID_RE.test(invoiceId.trim())) {
+    return { ok: false, error: "Некоректний ідентифікатор рахунку." };
+  }
+
+  const storage = options?.storage === undefined ? defaultStorage() : options.storage;
+  const now = options?.now ?? new Date();
+  const existing = readPromiseFromStorage(invoiceId, storage);
+  const base = ensureCaseShell(invoiceId, existing, now);
+  const attachment = createCollectionAttachmentEntity(invoiceId, validation, now);
+  const attachments = [...base.attachments, attachment];
+  const at = now.toISOString();
+
+  const record: PromiseToPayRecord = {
+    ...base,
+    attachments,
+    updatedAtUtc: at,
+    history: historyAfterAttachmentChange(
+      existing,
+      "attachment_added",
+      {
+        note: summarizeAttachmentForHistory(attachment),
+        promiseDate: base.promiseDate
+      },
+      now
+    )
+  };
+
+  if (storage && !writePromiseToStorage(record, storage)) {
+    return { ok: false, error: "Не вдалося зберегти вкладення у браузері." };
+  }
+
+  writeLastCollectionAttachmentAuthor(validation.uploadedBy, storage);
+  return { ok: true, record };
+}
+
+/**
+ * Edit metadata (and optionally replace file content) for an active attachment.
+ */
+export function updateCollectionAttachment(
+  invoiceId: string,
+  input: CollectionAttachmentUpdateInput,
+  options?: { storage?: Storage | null; now?: Date }
+): { ok: true; record: PromiseToPayRecord } | { ok: false; error: string } {
+  if (!UUID_RE.test(invoiceId.trim())) {
+    return { ok: false, error: "Некоректний ідентифікатор рахунку." };
+  }
+  const attachmentId = (input.attachmentId ?? "").trim();
+  if (!attachmentId) {
+    return { ok: false, error: "Некоректний ідентифікатор вкладення." };
+  }
+
+  const storage = options?.storage === undefined ? defaultStorage() : options.storage;
+  const now = options?.now ?? new Date();
+  const existing = readPromiseFromStorage(invoiceId, storage);
+  if (!existing) {
+    return { ok: false, error: "Кейс стягнення для цього рахунку не знайдено." };
+  }
+
+  const index = existing.attachments.findIndex((item) => item.id === attachmentId);
+  if (index < 0) {
+    return { ok: false, error: "Вкладення не знайдено." };
+  }
+  const previous = existing.attachments[index]!;
+  if (!isActiveCollectionAttachment(previous)) {
+    return {
+      ok: false,
+      error: "Архівоване вкладення не можна редагувати."
+    };
+  }
+
+  const replaceContent =
+    input.replaceContent === true ||
+    Boolean((input.contentDataUrl ?? "").trim());
+  const validation = validateCollectionAttachmentInput(input, {
+    requireContent: replaceContent,
+    existing: previous
+  });
+  if (!validation.ok) {
+    return validation;
+  }
+
+  const unchanged =
+    previous.fileName === validation.fileName &&
+    previous.contentType === validation.contentType &&
+    previous.sizeBytes === validation.sizeBytes &&
+    previous.category === validation.category &&
+    previous.description === validation.description &&
+    previous.uploadedBy === validation.uploadedBy &&
+    previous.contentDataUrl === validation.contentDataUrl;
+  if (unchanged) {
+    return { ok: true, record: existing };
+  }
+
+  const at = now.toISOString();
+  const nextAttachment: CollectionAttachment = {
+    ...previous,
+    fileName: validation.fileName,
+    contentType: validation.contentType,
+    sizeBytes: validation.sizeBytes,
+    category: validation.category,
+    description: validation.description,
+    uploadedBy: validation.uploadedBy,
+    contentDataUrl: validation.contentDataUrl,
+    updatedAtUtc: at
+  };
+  const attachments = existing.attachments.map((item, itemIndex) =>
+    itemIndex === index ? nextAttachment : item
+  );
+
+  const record: PromiseToPayRecord = {
+    ...existing,
+    attachments,
+    updatedAtUtc: at,
+    history: historyAfterAttachmentChange(
+      existing,
+      "attachment_updated",
+      {
+        note: summarizeAttachmentForHistory(nextAttachment),
+        promiseDate: existing.promiseDate
+      },
+      now
+    )
+  };
+
+  if (storage && !writePromiseToStorage(record, storage)) {
+    return { ok: false, error: "Не вдалося оновити вкладення у браузері." };
+  }
+
+  writeLastCollectionAttachmentAuthor(validation.uploadedBy, storage);
+  return { ok: true, record };
+}
+
+/**
+ * Archive an active attachment (terminal; kept on the case record).
+ */
+export function archiveCollectionAttachment(
+  invoiceId: string,
+  attachmentId: string,
+  options?: { storage?: Storage | null; now?: Date }
+): { ok: true; record: PromiseToPayRecord } | { ok: false; error: string } {
+  if (!UUID_RE.test(invoiceId.trim())) {
+    return { ok: false, error: "Некоректний ідентифікатор рахунку." };
+  }
+  const id = attachmentId.trim();
+  if (!id) {
+    return { ok: false, error: "Некоректний ідентифікатор вкладення." };
+  }
+
+  const storage = options?.storage === undefined ? defaultStorage() : options.storage;
+  const now = options?.now ?? new Date();
+  const existing = readPromiseFromStorage(invoiceId, storage);
+  if (!existing) {
+    return { ok: false, error: "Кейс стягнення для цього рахунку не знайдено." };
+  }
+
+  const index = existing.attachments.findIndex((item) => item.id === id);
+  if (index < 0) {
+    return { ok: false, error: "Вкладення не знайдено." };
+  }
+  const previous = existing.attachments[index]!;
+  if (!isActiveCollectionAttachment(previous)) {
+    return { ok: true, record: existing };
+  }
+
+  const at = now.toISOString();
+  const nextAttachment: CollectionAttachment = {
+    ...previous,
+    archivedAtUtc: at,
+    updatedAtUtc: at
+  };
+  const attachments = existing.attachments.map((item, itemIndex) =>
+    itemIndex === index ? nextAttachment : item
+  );
+
+  const record: PromiseToPayRecord = {
+    ...existing,
+    attachments,
+    updatedAtUtc: at,
+    history: historyAfterAttachmentChange(
+      existing,
+      "attachment_archived",
+      {
+        note: summarizeAttachmentForHistory(nextAttachment),
+        promiseDate: existing.promiseDate
+      },
+      now
+    )
+  };
+
+  if (storage && !writePromiseToStorage(record, storage)) {
+    return { ok: false, error: "Не вдалося архівувати вкладення у браузері." };
+  }
+
+  return { ok: true, record };
+}
+
 export function listPromiseRecordsFromStorage(
   storage: Storage | null | undefined = defaultStorage()
 ): PromiseToPayRecord[] {
@@ -3241,6 +3536,9 @@ export function buildPromiseFollowUpItem(
     openRemindersCount: listOpenCollectionReminders(record.reminders).length,
     hasDueOpenReminders: hasDueOpenReminders(record.reminders, now),
     nextReminderDueAt: selectNextOpenReminder(record.reminders, now)?.dueDate ?? null,
+    attachments: record.attachments,
+    activeAttachmentsCount: listActiveCollectionAttachments(record.attachments).length,
+    hasActiveAttachments: hasActiveCollectionAttachments(record.attachments),
     nextActionKind: nextAction?.kind ?? null,
     nextActionLabel: nextAction?.label ?? null
   };

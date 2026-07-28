@@ -44,6 +44,9 @@ export type CollectionActivityEventType =
   | "reminder_updated"
   | "reminder_completed"
   | "reminder_cancelled"
+  | "attachment_added"
+  | "attachment_updated"
+  | "attachment_archived"
   | "unable_to_contact"
   | "completed";
 
@@ -171,6 +174,9 @@ export const ACTIVITY_EVENT_TYPE_OPTIONS: readonly {
   { id: "reminder_updated", label: "Reminder updated" },
   { id: "reminder_completed", label: "Reminder completed" },
   { id: "reminder_cancelled", label: "Reminder cancelled" },
+  { id: "attachment_added", label: "Attachment added" },
+  { id: "attachment_updated", label: "Attachment updated" },
+  { id: "attachment_archived", label: "Attachment archived" },
   { id: "unable_to_contact", label: "Unable to contact" },
   { id: "completed", label: "Completed" }
 ];
@@ -317,6 +323,9 @@ const EVENT_LABELS: Record<CollectionActivityEventType, string> = {
   reminder_updated: "Reminder updated",
   reminder_completed: "Reminder completed",
   reminder_cancelled: "Reminder cancelled",
+  attachment_added: "Attachment added",
+  attachment_updated: "Attachment updated",
+  attachment_archived: "Attachment archived",
   unable_to_contact: "Unable to contact",
   completed: "Completed"
 };
@@ -1227,6 +1236,27 @@ export function historyAfterReminderChange(
       note: detail.note?.trim() ? detail.note.trim() : null,
       promiseDate: detail.promiseDate ?? existing?.promiseDate ?? null,
       followUpAt: detail.followUpAt ?? null
+    })
+  );
+}
+
+export function historyAfterAttachmentChange(
+  existing: PromiseToPayRecord | null,
+  type: "attachment_added" | "attachment_updated" | "attachment_archived",
+  detail: {
+    note?: string | null;
+    promiseDate?: string | null;
+  },
+  now: Date = new Date()
+): CollectionActivityEvent[] {
+  return appendActivityEvent(
+    existing?.history ?? [],
+    createActivityEvent({
+      type,
+      atUtc: now.toISOString(),
+      note: detail.note?.trim() ? detail.note.trim() : null,
+      promiseDate: detail.promiseDate ?? existing?.promiseDate ?? null,
+      followUpAt: null
     })
   );
 }

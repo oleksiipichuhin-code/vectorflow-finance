@@ -62,6 +62,11 @@ import {
   cancelCollectionReminder,
   completeCollectionReminder,
   createCollectionReminder,
+  addCollectionAttachment,
+  archiveCollectionAttachment,
+  updateCollectionAttachment,
+  readLastCollectionAttachmentAuthor,
+  ATTACHMENT_MAX_BYTES,
   NOTE_CATEGORY_OPTIONS,
   filterPromiseFollowUps,
   groupPromiseFollowUps,
@@ -86,6 +91,7 @@ import {
   updateContactFollowUp,
   updatePaymentPlan,
   updatePromiseStatus,
+  type AttachmentCategory,
   type CollectionNoteCategory,
   type CollectionResolutionKind,
   type PromiseFollowUpItem,
@@ -410,6 +416,17 @@ export function InvoicesView({
   const [reminderNote, setReminderNote] = useState("");
   const [reminderKind, setReminderKind] = useState<ReminderKind | "">("");
   const [reminderDueDate, setReminderDueDate] = useState("");
+  const [attachmentsOpen, setAttachmentsOpen] = useState(false);
+  const [attachmentsEditId, setAttachmentsEditId] = useState("");
+  const [attachmentFileName, setAttachmentFileName] = useState("");
+  const [attachmentContentType, setAttachmentContentType] = useState("");
+  const [attachmentSizeBytes, setAttachmentSizeBytes] = useState(0);
+  const [attachmentContentDataUrl, setAttachmentContentDataUrl] = useState("");
+  const [attachmentCategory, setAttachmentCategory] = useState<
+    AttachmentCategory | ""
+  >("");
+  const [attachmentDescription, setAttachmentDescription] = useState("");
+  const [attachmentUploadedBy, setAttachmentUploadedBy] = useState("");
   const [filterValidationError, setFilterValidationError] = useState<string | null>(null);
 
   const [page, setPage] = useState(() => (initialPage < 1 ? 1 : Math.floor(initialPage)));
@@ -724,8 +741,6 @@ export function InvoicesView({
     setPaymentPlanRecordNote("");
     setNotesOpen(false);
     setNotesEditId("");
-    setRemindersOpen(false);
-    setRemindersEditId("");
     setNoteBody("");
     setNoteAuthor("");
     setNoteCategory("");
@@ -736,6 +751,15 @@ export function InvoicesView({
     setReminderNote("");
     setReminderKind("");
     setReminderDueDate("");
+    setAttachmentsOpen(false);
+    setAttachmentsEditId("");
+    setAttachmentFileName("");
+    setAttachmentContentType("");
+    setAttachmentSizeBytes(0);
+    setAttachmentContentDataUrl("");
+    setAttachmentCategory("");
+    setAttachmentDescription("");
+    setAttachmentUploadedBy("");
   }, [detailTargetId]);
 
   function publishDiscovery(
@@ -2779,6 +2803,8 @@ export function InvoicesView({
     setNotesEditId("");
     setRemindersOpen(false);
     setRemindersEditId("");
+    setAttachmentsOpen(false);
+    setAttachmentsEditId("");
     setPromiseFormOpen(true);
     setPromiseDateInput(existing?.promiseDate ?? "");
     setPromiseNoteInput(existing?.note ?? "");
@@ -2801,6 +2827,8 @@ export function InvoicesView({
     setNotesEditId("");
     setRemindersOpen(false);
     setRemindersEditId("");
+    setAttachmentsOpen(false);
+    setAttachmentsEditId("");
     setResolutionOpen(true);
     setResolutionKind("");
     setResolutionPaymentDate("");
@@ -2828,6 +2856,8 @@ export function InvoicesView({
     setNotesEditId("");
     setRemindersOpen(false);
     setRemindersEditId("");
+    setAttachmentsOpen(false);
+    setAttachmentsEditId("");
     setContactOpen(true);
     setContactChannel("");
     setContactResult("");
@@ -2852,6 +2882,8 @@ export function InvoicesView({
     setNotesEditId("");
     setRemindersOpen(false);
     setRemindersEditId("");
+    setAttachmentsOpen(false);
+    setAttachmentsEditId("");
     setDisputeOpen(true);
     setDisputeEditMode(false);
     setDisputeCloseMode("");
@@ -2875,6 +2907,8 @@ export function InvoicesView({
     setNotesEditId("");
     setRemindersOpen(false);
     setRemindersEditId("");
+    setAttachmentsOpen(false);
+    setAttachmentsEditId("");
     setDisputeOpen(true);
     setDisputeEditMode(true);
     setDisputeCloseMode("");
@@ -2897,6 +2931,8 @@ export function InvoicesView({
     setNotesEditId("");
     setRemindersOpen(false);
     setRemindersEditId("");
+    setAttachmentsOpen(false);
+    setAttachmentsEditId("");
     setDisputeOpen(true);
     setDisputeEditMode(false);
     setDisputeCloseMode("resolve");
@@ -2915,6 +2951,8 @@ export function InvoicesView({
     setNotesEditId("");
     setRemindersOpen(false);
     setRemindersEditId("");
+    setAttachmentsOpen(false);
+    setAttachmentsEditId("");
     setDisputeOpen(true);
     setDisputeEditMode(false);
     setDisputeCloseMode("reject");
@@ -2940,6 +2978,8 @@ export function InvoicesView({
     setNotesEditId("");
     setRemindersOpen(false);
     setRemindersEditId("");
+    setAttachmentsOpen(false);
+    setAttachmentsEditId("");
     setEscalationOpen(true);
     setEscalationEditMode(false);
     setEscalationCompleteMode(false);
@@ -2965,6 +3005,8 @@ export function InvoicesView({
     setNotesEditId("");
     setRemindersOpen(false);
     setRemindersEditId("");
+    setAttachmentsOpen(false);
+    setAttachmentsEditId("");
     setEscalationOpen(true);
     setEscalationEditMode(true);
     setEscalationCompleteMode(false);
@@ -2989,6 +3031,8 @@ export function InvoicesView({
     setNotesEditId("");
     setRemindersOpen(false);
     setRemindersEditId("");
+    setAttachmentsOpen(false);
+    setAttachmentsEditId("");
     setEscalationOpen(true);
     setEscalationEditMode(false);
     setEscalationCompleteMode(true);
@@ -3013,6 +3057,8 @@ export function InvoicesView({
     setPaymentPlanOpen(false);
     setRemindersOpen(false);
     setRemindersEditId("");
+    setAttachmentsOpen(false);
+    setAttachmentsEditId("");
     setNotesOpen(true);
     setNotesEditId("");
     setNoteBody("");
@@ -3038,6 +3084,8 @@ export function InvoicesView({
     setPaymentPlanOpen(false);
     setRemindersOpen(false);
     setRemindersEditId("");
+    setAttachmentsOpen(false);
+    setAttachmentsEditId("");
     setNotesOpen(true);
     setNotesEditId(note.id);
     setNoteBody(note.body);
@@ -3053,6 +3101,8 @@ export function InvoicesView({
     setNotesEditId("");
     setRemindersOpen(false);
     setRemindersEditId("");
+    setAttachmentsOpen(false);
+    setAttachmentsEditId("");
     setPromiseFormError(null);
   }
 
@@ -3105,6 +3155,8 @@ export function InvoicesView({
     setPaymentPlanOpen(false);
     setNotesOpen(false);
     setNotesEditId("");
+    setAttachmentsOpen(false);
+    setAttachmentsEditId("");
     setRemindersOpen(true);
     setRemindersEditId("");
     setReminderTitle("");
@@ -3128,6 +3180,8 @@ export function InvoicesView({
     setPaymentPlanOpen(false);
     setNotesOpen(false);
     setNotesEditId("");
+    setAttachmentsOpen(false);
+    setAttachmentsEditId("");
     setRemindersOpen(true);
     setRemindersEditId(reminder.id);
     setReminderTitle(reminder.title);
@@ -3206,6 +3260,151 @@ export function InvoicesView({
     bumpPromiseRevision();
   }
 
+  function resetAttachmentFileFields() {
+    setAttachmentFileName("");
+    setAttachmentContentType("");
+    setAttachmentSizeBytes(0);
+    setAttachmentContentDataUrl("");
+  }
+
+  function openAddAttachmentForm() {
+    setPromiseFormOpen(false);
+    setResolutionOpen(false);
+    setContactOpen(false);
+    setDisputeOpen(false);
+    setEscalationOpen(false);
+    setPaymentPlanOpen(false);
+    setNotesOpen(false);
+    setNotesEditId("");
+    setRemindersOpen(false);
+    setRemindersEditId("");
+    setAttachmentsOpen(true);
+    setAttachmentsEditId("");
+    resetAttachmentFileFields();
+    setAttachmentCategory("payment_proof");
+    setAttachmentDescription("");
+    setAttachmentUploadedBy(readLastCollectionAttachmentAuthor() || "");
+    setPromiseFormError(null);
+    setPromiseFormSuccess(null);
+  }
+
+  function openEditAttachmentForm(attachmentId: string) {
+    const attachment = detailPromiseRecord?.attachments.find(
+      (item) => item.id === attachmentId
+    );
+    if (!attachment || attachment.archivedAtUtc) {
+      return;
+    }
+    setPromiseFormOpen(false);
+    setResolutionOpen(false);
+    setContactOpen(false);
+    setDisputeOpen(false);
+    setEscalationOpen(false);
+    setPaymentPlanOpen(false);
+    setNotesOpen(false);
+    setNotesEditId("");
+    setRemindersOpen(false);
+    setRemindersEditId("");
+    setAttachmentsOpen(true);
+    setAttachmentsEditId(attachment.id);
+    setAttachmentFileName(attachment.fileName);
+    setAttachmentContentType(attachment.contentType);
+    setAttachmentSizeBytes(attachment.sizeBytes);
+    setAttachmentContentDataUrl("");
+    setAttachmentCategory(attachment.category);
+    setAttachmentDescription(attachment.description);
+    setAttachmentUploadedBy(attachment.uploadedBy);
+    setPromiseFormError(null);
+    setPromiseFormSuccess(null);
+  }
+
+  function closeAttachmentsForm() {
+    setAttachmentsOpen(false);
+    setAttachmentsEditId("");
+    resetAttachmentFileFields();
+    setPromiseFormError(null);
+  }
+
+  function handleAttachmentFileSelected(file: File | null) {
+    if (!file) {
+      resetAttachmentFileFields();
+      return;
+    }
+    if (file.size > ATTACHMENT_MAX_BYTES) {
+      setPromiseFormError(
+        `Файл занадто великий (макс. ${(ATTACHMENT_MAX_BYTES / 1024).toFixed(0)} KB).`
+      );
+      resetAttachmentFileFields();
+      return;
+    }
+    setPromiseBusy(true);
+    setPromiseFormError(null);
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = typeof reader.result === "string" ? reader.result : "";
+      setAttachmentFileName(file.name);
+      setAttachmentContentType(file.type || "application/octet-stream");
+      setAttachmentSizeBytes(file.size);
+      setAttachmentContentDataUrl(result);
+      setPromiseBusy(false);
+    };
+    reader.onerror = () => {
+      setPromiseBusy(false);
+      setPromiseFormError("Не вдалося прочитати файл.");
+      resetAttachmentFileFields();
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function handleSaveAttachment(invoiceId: string) {
+    setPromiseBusy(true);
+    setPromiseFormError(null);
+    setPromiseFormSuccess(null);
+    const input = {
+      fileName: attachmentFileName,
+      contentType: attachmentContentType,
+      sizeBytes: attachmentSizeBytes,
+      category: attachmentCategory,
+      description: attachmentDescription,
+      uploadedBy: attachmentUploadedBy,
+      contentDataUrl: attachmentContentDataUrl
+    };
+    const result = attachmentsEditId
+      ? updateCollectionAttachment(invoiceId, {
+          ...input,
+          attachmentId: attachmentsEditId,
+          replaceContent: Boolean(attachmentContentDataUrl.trim())
+        })
+      : addCollectionAttachment(invoiceId, input);
+    setPromiseBusy(false);
+    if (!result.ok) {
+      setPromiseFormError(result.error);
+      return;
+    }
+    setPromiseFormSuccess(
+      attachmentsEditId ? "Attachment updated." : "Attachment saved."
+    );
+    closeAttachmentsForm();
+    bumpPromiseRevision();
+  }
+
+  function handleArchiveAttachment(invoiceId: string, attachmentId: string) {
+    setPromiseBusy(true);
+    setPromiseFormError(null);
+    setPromiseFormSuccess(null);
+    const result = archiveCollectionAttachment(invoiceId, attachmentId);
+    setPromiseBusy(false);
+    if (!result.ok) {
+      setPromiseFormError(result.error);
+      return;
+    }
+    if (attachmentsEditId === attachmentId) {
+      closeAttachmentsForm();
+    }
+    setPromiseFormSuccess("Attachment archived.");
+    bumpPromiseRevision();
+  }
+
   function closeOtherCollectionFormsForPaymentPlan() {
     setPromiseFormOpen(false);
     setResolutionOpen(false);
@@ -3216,6 +3415,8 @@ export function InvoicesView({
     setNotesEditId("");
     setRemindersOpen(false);
     setRemindersEditId("");
+    setAttachmentsOpen(false);
+    setAttachmentsEditId("");
   }
 
   function openCreatePaymentPlanForm() {
@@ -3795,6 +3996,10 @@ export function InvoicesView({
                     <div>
                       <dt>Reminders due</dt>
                       <dd>{workbenchKpi.reminderDueCount}</dd>
+                    </div>
+                    <div>
+                      <dt>Evidence</dt>
+                      <dd>{workbenchKpi.evidenceCount}</dd>
                     </div>
                     <div>
                       <dt>Completed Today</dt>
@@ -4744,6 +4949,15 @@ export function InvoicesView({
                     reminderNote,
                     reminderKind,
                     reminderDueDate,
+                    attachmentsOpen,
+                    attachmentsEditId,
+                    attachmentFileName,
+                    attachmentContentType,
+                    attachmentSizeBytes,
+                    attachmentCategory,
+                    attachmentDescription,
+                    attachmentUploadedBy,
+                    attachmentHasNewFile: Boolean(attachmentContentDataUrl.trim()),
                     onOpenForm: () => openPromiseForm(detailPromiseRecord),
                     onCloseForm: closePromiseForm,
                     onPromiseDateChange: setPromiseDateInput,
@@ -4820,6 +5034,16 @@ export function InvoicesView({
                       handleCompleteReminder(detailTargetId, reminderId),
                     onCancelReminder: (reminderId) =>
                       handleCancelReminder(detailTargetId, reminderId),
+                    onOpenAddAttachment: openAddAttachmentForm,
+                    onOpenEditAttachment: openEditAttachmentForm,
+                    onCloseAttachmentsForm: closeAttachmentsForm,
+                    onAttachmentFileSelected: handleAttachmentFileSelected,
+                    onAttachmentCategoryChange: setAttachmentCategory,
+                    onAttachmentDescriptionChange: setAttachmentDescription,
+                    onAttachmentUploadedByChange: setAttachmentUploadedBy,
+                    onSaveAttachment: () => handleSaveAttachment(detailTargetId),
+                    onArchiveAttachment: (attachmentId) =>
+                      handleArchiveAttachment(detailTargetId, attachmentId),
                     paymentPlanOpen,
                     paymentPlanEditMode,
                     paymentPlanCancelMode,

@@ -30,6 +30,7 @@ export type WorkbenchSectionId =
   | "payment_plans"
   | "handoffs"
   | "reminders"
+  | "evidence"
   | "follow_up_required";
 
 export type WorkbenchSectionFilter = "" | WorkbenchSectionId;
@@ -81,6 +82,7 @@ export type WorkbenchKpi = {
   paymentPlanCount: number;
   handoffCount: number;
   reminderDueCount: number;
+  evidenceCount: number;
   completedTodayCount: number;
 };
 
@@ -103,6 +105,7 @@ export const WORKBENCH_SECTION_IDS: readonly WorkbenchSectionId[] = [
   "payment_plans",
   "handoffs",
   "reminders",
+  "evidence",
   "follow_up_required"
 ];
 
@@ -115,6 +118,7 @@ export const WORKBENCH_SECTION_OPTIONS: readonly WorkbenchSectionOption[] = [
   { id: "payment_plans", label: "Payment plans", shortLabel: "Plans" },
   { id: "handoffs", label: "Handoffs", shortLabel: "Handoffs" },
   { id: "reminders", label: "Reminders Due", shortLabel: "Reminders" },
+  { id: "evidence", label: "Supporting Evidence", shortLabel: "Evidence" },
   {
     id: "follow_up_required",
     label: "Follow-up Required",
@@ -288,7 +292,7 @@ function isCompletedToday(item: PromiseFollowUpItem, now: Date): boolean {
 
 export function isWorkbenchSectionGroup(
   group: PromiseGroupId
-): group is Exclude<WorkbenchSectionId, "handoffs" | "reminders"> {
+): group is Exclude<WorkbenchSectionId, "handoffs" | "reminders" | "evidence"> {
   return group !== "upcoming" && group !== "completed" && SECTION_SET.has(group);
 }
 
@@ -340,9 +344,9 @@ export type WorkbenchQueryOptions = {
 
 /**
  * Filter + sort workbench cases. Section filter maps to promise group ids,
- * except "handoffs" (open handoff notes) and "reminders" (due/overdue open
- * reminders) which are cross-cutting. When hideCompleted is true, completed
- * cases are excluded.
+ * except "handoffs" (open handoff notes), "reminders" (due/overdue open
+ * reminders), and "evidence" (active supporting attachments) which are
+ * cross-cutting. When hideCompleted is true, completed cases are excluded.
  */
 export function filterWorkbenchCases(
   cases: readonly WorkbenchCase[],
@@ -363,6 +367,10 @@ export function filterWorkbenchCases(
       }
     } else if (section === "reminders") {
       if (!item.hasDueOpenReminders) {
+        return false;
+      }
+    } else if (section === "evidence") {
+      if (!item.hasActiveAttachments) {
         return false;
       }
     } else if (section && item.group !== section) {
@@ -407,6 +415,9 @@ export function buildWorkbenchKpi(
     reminderDueCount: cases.filter(
       (item) => item.group !== "completed" && item.hasDueOpenReminders
     ).length,
+    evidenceCount: cases.filter(
+      (item) => item.group !== "completed" && item.hasActiveAttachments
+    ).length,
     completedTodayCount: cases.filter((item) => isCompletedToday(item, now))
       .length
   };
@@ -424,6 +435,9 @@ export function groupWorkbenchSections(
         }
         if (id === "reminders") {
           return item.hasDueOpenReminders;
+        }
+        if (id === "evidence") {
+          return item.hasActiveAttachments;
         }
         return item.group === id;
       })

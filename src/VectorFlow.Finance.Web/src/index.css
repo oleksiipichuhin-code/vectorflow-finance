@@ -527,6 +527,18 @@ body {
   color: #9a3412;
 }
 
+.aging-badge--evidence {
+  border-color: rgba(30, 64, 175, 0.4);
+  background: rgba(30, 64, 175, 0.1);
+  color: #1e3a8a;
+}
+
+.collection-attachment-item a.button-secondary {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+
 .row-attention--payment-overdue td {
   background: rgba(138, 47, 36, 0.06);
 }

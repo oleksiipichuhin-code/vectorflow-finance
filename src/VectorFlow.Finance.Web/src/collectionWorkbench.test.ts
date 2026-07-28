@@ -118,6 +118,9 @@ function baseItem(
     openRemindersCount: 0,
     hasDueOpenReminders: false,
     nextReminderDueAt: null,
+    attachments: [],
+    activeAttachmentsCount: 0,
+    hasActiveAttachments: false,
     nextActionKind: null,
     nextActionLabel: null,
     ...overrides
