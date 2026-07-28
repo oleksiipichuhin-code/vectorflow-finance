@@ -516,6 +516,17 @@ body {
   color: #0e7490;
 }
 
+.collection-reminder-item--due {
+  border-left: 3px solid #b45309;
+  background: rgba(180, 83, 9, 0.08);
+}
+
+.aging-badge--reminder-due {
+  border-color: rgba(180, 83, 9, 0.45);
+  background: rgba(180, 83, 9, 0.12);
+  color: #9a3412;
+}
+
 .row-attention--payment-overdue td {
   background: rgba(138, 47, 36, 0.06);
 }

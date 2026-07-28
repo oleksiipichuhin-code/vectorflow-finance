@@ -114,6 +114,10 @@ function baseItem(
     activeNotesCount: 0,
     pinnedNotesCount: 0,
     hasOpenHandoffNotes: false,
+    reminders: [],
+    openRemindersCount: 0,
+    hasDueOpenReminders: false,
+    nextReminderDueAt: null,
     nextActionKind: null,
     nextActionLabel: null,
     ...overrides
@@ -135,6 +139,12 @@ describe("collectionWorkbench next best action", () => {
         baseItem({ group: "upcoming", hasOpenHandoffNotes: true })
       ),
       "review_handoff"
+    );
+    assert.equal(
+      resolveNextBestAction(
+        baseItem({ group: "upcoming", hasDueOpenReminders: true })
+      ),
+      "complete_reminder"
     );
     assert.equal(
       resolveNextBestAction(baseItem({ group: "due_today" })),

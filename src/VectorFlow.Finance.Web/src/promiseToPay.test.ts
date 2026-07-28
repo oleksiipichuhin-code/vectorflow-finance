@@ -189,6 +189,7 @@ describe("promiseToPay classification", () => {
       escalation: null,
       paymentPlan: null,
       notes: [],
+      reminders: [],
       history: [],
       ...overrides
     };
@@ -639,6 +640,7 @@ describe("collection resolution workflow", () => {
       escalation: null,
       paymentPlan: null,
       notes: [],
+      reminders: [],
       history: []
     };
     assert.equal(
@@ -1476,6 +1478,7 @@ describe("collection escalation workflow", () => {
       "payment_plan_installment",
       "dispute_review",
       "escalation",
+      "reminder",
       "contact_follow_up"
     ]);
 
@@ -1524,6 +1527,7 @@ describe("collection escalation workflow", () => {
       },
       paymentPlan: null,
       notes: [],
+      reminders: [],
       history: []
     };
     assert.equal(resolveNextAction(record)?.kind, "dispute_review");

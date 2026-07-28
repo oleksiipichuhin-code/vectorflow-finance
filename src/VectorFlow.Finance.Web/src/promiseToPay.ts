@@ -16,6 +16,7 @@ import {
   historyAfterNoteChange,
   historyAfterPaymentPlanChange,
   historyAfterPromiseSave,
+  historyAfterReminderChange,
   historyAfterResolution,
   historyAfterStatusChange,
   parseContactChannel,
@@ -68,6 +69,19 @@ import {
   type CollectionNoteInput,
   type CollectionNoteUpdateInput
 } from "./collectionNotes.ts";
+import {
+  createCollectionReminderEntity,
+  hasDueOpenReminders,
+  isOpenCollectionReminder,
+  listOpenCollectionReminders,
+  sanitizeCollectionReminders,
+  selectNextOpenReminder,
+  summarizeReminderForHistory,
+  validateCollectionReminderInput,
+  type CollectionReminder,
+  type CollectionReminderInput,
+  type CollectionReminderUpdateInput
+} from "./collectionReminders.ts";
 
 export type {
   CollectionPaymentInstallment,
@@ -87,6 +101,14 @@ export type {
   CollectionNoteUpdateInput,
   CollectionNoteVisibility
 } from "./collectionNotes.ts";
+
+export type {
+  CollectionReminder,
+  CollectionReminderInput,
+  CollectionReminderUpdateInput,
+  ReminderKind,
+  ReminderStatus
+} from "./collectionReminders.ts";
 
 export {
   computeInstallmentStatus,
@@ -122,6 +144,22 @@ export {
   sortCollectionNotesForDisplay,
   validateCollectionNoteInput
 } from "./collectionNotes.ts";
+
+export {
+  REMINDER_KIND_OPTIONS,
+  countOpenCollectionReminders,
+  hasDueOpenReminders,
+  isOpenCollectionReminder,
+  isReminderDueOrOverdue,
+  isValidReminderDate,
+  listOpenCollectionReminders,
+  parseReminderKind,
+  reminderKindLabel,
+  reminderStatusLabel,
+  selectNextOpenReminder,
+  sortCollectionRemindersForDisplay,
+  validateCollectionReminderInput
+} from "./collectionReminders.ts";
 
 export const PROMISE_STORAGE_KEY_PREFIX = "vectorflow.finance.promiseToPay.";
 
@@ -221,6 +259,8 @@ export type PromiseToPayRecord = {
   paymentPlan: CollectionPaymentPlan | null;
   /** Internal collaboration notes thread (append / edit / archive). */
   notes: CollectionNote[];
+  /** Scheduled collector reminders (create / reschedule / complete / cancel). */
+  reminders: CollectionReminder[];
   /** Append-only activity timeline (same localStorage record). */
   history: CollectionActivityEvent[];
 };
@@ -314,6 +354,7 @@ export type NextActionKind =
   | "payment_plan_installment"
   | "dispute_review"
   | "escalation"
+  | "reminder"
   | "contact_follow_up";
 
 export type NextActionCandidate = {
@@ -372,6 +413,10 @@ export type PromiseFollowUpItem = {
   activeNotesCount: number;
   pinnedNotesCount: number;
   hasOpenHandoffNotes: boolean;
+  reminders: CollectionReminder[];
+  openRemindersCount: number;
+  hasDueOpenReminders: boolean;
+  nextReminderDueAt: string | null;
   nextActionKind: NextActionKind | null;
   nextActionLabel: string | null;
 };
@@ -983,6 +1028,7 @@ export const NEXT_ACTION_TIE_BREAK: readonly NextActionKind[] = [
   "payment_plan_installment",
   "dispute_review",
   "escalation",
+  "reminder",
   "contact_follow_up"
 ] as const;
 
@@ -991,7 +1037,8 @@ const NEXT_ACTION_RANK: Record<NextActionKind, number> = {
   payment_plan_installment: 1,
   dispute_review: 2,
   escalation: 3,
-  contact_follow_up: 4
+  reminder: 4,
+  contact_follow_up: 5
 };
 
 const NEXT_ACTION_LABELS: Record<NextActionKind, string> = {
@@ -999,13 +1046,14 @@ const NEXT_ACTION_LABELS: Record<NextActionKind, string> = {
   payment_plan_installment: "Payment plan installment due",
   dispute_review: "Dispute review",
   escalation: "Escalation due",
+  reminder: "Reminder due",
   contact_follow_up: "Contact follow-up"
 };
 
 export function listActiveNextActionCandidates(
   record: Pick<
     PromiseToPayRecord,
-    "nextFollowUpAt" | "dispute" | "escalation" | "paymentPlan"
+    "nextFollowUpAt" | "dispute" | "escalation" | "paymentPlan" | "reminders"
   >
 ): NextActionCandidate[] {
   const candidates: NextActionCandidate[] = [];
@@ -1043,6 +1091,14 @@ export function listActiveNextActionCandidates(
       });
     }
   }
+  const nextReminder = selectNextOpenReminder(record.reminders);
+  if (nextReminder) {
+    candidates.push({
+      kind: "reminder",
+      date: nextReminder.dueDate,
+      label: NEXT_ACTION_LABELS.reminder
+    });
+  }
   return candidates;
 }
 
@@ -1052,7 +1108,12 @@ export function listActiveNextActionCandidates(
 export function resolveNextAction(
   record: Pick<
     PromiseToPayRecord,
-    "nextFollowUpAt" | "dispute" | "escalation" | "paymentPlan" | "promiseDate"
+    | "nextFollowUpAt"
+    | "dispute"
+    | "escalation"
+    | "paymentPlan"
+    | "reminders"
+    | "promiseDate"
   >
 ): NextActionSelection | null {
   const candidates = listActiveNextActionCandidates(record);
@@ -1210,6 +1271,7 @@ export function sanitizePromiseRecord(
       : sanitizePaymentPlan(candidate.paymentPlan);
 
   const notes = sanitizeCollectionNotes(candidate.notes);
+  const reminders = sanitizeCollectionReminders(candidate.reminders);
   const history = sanitizeActivityHistory(candidate.history);
 
   return {
@@ -1226,6 +1288,7 @@ export function sanitizePromiseRecord(
     escalation,
     paymentPlan,
     notes,
+    reminders,
     history
   };
 }
@@ -1351,6 +1414,7 @@ export function savePromiseToPay(
     escalation: existing?.escalation ?? null,
     paymentPlan: existing?.paymentPlan ?? null,
     notes: existing?.notes ?? [],
+    reminders: existing?.reminders ?? [],
     history: existing?.history ?? []
   };
 
@@ -1618,6 +1682,7 @@ export function applyCollectionResolution(
     escalation: existing.escalation,
     paymentPlan: existing.paymentPlan,
     notes: existing.notes,
+    reminders: existing.reminders,
     history: historyAfterResolution(
       existing,
       validated.resolution,
@@ -1707,6 +1772,7 @@ export function saveCollectionContact(
     escalation: existing?.escalation ?? null,
     paymentPlan: existing?.paymentPlan ?? null,
     notes: existing?.notes ?? [],
+    reminders: existing?.reminders ?? [],
     history: existing?.history ?? []
   };
 
@@ -1845,6 +1911,7 @@ export function raiseCollectionDispute(
     escalation: existing?.escalation ?? null,
     paymentPlan: existing?.paymentPlan ?? null,
     notes: existing?.notes ?? [],
+    reminders: existing?.reminders ?? [],
     history: existing?.history ?? []
   };
 
@@ -2069,6 +2136,7 @@ export function raiseCollectionEscalation(
     escalation,
     paymentPlan: existing?.paymentPlan ?? null,
     notes: existing?.notes ?? [],
+    reminders: existing?.reminders ?? [],
     history: existing?.history ?? []
   };
 
@@ -2294,6 +2362,7 @@ export function createPaymentPlan(
     escalation: existing?.escalation ?? null,
     paymentPlan,
     notes: existing?.notes ?? [],
+    reminders: existing?.reminders ?? [],
     history: existing?.history ?? []
   };
 
@@ -2567,7 +2636,7 @@ function writeLastCollectionNoteAuthor(
   }
 }
 
-function ensureCaseShellForNotes(
+function ensureCaseShell(
   invoiceId: string,
   existing: PromiseToPayRecord | null,
   now: Date
@@ -2590,6 +2659,7 @@ function ensureCaseShellForNotes(
     escalation: null,
     paymentPlan: null,
     notes: [],
+    reminders: [],
     history: []
   };
 }
@@ -2614,7 +2684,7 @@ export function addCollectionNote(
   const storage = options?.storage === undefined ? defaultStorage() : options.storage;
   const now = options?.now ?? new Date();
   const existing = readPromiseFromStorage(invoiceId, storage);
-  const base = ensureCaseShellForNotes(invoiceId, existing, now);
+  const base = ensureCaseShell(invoiceId, existing, now);
   const note = createCollectionNoteEntity(invoiceId, validation, now);
   const notes = [...base.notes, note];
   const at = now.toISOString();
@@ -2788,6 +2858,278 @@ export function archiveCollectionNote(
   return { ok: true, record };
 }
 
+/**
+ * Schedule a collector reminder on the durable case record.
+ * Creates a minimal case when none exists. Does not replace contact nextFollowUpAt.
+ */
+export function createCollectionReminder(
+  invoiceId: string,
+  input: CollectionReminderInput,
+  options?: { storage?: Storage | null; now?: Date }
+): { ok: true; record: PromiseToPayRecord } | { ok: false; error: string } {
+  const validation = validateCollectionReminderInput(input);
+  if (!validation.ok) {
+    return validation;
+  }
+  if (!UUID_RE.test(invoiceId.trim())) {
+    return { ok: false, error: "Некоректний ідентифікатор рахунку." };
+  }
+
+  const storage = options?.storage === undefined ? defaultStorage() : options.storage;
+  const now = options?.now ?? new Date();
+  const existing = readPromiseFromStorage(invoiceId, storage);
+  const base = ensureCaseShell(invoiceId, existing, now);
+  const reminder = createCollectionReminderEntity(invoiceId, validation, now);
+  const reminders = [...base.reminders, reminder];
+  const at = now.toISOString();
+
+  const record: PromiseToPayRecord = {
+    ...base,
+    reminders,
+    updatedAtUtc: at,
+    history: historyAfterReminderChange(
+      existing,
+      "reminder_created",
+      {
+        note: summarizeReminderForHistory(reminder),
+        promiseDate: base.promiseDate,
+        followUpAt: reminder.dueDate
+      },
+      now
+    )
+  };
+
+  if (storage && !writePromiseToStorage(record, storage)) {
+    return { ok: false, error: "Не вдалося зберегти нагадування у браузері." };
+  }
+
+  return { ok: true, record };
+}
+
+/**
+ * Edit / reschedule an open reminder.
+ */
+export function updateCollectionReminder(
+  invoiceId: string,
+  input: CollectionReminderUpdateInput,
+  options?: { storage?: Storage | null; now?: Date }
+): { ok: true; record: PromiseToPayRecord } | { ok: false; error: string } {
+  const validation = validateCollectionReminderInput(input);
+  if (!validation.ok) {
+    return validation;
+  }
+  if (!UUID_RE.test(invoiceId.trim())) {
+    return { ok: false, error: "Некоректний ідентифікатор рахунку." };
+  }
+  const reminderId = (input.reminderId ?? "").trim();
+  if (!reminderId) {
+    return { ok: false, error: "Некоректний ідентифікатор нагадування." };
+  }
+
+  const storage = options?.storage === undefined ? defaultStorage() : options.storage;
+  const now = options?.now ?? new Date();
+  const existing = readPromiseFromStorage(invoiceId, storage);
+  if (!existing) {
+    return { ok: false, error: "Кейс стягнення для цього рахунку не знайдено." };
+  }
+
+  const index = existing.reminders.findIndex((item) => item.id === reminderId);
+  if (index < 0) {
+    return { ok: false, error: "Нагадування не знайдено." };
+  }
+  const previous = existing.reminders[index]!;
+  if (!isOpenCollectionReminder(previous)) {
+    return {
+      ok: false,
+      error: "Завершене або скасоване нагадування не можна редагувати."
+    };
+  }
+
+  const unchanged =
+    previous.title === validation.title &&
+    previous.note === validation.note &&
+    previous.kind === validation.kind &&
+    previous.dueDate === validation.dueDate;
+  if (unchanged) {
+    return { ok: true, record: existing };
+  }
+
+  const at = now.toISOString();
+  const nextReminder: CollectionReminder = {
+    ...previous,
+    title: validation.title,
+    note: validation.note,
+    kind: validation.kind,
+    dueDate: validation.dueDate,
+    updatedAtUtc: at
+  };
+  const reminders = existing.reminders.map((item, itemIndex) =>
+    itemIndex === index ? nextReminder : item
+  );
+
+  const record: PromiseToPayRecord = {
+    ...existing,
+    reminders,
+    updatedAtUtc: at,
+    history: historyAfterReminderChange(
+      existing,
+      "reminder_updated",
+      {
+        note: summarizeReminderForHistory(nextReminder),
+        promiseDate: existing.promiseDate,
+        followUpAt: nextReminder.dueDate
+      },
+      now
+    )
+  };
+
+  if (storage && !writePromiseToStorage(record, storage)) {
+    return { ok: false, error: "Не вдалося оновити нагадування у браузері." };
+  }
+
+  return { ok: true, record };
+}
+
+/**
+ * Mark an open reminder as completed.
+ */
+export function completeCollectionReminder(
+  invoiceId: string,
+  reminderId: string,
+  options?: { storage?: Storage | null; now?: Date }
+): { ok: true; record: PromiseToPayRecord } | { ok: false; error: string } {
+  if (!UUID_RE.test(invoiceId.trim())) {
+    return { ok: false, error: "Некоректний ідентифікатор рахунку." };
+  }
+  const id = reminderId.trim();
+  if (!id) {
+    return { ok: false, error: "Некоректний ідентифікатор нагадування." };
+  }
+
+  const storage = options?.storage === undefined ? defaultStorage() : options.storage;
+  const now = options?.now ?? new Date();
+  const existing = readPromiseFromStorage(invoiceId, storage);
+  if (!existing) {
+    return { ok: false, error: "Кейс стягнення для цього рахунку не знайдено." };
+  }
+
+  const index = existing.reminders.findIndex((item) => item.id === id);
+  if (index < 0) {
+    return { ok: false, error: "Нагадування не знайдено." };
+  }
+  const previous = existing.reminders[index]!;
+  if (previous.status === "completed") {
+    return { ok: true, record: existing };
+  }
+  if (previous.status === "cancelled") {
+    return { ok: false, error: "Скасоване нагадування не можна завершити." };
+  }
+
+  const at = now.toISOString();
+  const nextReminder: CollectionReminder = {
+    ...previous,
+    status: "completed",
+    completedAtUtc: at,
+    cancelledAtUtc: null,
+    updatedAtUtc: at
+  };
+  const reminders = existing.reminders.map((item, itemIndex) =>
+    itemIndex === index ? nextReminder : item
+  );
+
+  const record: PromiseToPayRecord = {
+    ...existing,
+    reminders,
+    updatedAtUtc: at,
+    history: historyAfterReminderChange(
+      existing,
+      "reminder_completed",
+      {
+        note: summarizeReminderForHistory(nextReminder),
+        promiseDate: existing.promiseDate,
+        followUpAt: nextReminder.dueDate
+      },
+      now
+    )
+  };
+
+  if (storage && !writePromiseToStorage(record, storage)) {
+    return { ok: false, error: "Не вдалося завершити нагадування у браузері." };
+  }
+
+  return { ok: true, record };
+}
+
+/**
+ * Cancel an open reminder (terminal; kept on the case record).
+ */
+export function cancelCollectionReminder(
+  invoiceId: string,
+  reminderId: string,
+  options?: { storage?: Storage | null; now?: Date }
+): { ok: true; record: PromiseToPayRecord } | { ok: false; error: string } {
+  if (!UUID_RE.test(invoiceId.trim())) {
+    return { ok: false, error: "Некоректний ідентифікатор рахунку." };
+  }
+  const id = reminderId.trim();
+  if (!id) {
+    return { ok: false, error: "Некоректний ідентифікатор нагадування." };
+  }
+
+  const storage = options?.storage === undefined ? defaultStorage() : options.storage;
+  const now = options?.now ?? new Date();
+  const existing = readPromiseFromStorage(invoiceId, storage);
+  if (!existing) {
+    return { ok: false, error: "Кейс стягнення для цього рахунку не знайдено." };
+  }
+
+  const index = existing.reminders.findIndex((item) => item.id === id);
+  if (index < 0) {
+    return { ok: false, error: "Нагадування не знайдено." };
+  }
+  const previous = existing.reminders[index]!;
+  if (previous.status === "cancelled") {
+    return { ok: true, record: existing };
+  }
+  if (previous.status === "completed") {
+    return { ok: false, error: "Завершене нагадування не можна скасувати." };
+  }
+
+  const at = now.toISOString();
+  const nextReminder: CollectionReminder = {
+    ...previous,
+    status: "cancelled",
+    cancelledAtUtc: at,
+    completedAtUtc: null,
+    updatedAtUtc: at
+  };
+  const reminders = existing.reminders.map((item, itemIndex) =>
+    itemIndex === index ? nextReminder : item
+  );
+
+  const record: PromiseToPayRecord = {
+    ...existing,
+    reminders,
+    updatedAtUtc: at,
+    history: historyAfterReminderChange(
+      existing,
+      "reminder_cancelled",
+      {
+        note: summarizeReminderForHistory(nextReminder),
+        promiseDate: existing.promiseDate,
+        followUpAt: nextReminder.dueDate
+      },
+      now
+    )
+  };
+
+  if (storage && !writePromiseToStorage(record, storage)) {
+    return { ok: false, error: "Не вдалося скасувати нагадування у браузері." };
+  }
+
+  return { ok: true, record };
+}
+
 export function listPromiseRecordsFromStorage(
   storage: Storage | null | undefined = defaultStorage()
 ): PromiseToPayRecord[] {
@@ -2895,6 +3237,10 @@ export function buildPromiseFollowUpItem(
     activeNotesCount: listActiveCollectionNotes(record.notes).length,
     pinnedNotesCount: listPinnedCollectionNotes(record.notes).length,
     hasOpenHandoffNotes: hasOpenHandoffNotes(record.notes),
+    reminders: record.reminders,
+    openRemindersCount: listOpenCollectionReminders(record.reminders).length,
+    hasDueOpenReminders: hasDueOpenReminders(record.reminders, now),
+    nextReminderDueAt: selectNextOpenReminder(record.reminders, now)?.dueDate ?? null,
     nextActionKind: nextAction?.kind ?? null,
     nextActionLabel: nextAction?.label ?? null
   };

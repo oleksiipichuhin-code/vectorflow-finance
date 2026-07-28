@@ -22,7 +22,8 @@ import type {
   EscalationStatus,
   PaymentPlanStatus,
   PromiseFollowUpStatus,
-  PromiseToPayRecord
+  PromiseToPayRecord,
+  ReminderKind
 } from "../promiseToPay";
 import {
   RESOLUTION_KIND_OPTIONS,
@@ -36,7 +37,10 @@ import {
   isActiveEscalation,
   isActiveCollectionNote,
   isActivePaymentPlan,
+  isOpenCollectionReminder,
+  isReminderDueOrOverdue,
   listActiveCollectionNotes,
+  listOpenCollectionReminders,
   listOverdueInstallments,
   paymentPlanStatusLabel,
   planInstallmentRemaining,
@@ -44,9 +48,13 @@ import {
   planRemainingTotal,
   noteCategoryLabel,
   promiseStatusLabel,
+  reminderKindLabel,
+  reminderStatusLabel,
   resolutionKindLabel,
   sortCollectionNotesForDisplay,
+  sortCollectionRemindersForDisplay,
   NOTE_CATEGORY_OPTIONS,
+  REMINDER_KIND_OPTIONS,
   selectNextInstallment
 } from "../promiseToPay";
 import type { PaymentPlanInstallmentInput } from "../paymentPlan";
@@ -139,6 +147,12 @@ type InvoiceDetailPromiseContext = {
   noteAuthor: string;
   noteCategory: CollectionNoteCategory | "";
   notePinned: boolean;
+  remindersOpen: boolean;
+  remindersEditId: string;
+  reminderTitle: string;
+  reminderNote: string;
+  reminderKind: ReminderKind | "";
+  reminderDueDate: string;
   paymentPlanOpen: boolean;
   paymentPlanEditMode: boolean;
   paymentPlanCancelMode: boolean;
@@ -211,6 +225,16 @@ type InvoiceDetailPromiseContext = {
   onNotePinnedChange: (value: boolean) => void;
   onSaveNote: () => void;
   onArchiveNote: (noteId: string) => void;
+  onOpenAddReminder: () => void;
+  onOpenEditReminder: (reminderId: string) => void;
+  onCloseRemindersForm: () => void;
+  onReminderTitleChange: (value: string) => void;
+  onReminderNoteChange: (value: string) => void;
+  onReminderKindChange: (value: ReminderKind | "") => void;
+  onReminderDueDateChange: (value: string) => void;
+  onSaveReminder: () => void;
+  onCompleteReminder: (reminderId: string) => void;
+  onCancelReminder: (reminderId: string) => void;
   onOpenCreatePaymentPlan: () => void;
   onOpenEditPaymentPlan: () => void;
   onOpenCancelPaymentPlan: () => void;
@@ -649,6 +673,42 @@ export function InvoiceDetailPanel({
                                 {note.body.length > 120
                                   ? `${note.body.slice(0, 117)}…`
                                   : note.body}
+                              </span>
+                            ))}
+                          </>
+                        );
+                      })()}
+                    </dd>
+                  </div>
+                  <div className="collection-notes-list">
+                    <dt>Reminders</dt>
+                    <dd>
+                      {(() => {
+                        const openReminders = sortCollectionRemindersForDisplay(
+                          listOpenCollectionReminders(promiseContext.record.reminders)
+                        );
+                        if (openReminders.length === 0) {
+                          return "0 open";
+                        }
+                        return (
+                          <>
+                            <span>{openReminders.length} open</span>
+                            {openReminders.map((reminder) => (
+                              <span
+                                key={reminder.id}
+                                className={`collection-note-item${
+                                  isReminderDueOrOverdue(reminder)
+                                    ? " collection-reminder-item--due"
+                                    : ""
+                                }`}
+                              >
+                                {isReminderDueOrOverdue(reminder) ? (
+                                  <span className="aging-badge aging-badge--reminder-due">
+                                    Due
+                                  </span>
+                                ) : null}
+                                {reminderKindLabel(reminder.kind)} · due {reminder.dueDate} ·{" "}
+                                {reminder.title}
                               </span>
                             ))}
                           </>
@@ -1999,13 +2059,111 @@ export function InvoiceDetailPanel({
                 </form>
               ) : null}
 
+              {promiseContext.remindersOpen ? (
+                <form
+                  className="filter-form collection-notes-form"
+                  aria-labelledby="collection-reminders-heading"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    promiseContext.onSaveReminder();
+                  }}
+                >
+                  <h4 id="collection-reminders-heading">
+                    {promiseContext.remindersEditId
+                      ? "Reschedule reminder"
+                      : "Schedule reminder"}
+                  </h4>
+                  <label>
+                    Title *
+                    <input
+                      value={promiseContext.reminderTitle}
+                      onChange={(event) =>
+                        promiseContext.onReminderTitleChange(event.target.value)
+                      }
+                      disabled={promiseContext.busy}
+                      required
+                    />
+                  </label>
+                  <label>
+                    Type *
+                    <select
+                      value={promiseContext.reminderKind}
+                      onChange={(event) =>
+                        promiseContext.onReminderKindChange(
+                          event.target.value as ReminderKind | ""
+                        )
+                      }
+                      disabled={promiseContext.busy}
+                      required
+                    >
+                      <option value="">Оберіть тип…</option>
+                      {REMINDER_KIND_OPTIONS.map((option) => (
+                        <option key={option.id} value={option.id}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Due date *
+                    <input
+                      type="date"
+                      value={promiseContext.reminderDueDate}
+                      onChange={(event) =>
+                        promiseContext.onReminderDueDateChange(event.target.value)
+                      }
+                      disabled={promiseContext.busy}
+                      required
+                    />
+                  </label>
+                  <label>
+                    Note
+                    <textarea
+                      value={promiseContext.reminderNote}
+                      onChange={(event) =>
+                        promiseContext.onReminderNoteChange(event.target.value)
+                      }
+                      disabled={promiseContext.busy}
+                      rows={3}
+                    />
+                  </label>
+                  <div className="filter-actions">
+                    <button
+                      type="submit"
+                      disabled={
+                        promiseContext.busy ||
+                        closeDisabled ||
+                        !promiseContext.reminderTitle.trim() ||
+                        !promiseContext.reminderKind ||
+                        !promiseContext.reminderDueDate.trim()
+                      }
+                    >
+                      {promiseContext.busy
+                        ? "Збереження…"
+                        : promiseContext.remindersEditId
+                          ? "Update reminder"
+                          : "Save reminder"}
+                    </button>
+                    <button
+                      type="button"
+                      className="button-secondary"
+                      disabled={promiseContext.busy || closeDisabled}
+                      onClick={promiseContext.onCloseRemindersForm}
+                    >
+                      Скасувати
+                    </button>
+                  </div>
+                </form>
+              ) : null}
+
               {!promiseContext.formOpen &&
               !promiseContext.resolutionOpen &&
               !promiseContext.contactOpen &&
               !promiseContext.disputeOpen &&
               !promiseContext.escalationOpen &&
               !promiseContext.paymentPlanOpen &&
-              !promiseContext.notesOpen ? (
+              !promiseContext.notesOpen &&
+              !promiseContext.remindersOpen ? (
                 <div className="filter-actions">
                   <button
                     type="button"
@@ -2020,6 +2178,13 @@ export function InvoiceDetailPanel({
                     onClick={promiseContext.onOpenAddNote}
                   >
                     Add note
+                  </button>
+                  <button
+                    type="button"
+                    disabled={closeDisabled || promiseContext.busy}
+                    onClick={promiseContext.onOpenAddReminder}
+                  >
+                    Schedule reminder
                   </button>
                   {isActiveDispute(promiseContext.record?.dispute) ? (
                     <>
@@ -2214,12 +2379,64 @@ export function InvoiceDetailPanel({
                         </div>
                       </article>
                     ))}
+                  {sortCollectionRemindersForDisplay(promiseContext.record.reminders)
+                    .filter((reminder) => isOpenCollectionReminder(reminder))
+                    .map((reminder) => (
+                      <article
+                        key={reminder.id}
+                        className={`collection-note-item${
+                          isReminderDueOrOverdue(reminder)
+                            ? " collection-reminder-item--due"
+                            : ""
+                        }`}
+                      >
+                        <div>
+                          {isReminderDueOrOverdue(reminder) ? (
+                            <span className="aging-badge aging-badge--reminder-due">
+                              Due
+                            </span>
+                          ) : null}
+                          <strong>{reminderKindLabel(reminder.kind)}</strong> · due{" "}
+                          {reminder.dueDate} · {reminderStatusLabel(reminder.status)}
+                        </div>
+                        <p>
+                          <strong>{reminder.title}</strong>
+                          {reminder.note ? `\n${reminder.note}` : ""}
+                        </p>
+                        <div className="row-actions">
+                          <button
+                            type="button"
+                            className="button-secondary"
+                            disabled={closeDisabled || promiseContext.busy}
+                            onClick={() => promiseContext.onOpenEditReminder(reminder.id)}
+                          >
+                            Reschedule
+                          </button>
+                          <button
+                            type="button"
+                            className="button-secondary"
+                            disabled={closeDisabled || promiseContext.busy}
+                            onClick={() => promiseContext.onCompleteReminder(reminder.id)}
+                          >
+                            Complete
+                          </button>
+                          <button
+                            type="button"
+                            className="button-secondary"
+                            disabled={closeDisabled || promiseContext.busy}
+                            onClick={() => promiseContext.onCancelReminder(reminder.id)}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </article>
+                    ))}
                 </div>
               ) : null}
               <p className="meta promise-persistence-note">
-                Contact, dispute, escalation, payment plan, internal notes, follow-up і resolution
-                зберігаються локально в браузері (localStorage) за invoice id. Payment plan
-                payments are operational tracking only.
+                Contact, dispute, escalation, payment plan, internal notes, reminders, follow-up і
+                resolution зберігаються локально в браузері (localStorage) за invoice id. Payment
+                plan payments are operational tracking only.
               </p>
             </section>
           ) : null}

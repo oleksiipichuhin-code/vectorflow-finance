@@ -40,6 +40,10 @@ export type CollectionActivityEventType =
   | "note_added"
   | "note_updated"
   | "note_archived"
+  | "reminder_created"
+  | "reminder_updated"
+  | "reminder_completed"
+  | "reminder_cancelled"
   | "unable_to_contact"
   | "completed";
 
@@ -163,6 +167,10 @@ export const ACTIVITY_EVENT_TYPE_OPTIONS: readonly {
   { id: "note_added", label: "Note added" },
   { id: "note_updated", label: "Note updated" },
   { id: "note_archived", label: "Note archived" },
+  { id: "reminder_created", label: "Reminder created" },
+  { id: "reminder_updated", label: "Reminder updated" },
+  { id: "reminder_completed", label: "Reminder completed" },
+  { id: "reminder_cancelled", label: "Reminder cancelled" },
   { id: "unable_to_contact", label: "Unable to contact" },
   { id: "completed", label: "Completed" }
 ];
@@ -305,6 +313,10 @@ const EVENT_LABELS: Record<CollectionActivityEventType, string> = {
   note_added: "Note added",
   note_updated: "Note updated",
   note_archived: "Note archived",
+  reminder_created: "Reminder created",
+  reminder_updated: "Reminder updated",
+  reminder_completed: "Reminder completed",
+  reminder_cancelled: "Reminder cancelled",
   unable_to_contact: "Unable to contact",
   completed: "Completed"
 };
@@ -1189,6 +1201,32 @@ export function historyAfterNoteChange(
       note: detail.note?.trim() ? detail.note.trim() : null,
       promiseDate: detail.promiseDate ?? existing?.promiseDate ?? null,
       followUpAt: null
+    })
+  );
+}
+
+export function historyAfterReminderChange(
+  existing: PromiseToPayRecord | null,
+  type:
+    | "reminder_created"
+    | "reminder_updated"
+    | "reminder_completed"
+    | "reminder_cancelled",
+  detail: {
+    note?: string | null;
+    promiseDate?: string | null;
+    followUpAt?: string | null;
+  },
+  now: Date = new Date()
+): CollectionActivityEvent[] {
+  return appendActivityEvent(
+    existing?.history ?? [],
+    createActivityEvent({
+      type,
+      atUtc: now.toISOString(),
+      note: detail.note?.trim() ? detail.note.trim() : null,
+      promiseDate: detail.promiseDate ?? existing?.promiseDate ?? null,
+      followUpAt: detail.followUpAt ?? null
     })
   );
 }

@@ -59,6 +59,9 @@ import {
   archiveCollectionNote,
   buildPromiseFollowUpItems,
   buildPromiseFollowUpSummary,
+  cancelCollectionReminder,
+  completeCollectionReminder,
+  createCollectionReminder,
   NOTE_CATEGORY_OPTIONS,
   filterPromiseFollowUps,
   groupPromiseFollowUps,
@@ -79,6 +82,7 @@ import {
   updateCollectionDispute,
   updateCollectionEscalation,
   updateCollectionNote,
+  updateCollectionReminder,
   updateContactFollowUp,
   updatePaymentPlan,
   updatePromiseStatus,
@@ -86,7 +90,8 @@ import {
   type CollectionResolutionKind,
   type PromiseFollowUpItem,
   type PromiseGroupFilter,
-  type PromiseToPayRecord
+  type PromiseToPayRecord,
+  type ReminderKind
 } from "./promiseToPay";
 import type { PaymentPlanInstallmentInput } from "./paymentPlan";
 import {
@@ -399,6 +404,12 @@ export function InvoicesView({
   const [noteAuthor, setNoteAuthor] = useState("");
   const [noteCategory, setNoteCategory] = useState<CollectionNoteCategory | "">("");
   const [notePinned, setNotePinned] = useState(false);
+  const [remindersOpen, setRemindersOpen] = useState(false);
+  const [remindersEditId, setRemindersEditId] = useState("");
+  const [reminderTitle, setReminderTitle] = useState("");
+  const [reminderNote, setReminderNote] = useState("");
+  const [reminderKind, setReminderKind] = useState<ReminderKind | "">("");
+  const [reminderDueDate, setReminderDueDate] = useState("");
   const [filterValidationError, setFilterValidationError] = useState<string | null>(null);
 
   const [page, setPage] = useState(() => (initialPage < 1 ? 1 : Math.floor(initialPage)));
@@ -713,10 +724,18 @@ export function InvoicesView({
     setPaymentPlanRecordNote("");
     setNotesOpen(false);
     setNotesEditId("");
+    setRemindersOpen(false);
+    setRemindersEditId("");
     setNoteBody("");
     setNoteAuthor("");
     setNoteCategory("");
     setNotePinned(false);
+    setRemindersOpen(false);
+    setRemindersEditId("");
+    setReminderTitle("");
+    setReminderNote("");
+    setReminderKind("");
+    setReminderDueDate("");
   }, [detailTargetId]);
 
   function publishDiscovery(
@@ -2758,6 +2777,8 @@ export function InvoicesView({
     setPaymentPlanOpen(false);
     setNotesOpen(false);
     setNotesEditId("");
+    setRemindersOpen(false);
+    setRemindersEditId("");
     setPromiseFormOpen(true);
     setPromiseDateInput(existing?.promiseDate ?? "");
     setPromiseNoteInput(existing?.note ?? "");
@@ -2778,6 +2799,8 @@ export function InvoicesView({
     setPaymentPlanOpen(false);
     setNotesOpen(false);
     setNotesEditId("");
+    setRemindersOpen(false);
+    setRemindersEditId("");
     setResolutionOpen(true);
     setResolutionKind("");
     setResolutionPaymentDate("");
@@ -2803,6 +2826,8 @@ export function InvoicesView({
     setPaymentPlanOpen(false);
     setNotesOpen(false);
     setNotesEditId("");
+    setRemindersOpen(false);
+    setRemindersEditId("");
     setContactOpen(true);
     setContactChannel("");
     setContactResult("");
@@ -2825,6 +2850,8 @@ export function InvoicesView({
     setPaymentPlanOpen(false);
     setNotesOpen(false);
     setNotesEditId("");
+    setRemindersOpen(false);
+    setRemindersEditId("");
     setDisputeOpen(true);
     setDisputeEditMode(false);
     setDisputeCloseMode("");
@@ -2846,6 +2873,8 @@ export function InvoicesView({
     setPaymentPlanOpen(false);
     setNotesOpen(false);
     setNotesEditId("");
+    setRemindersOpen(false);
+    setRemindersEditId("");
     setDisputeOpen(true);
     setDisputeEditMode(true);
     setDisputeCloseMode("");
@@ -2866,6 +2895,8 @@ export function InvoicesView({
     setPaymentPlanOpen(false);
     setNotesOpen(false);
     setNotesEditId("");
+    setRemindersOpen(false);
+    setRemindersEditId("");
     setDisputeOpen(true);
     setDisputeEditMode(false);
     setDisputeCloseMode("resolve");
@@ -2882,6 +2913,8 @@ export function InvoicesView({
     setPaymentPlanOpen(false);
     setNotesOpen(false);
     setNotesEditId("");
+    setRemindersOpen(false);
+    setRemindersEditId("");
     setDisputeOpen(true);
     setDisputeEditMode(false);
     setDisputeCloseMode("reject");
@@ -2905,6 +2938,8 @@ export function InvoicesView({
     setPaymentPlanOpen(false);
     setNotesOpen(false);
     setNotesEditId("");
+    setRemindersOpen(false);
+    setRemindersEditId("");
     setEscalationOpen(true);
     setEscalationEditMode(false);
     setEscalationCompleteMode(false);
@@ -2928,6 +2963,8 @@ export function InvoicesView({
     setPaymentPlanOpen(false);
     setNotesOpen(false);
     setNotesEditId("");
+    setRemindersOpen(false);
+    setRemindersEditId("");
     setEscalationOpen(true);
     setEscalationEditMode(true);
     setEscalationCompleteMode(false);
@@ -2950,6 +2987,8 @@ export function InvoicesView({
     setPaymentPlanOpen(false);
     setNotesOpen(false);
     setNotesEditId("");
+    setRemindersOpen(false);
+    setRemindersEditId("");
     setEscalationOpen(true);
     setEscalationEditMode(false);
     setEscalationCompleteMode(true);
@@ -2972,6 +3011,8 @@ export function InvoicesView({
     setDisputeOpen(false);
     setEscalationOpen(false);
     setPaymentPlanOpen(false);
+    setRemindersOpen(false);
+    setRemindersEditId("");
     setNotesOpen(true);
     setNotesEditId("");
     setNoteBody("");
@@ -2995,6 +3036,8 @@ export function InvoicesView({
     setDisputeOpen(false);
     setEscalationOpen(false);
     setPaymentPlanOpen(false);
+    setRemindersOpen(false);
+    setRemindersEditId("");
     setNotesOpen(true);
     setNotesEditId(note.id);
     setNoteBody(note.body);
@@ -3008,6 +3051,8 @@ export function InvoicesView({
   function closeNotesForm() {
     setNotesOpen(false);
     setNotesEditId("");
+    setRemindersOpen(false);
+    setRemindersEditId("");
     setPromiseFormError(null);
   }
 
@@ -3051,6 +3096,116 @@ export function InvoicesView({
     bumpPromiseRevision();
   }
 
+  function openAddReminderForm() {
+    setPromiseFormOpen(false);
+    setResolutionOpen(false);
+    setContactOpen(false);
+    setDisputeOpen(false);
+    setEscalationOpen(false);
+    setPaymentPlanOpen(false);
+    setNotesOpen(false);
+    setNotesEditId("");
+    setRemindersOpen(true);
+    setRemindersEditId("");
+    setReminderTitle("");
+    setReminderNote("");
+    setReminderKind("callback");
+    setReminderDueDate("");
+    setPromiseFormError(null);
+    setPromiseFormSuccess(null);
+  }
+
+  function openEditReminderForm(reminderId: string) {
+    const reminder = detailPromiseRecord?.reminders.find((item) => item.id === reminderId);
+    if (!reminder || reminder.status !== "open") {
+      return;
+    }
+    setPromiseFormOpen(false);
+    setResolutionOpen(false);
+    setContactOpen(false);
+    setDisputeOpen(false);
+    setEscalationOpen(false);
+    setPaymentPlanOpen(false);
+    setNotesOpen(false);
+    setNotesEditId("");
+    setRemindersOpen(true);
+    setRemindersEditId(reminder.id);
+    setReminderTitle(reminder.title);
+    setReminderNote(reminder.note);
+    setReminderKind(reminder.kind);
+    setReminderDueDate(reminder.dueDate);
+    setPromiseFormError(null);
+    setPromiseFormSuccess(null);
+  }
+
+  function closeRemindersForm() {
+    setRemindersOpen(false);
+    setRemindersEditId("");
+    setPromiseFormError(null);
+  }
+
+  function handleSaveReminder(invoiceId: string) {
+    setPromiseBusy(true);
+    setPromiseFormError(null);
+    setPromiseFormSuccess(null);
+    const input = {
+      title: reminderTitle,
+      note: reminderNote,
+      kind: reminderKind,
+      dueDate: reminderDueDate
+    };
+    const result = remindersEditId
+      ? updateCollectionReminder(invoiceId, {
+          ...input,
+          reminderId: remindersEditId
+        })
+      : createCollectionReminder(invoiceId, input);
+    setPromiseBusy(false);
+    if (!result.ok) {
+      setPromiseFormError(result.error);
+      return;
+    }
+    setPromiseFormSuccess(
+      remindersEditId ? "Reminder updated." : "Reminder scheduled."
+    );
+    closeRemindersForm();
+    bumpPromiseRevision();
+  }
+
+  function handleCompleteReminder(invoiceId: string, reminderId: string) {
+    setPromiseBusy(true);
+    setPromiseFormError(null);
+    setPromiseFormSuccess(null);
+    const result = completeCollectionReminder(invoiceId, reminderId);
+    setPromiseBusy(false);
+    if (!result.ok) {
+      setPromiseFormError(result.error);
+      return;
+    }
+    if (remindersEditId === reminderId) {
+      closeRemindersForm();
+    }
+    setPromiseFormSuccess("Reminder completed.");
+    bumpPromiseRevision();
+  }
+
+  function handleCancelReminder(invoiceId: string, reminderId: string) {
+    setPromiseBusy(true);
+    setPromiseFormError(null);
+    setPromiseFormSuccess(null);
+    const result = cancelCollectionReminder(invoiceId, reminderId);
+    setPromiseBusy(false);
+    if (!result.ok) {
+      setPromiseFormError(result.error);
+      return;
+    }
+    if (remindersEditId === reminderId) {
+      closeRemindersForm();
+    }
+    setPromiseFormSuccess("Reminder cancelled.");
+    bumpPromiseRevision();
+  }
+
   function closeOtherCollectionFormsForPaymentPlan() {
     setPromiseFormOpen(false);
     setResolutionOpen(false);
@@ -3059,6 +3214,8 @@ export function InvoicesView({
     setEscalationOpen(false);
     setNotesOpen(false);
     setNotesEditId("");
+    setRemindersOpen(false);
+    setRemindersEditId("");
   }
 
   function openCreatePaymentPlanForm() {
@@ -3634,6 +3791,10 @@ export function InvoicesView({
                     <div>
                       <dt>Handoffs</dt>
                       <dd>{workbenchKpi.handoffCount}</dd>
+                    </div>
+                    <div>
+                      <dt>Reminders due</dt>
+                      <dd>{workbenchKpi.reminderDueCount}</dd>
                     </div>
                     <div>
                       <dt>Completed Today</dt>
@@ -4577,6 +4738,12 @@ export function InvoicesView({
                     noteAuthor,
                     noteCategory,
                     notePinned,
+                    remindersOpen,
+                    remindersEditId,
+                    reminderTitle,
+                    reminderNote,
+                    reminderKind,
+                    reminderDueDate,
                     onOpenForm: () => openPromiseForm(detailPromiseRecord),
                     onCloseForm: closePromiseForm,
                     onPromiseDateChange: setPromiseDateInput,
@@ -4641,6 +4808,18 @@ export function InvoicesView({
                     onNotePinnedChange: setNotePinned,
                     onSaveNote: () => handleSaveNote(detailTargetId),
                     onArchiveNote: (noteId) => handleArchiveNote(detailTargetId, noteId),
+                    onOpenAddReminder: openAddReminderForm,
+                    onOpenEditReminder: openEditReminderForm,
+                    onCloseRemindersForm: closeRemindersForm,
+                    onReminderTitleChange: setReminderTitle,
+                    onReminderNoteChange: setReminderNote,
+                    onReminderKindChange: setReminderKind,
+                    onReminderDueDateChange: setReminderDueDate,
+                    onSaveReminder: () => handleSaveReminder(detailTargetId),
+                    onCompleteReminder: (reminderId) =>
+                      handleCompleteReminder(detailTargetId, reminderId),
+                    onCancelReminder: (reminderId) =>
+                      handleCancelReminder(detailTargetId, reminderId),
                     paymentPlanOpen,
                     paymentPlanEditMode,
                     paymentPlanCancelMode,
