@@ -85,6 +85,7 @@ function baseItem(
     currency: "UAH",
     originalDueDate: "2026-07-01",
     promiseDate: "2026-07-28",
+    nextActionDate: "2026-07-28",
     daysRelativeToPromise: 0,
     daysRelativeLabel: "сьогодні",
     group: "due_today",
@@ -95,6 +96,8 @@ function baseItem(
     completedAtUtc: null,
     resolution: null,
     resolutionLabel: null,
+    nextFollowUpAt: null,
+    lastContact: null,
     ...overrides
   };
 }

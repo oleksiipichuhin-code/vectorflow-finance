@@ -10,10 +10,13 @@ import {
   listPromiseRecordsFromStorage,
   readPromiseFromStorage,
   removePromiseFromStorage,
+  saveCollectionContact,
   savePromiseToPay,
   sanitizePromiseRecord,
   storageKeyForInvoice,
+  updateContactFollowUp,
   updatePromiseStatus,
+  validateCollectionContactInput,
   validateCollectionResolutionInput,
   validatePromiseToPayInput,
   type PromiseInvoiceLike,
@@ -164,6 +167,9 @@ describe("promiseToPay classification", () => {
       updatedAtUtc: "2026-07-28T10:00:00.000Z",
       completedAtUtc: null,
       resolution: null,
+      nextFollowUpAt: null,
+      lastContact: null,
+      history: [],
       ...overrides
     };
   }
@@ -606,7 +612,10 @@ describe("collection resolution workflow", () => {
       status: "awaiting",
       updatedAtUtc: "2026-07-28T00:00:00.000Z",
       completedAtUtc: null,
-      resolution: null
+      resolution: null,
+      nextFollowUpAt: null,
+      lastContact: null,
+      history: []
     };
     assert.equal(
       validateCollectionResolutionInput({ kind: "paid", paymentDate: "" }, existing, now).ok,
@@ -760,5 +769,131 @@ describe("collection resolution workflow", () => {
     if (after.ok) {
       assert.equal(classifyPromiseGroup(after.record, now), "upcoming");
     }
+  });
+});
+
+describe("collection contact follow-up", () => {
+  const now = new Date("2026-07-28T12:00:00.000Z");
+
+  it("rejects empty contact action", () => {
+    const result = validateCollectionContactInput({
+      channel: "",
+      result: "",
+      note: "",
+      followUpAt: ""
+    });
+    assert.equal(result.ok, false);
+  });
+
+  it("requires channel and result", () => {
+    assert.equal(
+      validateCollectionContactInput({ channel: "", result: "reached" }).ok,
+      false
+    );
+    assert.equal(
+      validateCollectionContactInput({ channel: "phone", result: "" }).ok,
+      false
+    );
+  });
+
+  it("saves contact attempt with follow-up and restores after reload", () => {
+    const storage = new MemoryStorage();
+    const saved = saveCollectionContact(
+      INVOICE_A,
+      {
+        channel: "phone",
+        result: "no_answer",
+        note: "tried morning",
+        followUpAt: "2026-08-05"
+      },
+      { storage, now }
+    );
+    assert.equal(saved.ok, true);
+    if (!saved.ok) return;
+    assert.equal(saved.record.nextFollowUpAt, "2026-08-05");
+    assert.equal(saved.record.status, "follow_up_required");
+    assert.equal(saved.record.lastContact?.channel, "phone");
+    assert.equal(saved.record.lastContact?.result, "no_answer");
+    assert.equal(classifyPromiseGroup(saved.record, now), "follow_up_required");
+
+    const reloaded = readPromiseFromStorage(INVOICE_A, storage);
+    assert.ok(reloaded);
+    assert.equal(reloaded?.nextFollowUpAt, "2026-08-05");
+    assert.equal(reloaded?.lastContact?.note, "tried morning");
+    assert.ok(reloaded?.history.some((event) => event.type === "contact_logged"));
+
+    const items = buildPromiseFollowUpItems(
+      [invoice(INVOICE_A)],
+      [reloaded!],
+      now
+    );
+    assert.equal(items.length, 1);
+    assert.equal(items[0]?.group, "follow_up_required");
+    assert.equal(items[0]?.nextActionDate, "2026-08-05");
+    assert.equal(items[0]?.nextFollowUpAt, "2026-08-05");
+
+    const filtered = filterPromiseFollowUps(items, { group: "follow_up_required" });
+    assert.equal(filtered.length, 1);
+  });
+
+  it("clears and changes follow-up predictably", () => {
+    const storage = new MemoryStorage();
+    saveCollectionContact(
+      INVOICE_A,
+      { channel: "email", result: "left_message", followUpAt: "2026-08-01" },
+      { storage, now }
+    );
+    const changed = updateContactFollowUp(INVOICE_A, "2026-08-10", { storage, now });
+    assert.equal(changed.ok, true);
+    if (!changed.ok) return;
+    assert.equal(changed.record.nextFollowUpAt, "2026-08-10");
+    assert.equal(changed.record.status, "follow_up_required");
+
+    const cleared = updateContactFollowUp(INVOICE_A, null, { storage, now });
+    assert.equal(cleared.ok, true);
+    if (!cleared.ok) return;
+    assert.equal(cleared.record.nextFollowUpAt, null);
+    assert.equal(cleared.record.status, "contacted");
+    assert.notEqual(classifyPromiseGroup(cleared.record, now), "follow_up_required");
+  });
+
+  it("does not duplicate contact on identical fingerprint and preserves promise history", () => {
+    const storage = new MemoryStorage();
+    savePromiseToPay(
+      INVOICE_A,
+      { promiseDate: "2026-08-01", note: "will pay" },
+      { storage, now }
+    );
+    const first = saveCollectionContact(
+      INVOICE_A,
+      { channel: "message", result: "reached", note: "ok" },
+      { storage, now }
+    );
+    assert.equal(first.ok, true);
+    if (!first.ok) return;
+    const second = saveCollectionContact(
+      INVOICE_A,
+      { channel: "message", result: "reached", note: "ok" },
+      { storage, now }
+    );
+    assert.equal(second.ok, true);
+    if (!second.ok) return;
+    const contactEvents = second.record.history.filter((e) => e.type === "contact_logged");
+    assert.equal(contactEvents.length, 1);
+    assert.ok(second.record.history.some((e) => e.type === "promise_created"));
+  });
+
+  it("flags payment_promised for Promise to pay without inventing resolution", () => {
+    const storage = new MemoryStorage();
+    const result = saveCollectionContact(
+      INVOICE_A,
+      { channel: "phone", result: "payment_promised", note: "friday" },
+      { storage, now }
+    );
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.equal(result.needsPromise, true);
+    assert.equal(result.record.resolution, null);
+    assert.equal(result.record.status, "contacted");
   });
 });

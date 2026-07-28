@@ -28,9 +28,15 @@ import {
 } from "../promiseToPay";
 import {
   ACTIVITY_EVENT_TYPE_OPTIONS,
+  CONTACT_CHANNEL_OPTIONS,
+  CONTACT_RESULT_OPTIONS,
   activityEventTypeLabel,
+  contactChannelLabel,
+  contactResultLabel,
   type CaseHistoryView,
-  type CollectionActivityEventTypeFilter
+  type CollectionActivityEventTypeFilter,
+  type ContactChannel,
+  type ContactResult
 } from "../collectionCaseHistory";
 import { StatusMessage } from "./Panel";
 
@@ -64,6 +70,11 @@ type InvoiceDetailPromiseContext = {
   resolutionPromiseDate: string;
   resolutionReason: string;
   resolutionNote: string;
+  contactOpen: boolean;
+  contactChannel: ContactChannel | "";
+  contactResult: ContactResult | "";
+  contactNote: string;
+  contactFollowUpAt: string;
   onOpenForm: () => void;
   onCloseForm: () => void;
   onPromiseDateChange: (value: string) => void;
@@ -83,6 +94,14 @@ type InvoiceDetailPromiseContext = {
   onResolutionReasonChange: (value: string) => void;
   onResolutionNoteChange: (value: string) => void;
   onSaveResolution: () => void;
+  onOpenContact: () => void;
+  onCloseContact: () => void;
+  onContactChannelChange: (value: ContactChannel | "") => void;
+  onContactResultChange: (value: ContactResult | "") => void;
+  onContactNoteChange: (value: string) => void;
+  onContactFollowUpAtChange: (value: string) => void;
+  onSaveContact: () => void;
+  onClearFollowUp: () => void;
 };
 
 type InvoiceDetailHistoryContext = {
@@ -228,7 +247,8 @@ export function InvoiceDetailPanel({
     createAccrualOpen ||
     Boolean(promiseContext?.busy) ||
     Boolean(promiseContext?.formOpen) ||
-    Boolean(promiseContext?.resolutionOpen);
+    Boolean(promiseContext?.resolutionOpen) ||
+    Boolean(promiseContext?.contactOpen);
 
   const relatedRows: RelatedAccrualRowView[] = relatedAccruals.map((accrual) =>
     buildRelatedAccrualRowView(accrual, formatMoney, formatDate)
@@ -470,6 +490,32 @@ export function InvoiceDetailPanel({
                       <dd className="cell-wrap">{promiseContext.record.note}</dd>
                     </div>
                   ) : null}
+                  {promiseContext.record.nextFollowUpAt ? (
+                    <div>
+                      <dt>Next follow-up</dt>
+                      <dd>{promiseContext.record.nextFollowUpAt}</dd>
+                    </div>
+                  ) : null}
+                  {promiseContext.record.lastContact ? (
+                    <>
+                      <div>
+                        <dt>Last contact</dt>
+                        <dd>
+                          {contactChannelLabel(promiseContext.record.lastContact.channel)}
+                          {" · "}
+                          {contactResultLabel(promiseContext.record.lastContact.result)}
+                        </dd>
+                      </div>
+                      {promiseContext.record.lastContact.note ? (
+                        <div>
+                          <dt>Contact note</dt>
+                          <dd className="cell-wrap">
+                            {promiseContext.record.lastContact.note}
+                          </dd>
+                        </div>
+                      ) : null}
+                    </>
+                  ) : null}
                 </dl>
               ) : (
                 <p className="meta">Обіцянку оплати ще не зафіксовано.</p>
@@ -675,8 +721,130 @@ export function InvoiceDetailPanel({
                 </form>
               ) : null}
 
-              {!promiseContext.formOpen && !promiseContext.resolutionOpen ? (
+              {promiseContext.contactOpen ? (
+                <form
+                  className="filter-form contact-form"
+                  aria-labelledby="collection-contact-heading"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    promiseContext.onSaveContact();
+                  }}
+                >
+                  <h4 id="collection-contact-heading">Log contact</h4>
+                  <label>
+                    Channel
+                    <select
+                      value={promiseContext.contactChannel}
+                      onChange={(event) =>
+                        promiseContext.onContactChannelChange(
+                          event.target.value as ContactChannel | ""
+                        )
+                      }
+                      disabled={promiseContext.busy}
+                      required
+                    >
+                      <option value="">Оберіть канал…</option>
+                      {CONTACT_CHANNEL_OPTIONS.map((option) => (
+                        <option key={option.id} value={option.id}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Result
+                    <select
+                      value={promiseContext.contactResult}
+                      onChange={(event) =>
+                        promiseContext.onContactResultChange(
+                          event.target.value as ContactResult | ""
+                        )
+                      }
+                      disabled={promiseContext.busy}
+                      required
+                    >
+                      <option value="">Оберіть результат…</option>
+                      {CONTACT_RESULT_OPTIONS.map((option) => (
+                        <option key={option.id} value={option.id}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {promiseContext.contactResult === "payment_promised" ? (
+                    <p className="meta">
+                      Результат «Payment promised» збереже контакт і відкриє форму Promise to
+                      pay для фіксації дати обіцянки.
+                    </p>
+                  ) : null}
+                  <label>
+                    Note
+                    <input
+                      value={promiseContext.contactNote}
+                      onChange={(event) =>
+                        promiseContext.onContactNoteChange(event.target.value)
+                      }
+                      placeholder="коротка нотатка (необовʼязково)"
+                      autoComplete="off"
+                      disabled={promiseContext.busy}
+                    />
+                  </label>
+                  <label>
+                    Next follow-up
+                    <input
+                      type="date"
+                      value={promiseContext.contactFollowUpAt}
+                      onChange={(event) =>
+                        promiseContext.onContactFollowUpAtChange(event.target.value)
+                      }
+                      disabled={promiseContext.busy}
+                    />
+                  </label>
+                  <div className="filter-actions">
+                    <button
+                      type="submit"
+                      disabled={
+                        promiseContext.busy ||
+                        closeDisabled ||
+                        !promiseContext.contactChannel ||
+                        !promiseContext.contactResult
+                      }
+                    >
+                      {promiseContext.busy ? "Збереження…" : "Save contact"}
+                    </button>
+                    <button
+                      type="button"
+                      className="button-secondary"
+                      disabled={promiseContext.busy || closeDisabled}
+                      onClick={promiseContext.onCloseContact}
+                    >
+                      Скасувати
+                    </button>
+                    {promiseContext.record?.nextFollowUpAt ? (
+                      <button
+                        type="button"
+                        className="button-secondary"
+                        disabled={promiseContext.busy || closeDisabled}
+                        onClick={promiseContext.onClearFollowUp}
+                      >
+                        Clear follow-up
+                      </button>
+                    ) : null}
+                  </div>
+                </form>
+              ) : null}
+
+              {!promiseContext.formOpen &&
+              !promiseContext.resolutionOpen &&
+              !promiseContext.contactOpen ? (
                 <div className="filter-actions">
+                  <button
+                    type="button"
+                    disabled={closeDisabled || promiseContext.busy}
+                    onClick={promiseContext.onOpenContact}
+                  >
+                    Log contact
+                  </button>
                   <button
                     type="button"
                     disabled={closeDisabled || promiseContext.busy}
@@ -734,8 +902,8 @@ export function InvoiceDetailPanel({
                 </div>
               ) : null}
               <p className="meta promise-persistence-note">
-                Follow-up і resolution зберігаються локально в браузері (localStorage) за invoice
-                id.
+                Contact, follow-up і resolution зберігаються локально в браузері (localStorage)
+                за invoice id.
               </p>
             </section>
           ) : null}
@@ -869,7 +1037,20 @@ export function InvoiceDetailPanel({
                           {event.note ? (
                             <p className="meta cell-wrap">Note: {event.note}</p>
                           ) : null}
-                          {event.promiseDate ? (
+                          {event.contactChannel || event.contactResult ? (
+                            <p className="meta">
+                              {event.contactChannel
+                                ? contactChannelLabel(event.contactChannel)
+                                : "Contact"}
+                              {event.contactResult
+                                ? ` · ${contactResultLabel(event.contactResult)}`
+                                : ""}
+                            </p>
+                          ) : null}
+                          {event.followUpAt ? (
+                            <p className="meta">Follow-up: {event.followUpAt}</p>
+                          ) : null}
+                          {event.promiseDate && event.type !== "contact_logged" ? (
                             <p className="meta">Promise date: {event.promiseDate}</p>
                           ) : null}
                         </li>

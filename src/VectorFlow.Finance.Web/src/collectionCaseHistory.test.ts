@@ -14,6 +14,7 @@ import {
 import {
   applyCollectionResolution,
   readPromiseFromStorage,
+  saveCollectionContact,
   savePromiseToPay,
   storageKeyForInvoice,
   updatePromiseStatus
@@ -236,8 +237,44 @@ describe("collectionCaseHistory events", () => {
 
   it("parses history URL helpers", () => {
     assert.equal(parseHistoryEventTypeParam("contacted"), "contacted");
+    assert.equal(parseHistoryEventTypeParam("contact_logged"), "contact_logged");
     assert.equal(parseHistoryEventTypeParam("nope"), "");
     assert.equal(parseHistoryFlagParam("1"), true);
     assert.equal(parseHistoryFlagParam("0"), false);
+  });
+
+  it("maps contact_logged into timeline with channel, result, follow-up", () => {
+    const storage = new MemoryStorage();
+    savePromiseToPay(
+      INVOICE_A,
+      { promiseDate: "2026-08-01", note: "base" },
+      { storage, now: NOW }
+    );
+    const contact = saveCollectionContact(
+      INVOICE_A,
+      {
+        channel: "phone",
+        result: "left_message",
+        note: "callback requested",
+        followUpAt: "2026-08-03"
+      },
+      { storage, now: new Date(NOW.getTime() + 1000) }
+    );
+    assert.equal(contact.ok, true);
+    if (!contact.ok) return;
+
+    const timeline = buildCaseTimeline(contact.record, NOW);
+    assert.equal(timeline[0]?.type, "contact_logged");
+    assert.equal(timeline[0]?.contactChannel, "phone");
+    assert.equal(timeline[0]?.contactResult, "left_message");
+    assert.equal(timeline[0]?.followUpAt, "2026-08-03");
+    assert.match(timeline[0]?.description ?? "", /Phone/i);
+    assert.ok(timeline.some((event) => event.type === "promise_created"));
+
+    const ordered = timeline.map((event) => event.atUtc);
+    assert.deepEqual(
+      ordered,
+      [...ordered].sort((a, b) => (a < b ? 1 : a > b ? -1 : 0))
+    );
   });
 });

@@ -19,6 +19,7 @@ export type CollectionActivityEventType =
   | "promise_broken"
   | "follow_up_required"
   | "contacted"
+  | "contact_logged"
   | "paid"
   | "partially_paid"
   | "new_promise"
@@ -29,6 +30,16 @@ export type CollectionActivityEventType =
 
 export type CollectionActivityEventTypeFilter = "" | CollectionActivityEventType;
 
+export type ContactChannel = "phone" | "email" | "message" | "other";
+
+export type ContactResult =
+  | "reached"
+  | "no_answer"
+  | "left_message"
+  | "disputed"
+  | "payment_promised"
+  | "other";
+
 export type CollectionActivityEvent = {
   id: string;
   type: CollectionActivityEventType;
@@ -36,6 +47,9 @@ export type CollectionActivityEvent = {
   description: string;
   note: string | null;
   promiseDate: string | null;
+  contactChannel: ContactChannel | null;
+  contactResult: ContactResult | null;
+  followUpAt: string | null;
 };
 
 export type CaseHistorySummary = {
@@ -74,6 +88,7 @@ export const ACTIVITY_EVENT_TYPE_OPTIONS: readonly {
   { id: "promise_broken", label: "Promise broken" },
   { id: "follow_up_required", label: "Follow-up required" },
   { id: "contacted", label: "Contacted" },
+  { id: "contact_logged", label: "Contact logged" },
   { id: "paid", label: "Paid" },
   { id: "partially_paid", label: "Partially paid" },
   { id: "new_promise", label: "New promise" },
@@ -83,8 +98,38 @@ export const ACTIVITY_EVENT_TYPE_OPTIONS: readonly {
   { id: "completed", label: "Completed" }
 ];
 
+export const CONTACT_CHANNEL_OPTIONS: readonly {
+  id: ContactChannel;
+  label: string;
+}[] = [
+  { id: "phone", label: "Phone" },
+  { id: "email", label: "Email" },
+  { id: "message", label: "Message" },
+  { id: "other", label: "Other" }
+];
+
+export const CONTACT_RESULT_OPTIONS: readonly {
+  id: ContactResult;
+  label: string;
+}[] = [
+  { id: "reached", label: "Reached" },
+  { id: "no_answer", label: "No answer" },
+  { id: "left_message", label: "Left message" },
+  { id: "disputed", label: "Disputed" },
+  { id: "payment_promised", label: "Payment promised" },
+  { id: "other", label: "Other" }
+];
+
 const EVENT_TYPE_SET: ReadonlySet<string> = new Set(
   ACTIVITY_EVENT_TYPE_OPTIONS.map((option) => option.id).filter(Boolean)
+);
+
+const CONTACT_CHANNEL_SET: ReadonlySet<string> = new Set(
+  CONTACT_CHANNEL_OPTIONS.map((option) => option.id)
+);
+
+const CONTACT_RESULT_SET: ReadonlySet<string> = new Set(
+  CONTACT_RESULT_OPTIONS.map((option) => option.id)
 );
 
 const EVENT_LABELS: Record<CollectionActivityEventType, string> = {
@@ -93,6 +138,7 @@ const EVENT_LABELS: Record<CollectionActivityEventType, string> = {
   promise_broken: "Promise broken",
   follow_up_required: "Follow-up required",
   contacted: "Contacted",
+  contact_logged: "Contact logged",
   paid: "Paid",
   partially_paid: "Partially paid",
   new_promise: "New promise",
@@ -122,6 +168,30 @@ export function activityEventTypeLabel(type: CollectionActivityEventType): strin
   return EVENT_LABELS[type] ?? type;
 }
 
+export function contactChannelLabel(channel: ContactChannel): string {
+  return CONTACT_CHANNEL_OPTIONS.find((option) => option.id === channel)?.label ?? channel;
+}
+
+export function contactResultLabel(result: ContactResult): string {
+  return CONTACT_RESULT_OPTIONS.find((option) => option.id === result)?.label ?? result;
+}
+
+export function parseContactChannel(value: string | null | undefined): ContactChannel | null {
+  if (value == null) {
+    return null;
+  }
+  const trimmed = value.trim();
+  return CONTACT_CHANNEL_SET.has(trimmed) ? (trimmed as ContactChannel) : null;
+}
+
+export function parseContactResult(value: string | null | undefined): ContactResult | null {
+  if (value == null) {
+    return null;
+  }
+  const trimmed = value.trim();
+  return CONTACT_RESULT_SET.has(trimmed) ? (trimmed as ContactResult) : null;
+}
+
 export function parseHistoryEventTypeParam(
   value: string | null | undefined
 ): CollectionActivityEventTypeFilter {
@@ -144,14 +214,27 @@ export function parseHistoryFlagParam(value: string | null | undefined): boolean
 }
 
 export function activityEventFingerprint(
-  event: Pick<CollectionActivityEvent, "type" | "atUtc" | "promiseDate" | "note" | "description">
+  event: Pick<
+    CollectionActivityEvent,
+    | "type"
+    | "atUtc"
+    | "promiseDate"
+    | "note"
+    | "description"
+    | "contactChannel"
+    | "contactResult"
+    | "followUpAt"
+  >
 ): string {
   return [
     event.type,
     event.atUtc,
     event.promiseDate ?? "",
     event.note ?? "",
-    event.description
+    event.description,
+    event.contactChannel ?? "",
+    event.contactResult ?? "",
+    event.followUpAt ?? ""
   ].join("|");
 }
 
@@ -161,19 +244,28 @@ export function createActivityEvent(input: {
   description?: string;
   note?: string | null;
   promiseDate?: string | null;
+  contactChannel?: ContactChannel | null;
+  contactResult?: ContactResult | null;
+  followUpAt?: string | null;
   id?: string;
 }): CollectionActivityEvent {
   const note = input.note?.trim() ? input.note.trim() : null;
   const promiseDate = input.promiseDate?.trim() ? input.promiseDate.trim() : null;
+  const contactChannel = input.contactChannel ?? null;
+  const contactResult = input.contactResult ?? null;
+  const followUpAt = input.followUpAt?.trim() ? input.followUpAt.trim() : null;
   const description =
     input.description?.trim() ||
-    defaultDescription(input.type, promiseDate, note);
+    defaultDescription(input.type, promiseDate, note, contactChannel, contactResult, followUpAt);
   const draft = {
     type: input.type,
     atUtc: input.atUtc,
     description,
     note,
-    promiseDate
+    promiseDate,
+    contactChannel,
+    contactResult,
+    followUpAt
   };
   return {
     id: input.id?.trim() || activityEventFingerprint(draft),
@@ -184,8 +276,23 @@ export function createActivityEvent(input: {
 function defaultDescription(
   type: CollectionActivityEventType,
   promiseDate: string | null,
-  note: string | null
+  note: string | null,
+  contactChannel: ContactChannel | null = null,
+  contactResult: ContactResult | null = null,
+  followUpAt: string | null = null
 ): string {
+  if (type === "contact_logged") {
+    const channel = contactChannel ? contactChannelLabel(contactChannel) : "Contact";
+    const result = contactResult ? contactResultLabel(contactResult) : "logged";
+    const parts = [`${channel} · ${result}`];
+    if (note) {
+      parts.push(note.length > 80 ? `${note.slice(0, 77)}…` : note);
+    }
+    if (followUpAt) {
+      parts.push(`follow-up ${followUpAt}`);
+    }
+    return parts.join(" — ");
+  }
   const label = activityEventTypeLabel(type);
   if (type === "promise_created" || type === "promise_updated" || type === "new_promise") {
     return promiseDate ? `${label}: ${promiseDate}` : label;
@@ -223,10 +330,27 @@ export function sanitizeActivityEvent(raw: unknown): CollectionActivityEvent | n
     typeof candidate.promiseDate === "string" && candidate.promiseDate.trim()
       ? candidate.promiseDate.trim()
       : null;
+  const contactChannel = parseContactChannel(
+    typeof candidate.contactChannel === "string" ? candidate.contactChannel : null
+  );
+  const contactResult = parseContactResult(
+    typeof candidate.contactResult === "string" ? candidate.contactResult : null
+  );
+  const followUpAt =
+    typeof candidate.followUpAt === "string" && candidate.followUpAt.trim()
+      ? candidate.followUpAt.trim()
+      : null;
   const description =
     typeof candidate.description === "string" && candidate.description.trim()
       ? candidate.description.trim()
-      : defaultDescription(typeRaw as CollectionActivityEventType, promiseDate, note);
+      : defaultDescription(
+          typeRaw as CollectionActivityEventType,
+          promiseDate,
+          note,
+          contactChannel,
+          contactResult,
+          followUpAt
+        );
   const id =
     typeof candidate.id === "string" && candidate.id.trim()
       ? candidate.id.trim()
@@ -235,7 +359,10 @@ export function sanitizeActivityEvent(raw: unknown): CollectionActivityEvent | n
           atUtc,
           promiseDate,
           note,
-          description
+          description,
+          contactChannel,
+          contactResult,
+          followUpAt
         });
   return {
     id,
@@ -243,7 +370,10 @@ export function sanitizeActivityEvent(raw: unknown): CollectionActivityEvent | n
     atUtc,
     description,
     note,
-    promiseDate
+    promiseDate,
+    contactChannel,
+    contactResult,
+    followUpAt
   };
 }
 
@@ -367,7 +497,7 @@ export function filterCaseTimeline(
       return true;
     }
     const haystack =
-      `${event.description} ${event.note ?? ""} ${event.promiseDate ?? ""} ${activityEventTypeLabel(event.type)}`.toLowerCase();
+      `${event.description} ${event.note ?? ""} ${event.promiseDate ?? ""} ${event.followUpAt ?? ""} ${event.contactChannel ?? ""} ${event.contactResult ?? ""} ${activityEventTypeLabel(event.type)}`.toLowerCase();
     return haystack.includes(search);
   });
 }
@@ -389,6 +519,7 @@ export function buildCaseHistorySummary(
 
   const lastContact = events.find(
     (event) =>
+      event.type === "contact_logged" ||
       event.type === "contacted" ||
       event.type === "unable_to_contact" ||
       event.type === "follow_up_required"
@@ -397,6 +528,7 @@ export function buildCaseHistorySummary(
   const totalFollowUps = events.filter(
     (event) =>
       event.type === "follow_up_required" ||
+      event.type === "contact_logged" ||
       event.type === "contacted" ||
       event.type === "unable_to_contact"
   ).length;
@@ -546,4 +678,28 @@ export function historyAfterResolution(
     );
   }
   return history;
+}
+
+export function historyAfterContact(
+  existing: PromiseToPayRecord | null,
+  contact: {
+    channel: ContactChannel;
+    result: ContactResult;
+    note: string;
+    followUpAt: string | null;
+  },
+  now: Date = new Date()
+): CollectionActivityEvent[] {
+  return appendActivityEvent(
+    existing?.history ?? [],
+    createActivityEvent({
+      type: "contact_logged",
+      atUtc: now.toISOString(),
+      note: contact.note || null,
+      promiseDate: existing?.promiseDate ?? contact.followUpAt,
+      contactChannel: contact.channel,
+      contactResult: contact.result,
+      followUpAt: contact.followUpAt
+    })
+  );
 }

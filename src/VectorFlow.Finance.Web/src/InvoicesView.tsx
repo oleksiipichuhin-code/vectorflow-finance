@@ -61,7 +61,9 @@ import {
   groupPromiseFollowUps,
   listPromiseRecordsFromStorage,
   readPromiseFromStorage,
+  saveCollectionContact,
   savePromiseToPay,
+  updateContactFollowUp,
   updatePromiseStatus,
   type CollectionResolutionKind,
   type PromiseFollowUpItem,
@@ -82,7 +84,9 @@ import {
 } from "./collectionWorkbench";
 import {
   buildCaseHistoryView,
-  type CollectionActivityEventTypeFilter
+  type CollectionActivityEventTypeFilter,
+  type ContactChannel,
+  type ContactResult
 } from "./collectionCaseHistory";
 import {
   canViewInvoiceDetails,
@@ -321,6 +325,11 @@ export function InvoicesView({
   const [resolutionPromiseDate, setResolutionPromiseDate] = useState("");
   const [resolutionReason, setResolutionReason] = useState("");
   const [resolutionNote, setResolutionNote] = useState("");
+  const [contactOpen, setContactOpen] = useState(false);
+  const [contactChannel, setContactChannel] = useState<ContactChannel | "">("");
+  const [contactResult, setContactResult] = useState<ContactResult | "">("");
+  const [contactNote, setContactNote] = useState("");
+  const [contactFollowUpAt, setContactFollowUpAt] = useState("");
   const [filterValidationError, setFilterValidationError] = useState<string | null>(null);
 
   const [page, setPage] = useState(() => (initialPage < 1 ? 1 : Math.floor(initialPage)));
@@ -595,6 +604,11 @@ export function InvoicesView({
     setResolutionPromiseDate("");
     setResolutionReason("");
     setResolutionNote("");
+    setContactOpen(false);
+    setContactChannel("");
+    setContactResult("");
+    setContactNote("");
+    setContactFollowUpAt("");
   }, [detailTargetId]);
 
   function publishDiscovery(
@@ -2630,6 +2644,7 @@ export function InvoicesView({
 
   function openPromiseForm(existing: PromiseToPayRecord | null) {
     setResolutionOpen(false);
+    setContactOpen(false);
     setPromiseFormOpen(true);
     setPromiseDateInput(existing?.promiseDate ?? "");
     setPromiseNoteInput(existing?.note ?? "");
@@ -2644,6 +2659,7 @@ export function InvoicesView({
 
   function openResolutionForm() {
     setPromiseFormOpen(false);
+    setContactOpen(false);
     setResolutionOpen(true);
     setResolutionKind("");
     setResolutionPaymentDate("");
@@ -2658,6 +2674,23 @@ export function InvoicesView({
 
   function closeResolutionForm() {
     setResolutionOpen(false);
+    setPromiseFormError(null);
+  }
+
+  function openContactForm(existing: PromiseToPayRecord | null) {
+    setPromiseFormOpen(false);
+    setResolutionOpen(false);
+    setContactOpen(true);
+    setContactChannel("");
+    setContactResult("");
+    setContactNote("");
+    setContactFollowUpAt(existing?.nextFollowUpAt ?? "");
+    setPromiseFormError(null);
+    setPromiseFormSuccess(null);
+  }
+
+  function closeContactForm() {
+    setContactOpen(false);
     setPromiseFormError(null);
   }
 
@@ -2718,6 +2751,55 @@ export function InvoicesView({
     }
     setPromiseFormSuccess(`Resolution збережено: ${result.record.resolution?.kind}.`);
     setResolutionOpen(false);
+    bumpPromiseRevision();
+  }
+
+  function handleSaveContact(invoiceId: string) {
+    setPromiseBusy(true);
+    setPromiseFormError(null);
+    setPromiseFormSuccess(null);
+    const result = saveCollectionContact(invoiceId, {
+      channel: contactChannel,
+      result: contactResult,
+      note: contactNote,
+      followUpAt: contactFollowUpAt
+    });
+    setPromiseBusy(false);
+    if (!result.ok) {
+      setPromiseFormError(result.error);
+      return;
+    }
+    setPromiseFormSuccess(
+      result.record.nextFollowUpAt
+        ? `Контакт збережено. Follow-up: ${result.record.nextFollowUpAt}.`
+        : "Контакт збережено."
+    );
+    setContactOpen(false);
+    setContactChannel("");
+    setContactResult("");
+    setContactNote("");
+    setContactFollowUpAt("");
+    bumpPromiseRevision();
+    if (result.needsPromise) {
+      openPromiseForm(result.record);
+      setPromiseFormSuccess(
+        "Контакт збережено. Вкажіть дату обіцянки в Promise to pay."
+      );
+    }
+  }
+
+  function handleClearFollowUp(invoiceId: string) {
+    setPromiseBusy(true);
+    setPromiseFormError(null);
+    setPromiseFormSuccess(null);
+    const result = updateContactFollowUp(invoiceId, null);
+    setPromiseBusy(false);
+    if (!result.ok) {
+      setPromiseFormError(result.error);
+      return;
+    }
+    setContactFollowUpAt("");
+    setPromiseFormSuccess("Follow-up очищено.");
     bumpPromiseRevision();
   }
 
@@ -3835,6 +3917,11 @@ export function InvoicesView({
                     resolutionPromiseDate,
                     resolutionReason,
                     resolutionNote,
+                    contactOpen,
+                    contactChannel,
+                    contactResult,
+                    contactNote,
+                    contactFollowUpAt,
                     onOpenForm: () => openPromiseForm(detailPromiseRecord),
                     onCloseForm: closePromiseForm,
                     onPromiseDateChange: setPromiseDateInput,
@@ -3855,7 +3942,15 @@ export function InvoicesView({
                     onResolutionPromiseDateChange: setResolutionPromiseDate,
                     onResolutionReasonChange: setResolutionReason,
                     onResolutionNoteChange: setResolutionNote,
-                    onSaveResolution: () => handleSaveResolution(detailTargetId)
+                    onSaveResolution: () => handleSaveResolution(detailTargetId),
+                    onOpenContact: () => openContactForm(detailPromiseRecord),
+                    onCloseContact: closeContactForm,
+                    onContactChannelChange: setContactChannel,
+                    onContactResultChange: setContactResult,
+                    onContactNoteChange: setContactNote,
+                    onContactFollowUpAtChange: setContactFollowUpAt,
+                    onSaveContact: () => handleSaveContact(detailTargetId),
+                    onClearFollowUp: () => handleClearFollowUp(detailTargetId)
                   }
                 : null
             }
@@ -3959,7 +4054,7 @@ export function InvoicesView({
                         <th>Invoice Number</th>
                         <th>Customer</th>
                         <th>Amount</th>
-                        <th>Promise date</th>
+                        <th>Next action date</th>
                         <th>Next Best Action</th>
                         <th>Status</th>
                         <th>Дія</th>
@@ -3992,7 +4087,12 @@ export function InvoicesView({
                             <td className="cell-wrap">{item.documentNumber}</td>
                             <td className="cell-wrap">{item.counterpartyReference}</td>
                             <td>{formatMoney(item.overdueAmount, item.currency)}</td>
-                            <td>{item.promiseDate}</td>
+                            <td>
+                              {item.nextActionDate}
+                              {item.nextFollowUpAt ? (
+                                <span className="meta"> · follow-up</span>
+                              ) : null}
+                            </td>
                             <td>
                               <span className="aging-badge aging-badge--promise aging-badge--nba">
                                 {item.nextBestActionLabel}
