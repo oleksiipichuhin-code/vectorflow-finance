@@ -220,9 +220,9 @@ export function DashboardView({
             </div>
             <p className="meta">
               Чернетки — <span className="mono">status=Draft</span>. Виставлені —
-              <span className="mono"> status=Issued</span>. Прострочені — Issued зі строком
-              оплати раніше за сьогоднішню календарну дату (не факт оплати). Сторінка 1, стан у
-              shareable URL.
+              <span className="mono"> status=Issued</span>. Прострочені — collections workspace
+              для Issued зі строком оплати раніше за сьогоднішню календарну дату (не факт
+              оплати). Сторінка 1, стан у shareable URL.
             </p>
           </div>
         ) : (

@@ -40,6 +40,17 @@ import {
   overdueQueueDueToDateInput
 } from "./invoiceDueDateAging";
 import {
+  AGING_BUCKET_OPTIONS,
+  COLLECTIONS_PAGE_SIZE,
+  agingBucketForInvoice,
+  agingBucketLabel,
+  buildCollectionsQueue,
+  buildCollectionsSummary,
+  collectionsQueuePosition,
+  overdueDaysForInvoice,
+  type AgingBucketFilter
+} from "./invoiceCollections";
+import {
   canViewInvoiceDetails,
   DETAIL_RELOAD_AFTER_MUTATION_FAILED_MESSAGE,
   interpretInvoiceDetailLoadError,
@@ -117,11 +128,13 @@ type InvoicesViewProps = {
   initialPage?: number;
   initialFilters?: InvoiceListFilters;
   initialInvoiceQueue?: InvoiceQueueMode;
+  initialAgingBucket?: AgingBucketFilter;
   selectedInvoiceId?: string | null;
   onDiscoveryChange?: (
     page: number,
     filters: InvoiceListFilters,
-    invoiceQueue?: InvoiceQueueMode
+    invoiceQueue?: InvoiceQueueMode,
+    agingBucket?: AgingBucketFilter
   ) => void;
   onSelectedInvoiceIdChange?: (
     invoiceId: string | null,
@@ -146,6 +159,7 @@ export function InvoicesView({
   initialPage = 1,
   initialFilters = emptyFilters,
   initialInvoiceQueue = "",
+  initialAgingBucket = "",
   selectedInvoiceId = null,
   onDiscoveryChange,
   onSelectedInvoiceIdChange,
@@ -164,6 +178,9 @@ export function InvoicesView({
   }));
   const [invoiceQueue, setInvoiceQueue] = useState<InvoiceQueueMode>(
     () => initialInvoiceQueue
+  );
+  const [agingBucket, setAgingBucket] = useState<AgingBucketFilter>(
+    () => (initialInvoiceQueue === "overdue" ? initialAgingBucket : "")
   );
   const [filterValidationError, setFilterValidationError] = useState<string | null>(null);
 
@@ -339,7 +356,8 @@ export function InvoicesView({
       setLineRemoveSuccess(null);
       dismissDetailFromUrl({ replace: true });
       setInvoiceQueue("");
-      onDiscoveryChange?.(1, emptyFilters, "");
+      setAgingBucket("");
+      onDiscoveryChange?.(1, emptyFilters, "", "");
     }
   }, [workspace?.id, onDiscoveryChange, onSelectedInvoiceIdChange, selectedInvoiceId]);
 
@@ -350,9 +368,11 @@ export function InvoicesView({
       filters: InvoiceListFilters,
       queue: InvoiceQueueMode = ""
     ) => {
+      const requestPageSize =
+        queue === "overdue" ? COLLECTIONS_PAGE_SIZE : INVOICE_PAGE_SIZE;
       const { query, validationError } = buildInvoiceListQuery(
         nextPage,
-        INVOICE_PAGE_SIZE,
+        requestPageSize,
         filters,
         queue
       );
@@ -424,13 +444,14 @@ export function InvoicesView({
       (draftFilters.status === "Issued" || draftFilters.status === "")
         ? "overdue"
         : "";
+    const nextAging: AgingBucketFilter = nextQueue === "overdue" ? agingBucket : "";
     const filtersForQuery =
       nextQueue === "overdue"
         ? { ...draftFilters, status: "Issued" as const }
         : { ...draftFilters };
     const { validationError } = buildInvoiceListQuery(
       1,
-      INVOICE_PAGE_SIZE,
+      nextQueue === "overdue" ? COLLECTIONS_PAGE_SIZE : INVOICE_PAGE_SIZE,
       filtersForQuery,
       nextQueue
     );
@@ -444,7 +465,8 @@ export function InvoicesView({
     setAppliedFilters({ ...filtersForQuery });
     setDraftFilters({ ...filtersForQuery });
     setInvoiceQueue(nextQueue);
-    onDiscoveryChange?.(1, { ...filtersForQuery }, nextQueue);
+    setAgingBucket(nextAging);
+    onDiscoveryChange?.(1, { ...filtersForQuery }, nextQueue, nextAging);
   }
 
   function clearFilters() {
@@ -458,18 +480,20 @@ export function InvoicesView({
       setDraftFilters(next);
       setAppliedFilters(next);
       setInvoiceQueue("");
+      setAgingBucket("");
       setFilterValidationError(null);
       setPage(1);
-      onDiscoveryChange?.(1, next, "");
+      onDiscoveryChange?.(1, next, "", "");
       return;
     }
 
     setDraftFilters(emptyFilters);
     setAppliedFilters(emptyFilters);
     setInvoiceQueue("");
+    setAgingBucket("");
     setFilterValidationError(null);
     setPage(1);
-    onDiscoveryChange?.(1, emptyFilters, "");
+    onDiscoveryChange?.(1, emptyFilters, "", "");
   }
 
   async function handleCreateInvoice(event: FormEvent<HTMLFormElement>) {
@@ -505,6 +529,7 @@ export function InvoicesView({
       setDraftFilters(emptyFilters);
       setAppliedFilters(emptyFilters);
       setInvoiceQueue("");
+      setAgingBucket("");
       setFilterValidationError(null);
       setPage(1);
       setHighlightedId(created.id);
@@ -521,7 +546,7 @@ export function InvoicesView({
       setCreateSuccess(
         `Чернетку рахунка «${created.documentNumber}» створено. Запис показано у списку нижче.`
       );
-      onDiscoveryChange?.(1, emptyFilters, "");
+      onDiscoveryChange?.(1, emptyFilters, "", "");
       await loadPage(workspace.id, 1, emptyFilters, "");
     } catch (createErr) {
       setCreateError(
@@ -1865,7 +1890,37 @@ export function InvoicesView({
     !appliedFilters.createdToDate?.trim() &&
     !appliedFilters.issuedFromDate?.trim() &&
     !appliedFilters.issuedToDate?.trim() &&
-    !appliedFilters.dueFromDate?.trim();
+    !appliedFilters.dueFromDate?.trim() &&
+    !agingBucket;
+
+  const collectionsNow = new Date();
+  const collectionsQueue = overdueQueueActive
+    ? buildCollectionsQueue(invoices, agingBucket, collectionsNow)
+    : invoices;
+  const collectionsSummary = overdueQueueActive
+    ? buildCollectionsSummary(invoices, agingBucket, collectionsNow)
+    : null;
+  const collectionsIds = collectionsQueue.map((invoice) => invoice.id);
+  const collectionsPosition = collectionsQueuePosition(collectionsIds, detailTargetId);
+  const displayInvoices = overdueQueueActive ? collectionsQueue : invoices;
+  const listEmpty = overdueQueueActive
+    ? !loading && !error && collectionsQueue.length === 0
+    : !loading && !error && invoices.length === 0;
+
+  function openNextCollectionsInvoice() {
+    if (!collectionsPosition?.nextId) {
+      return;
+    }
+
+    const nextInvoice = collectionsQueue.find(
+      (invoice) => invoice.id === collectionsPosition.nextId
+    );
+    if (nextInvoice) {
+      beginViewInvoiceDetails(nextInvoice);
+    } else {
+      onSelectedInvoiceIdChange?.(collectionsPosition.nextId);
+    }
+  }
 
   function applyDraftInvoicesFilter() {
     if (onShowDraftInvoices) {
@@ -1877,9 +1932,10 @@ export function InvoicesView({
     setDraftFilters(next);
     setAppliedFilters(next);
     setInvoiceQueue("");
+    setAgingBucket("");
     setFilterValidationError(null);
     setPage(1);
-    onDiscoveryChange?.(1, next, "");
+    onDiscoveryChange?.(1, next, "", "");
   }
 
   function applyIssuedInvoicesFilter() {
@@ -1892,9 +1948,10 @@ export function InvoicesView({
     setDraftFilters(next);
     setAppliedFilters(next);
     setInvoiceQueue("");
+    setAgingBucket("");
     setFilterValidationError(null);
     setPage(1);
-    onDiscoveryChange?.(1, next, "");
+    onDiscoveryChange?.(1, next, "", "");
   }
 
   function applyOverdueIssuedInvoicesFilter() {
@@ -1907,9 +1964,20 @@ export function InvoicesView({
     setDraftFilters(discovery.invoiceFilters);
     setAppliedFilters(discovery.invoiceFilters);
     setInvoiceQueue("overdue");
+    setAgingBucket("");
     setFilterValidationError(null);
     setPage(1);
-    onDiscoveryChange?.(1, discovery.invoiceFilters, "overdue");
+    onDiscoveryChange?.(1, discovery.invoiceFilters, "overdue", "");
+  }
+
+  function applyAgingBucket(nextBucket: AgingBucketFilter) {
+    if (!isOverdueInvoiceQueue(invoiceQueue)) {
+      return;
+    }
+
+    setAgingBucket(nextBucket);
+    setPage(1);
+    onDiscoveryChange?.(1, appliedFilters, "overdue", nextBucket);
   }
 
   return (
@@ -2003,12 +2071,73 @@ export function InvoicesView({
 
             {overdueQueueActive ? (
               <div className="queue-banner" role="status">
-                <p className="queue-banner-title">Черга: прострочені виставлені рахунки</p>
+                <p className="queue-banner-title">Collections: прострочені виставлені рахунки</p>
                 <p className="meta">
                   Серверний фільтр: <span className="mono">status=Issued</span>, строк оплати по{" "}
                   <span className="mono">{effectiveDueToForSummary}</span> (включно; сьогоднішній
-                  строк виключено). Це не статус оплати.
+                  строк виключено). Сортування: більше днів прострочення → більша сума рахунка.
+                  Це не статус оплати.
                 </p>
+                {collectionsSummary ? (
+                  <dl className="collections-summary facts">
+                    <div>
+                      <dt>Overdue у наборі</dt>
+                      <dd>{collectionsSummary.overdueCount}</dd>
+                    </div>
+                    <div>
+                      <dt>Bucket</dt>
+                      <dd>
+                        {collectionsSummary.bucketLabel} · {collectionsSummary.bucketCount}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Найстарша прострочка</dt>
+                      <dd>
+                        {collectionsSummary.oldestDaysOverdue == null
+                          ? "—"
+                          : `${collectionsSummary.oldestDaysOverdue} дн.`}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Сума рахунків (bucket)</dt>
+                      <dd>
+                        {collectionsSummary.totalsByCurrency.length === 0
+                          ? "—"
+                          : collectionsSummary.totalsByCurrency
+                              .map((row) => formatMoney(row.amount, row.currency))
+                              .join(" · ")}
+                      </dd>
+                    </div>
+                  </dl>
+                ) : null}
+                {totalCount > invoices.length ? (
+                  <p className="meta">
+                    Завантажено {invoices.length} з {totalCount} за запитом (ліміт collections{" "}
+                    {COLLECTIONS_PAGE_SIZE}). Підсумок і Next — у межах завантаженого набору.
+                  </p>
+                ) : null}
+                <div
+                  className="aging-bucket-row"
+                  role="group"
+                  aria-label="Aging buckets прострочки"
+                >
+                  {AGING_BUCKET_OPTIONS.map((option) => (
+                    <button
+                      key={option.id || "all"}
+                      type="button"
+                      className={
+                        agingBucket === option.id
+                          ? "list-shortcut list-shortcut--active"
+                          : "list-shortcut"
+                      }
+                      aria-pressed={agingBucket === option.id}
+                      disabled={loading}
+                      onClick={() => applyAgingBucket(option.id)}
+                    >
+                      {option.shortLabel}
+                    </button>
+                  ))}
+                </div>
               </div>
             ) : null}
 
@@ -2155,7 +2284,10 @@ export function InvoicesView({
             {filtersActive ? (
               <p className="meta">
                 Активні фільтри:
-                {overdueQueueActive ? " черга прострочених" : ""}
+                {overdueQueueActive ? " черга collections" : ""}
+                {overdueQueueActive && agingBucket
+                  ? ` · aging ${agingBucketLabel(agingBucket)}`
+                  : ""}
                 {appliedFilters.documentNumber?.trim()
                   ? ` номер «${appliedFilters.documentNumber.trim()}»`
                   : ""}
@@ -2620,6 +2752,29 @@ export function InvoicesView({
               beginCreateAccrual(invoice, { preserveDetail: true })
             }
             onOpenAccrual={onOpenAccrual}
+            collectionsContext={
+              overdueQueueActive && detailInvoice
+                ? {
+                    daysOverdue: overdueDaysForInvoice(detailInvoice),
+                    bucketLabel: (() => {
+                      const bucket = agingBucketForInvoice(detailInvoice);
+                      return bucket ? agingBucketLabel(bucket) : "—";
+                    })(),
+                    bucketId: agingBucketForInvoice(detailInvoice),
+                    amountDisplay: formatMoney(
+                      detailInvoice.totalAmount,
+                      detailInvoice.currency
+                    ),
+                    counterpartyReference: detailInvoice.counterpartyReference,
+                    status: detailInvoice.status,
+                    dueDateDisplay: formatDate(detailInvoice.dueDateUtc),
+                    positionLabel: collectionsPosition?.label ?? null,
+                    canGoNext: Boolean(collectionsPosition?.nextId),
+                    isLast: Boolean(collectionsPosition?.isLast),
+                    onNext: openNextCollectionsInvoice
+                  }
+                : null
+            }
           />
         ) : null}
 
@@ -2630,10 +2785,12 @@ export function InvoicesView({
             error={error}
             onRetry={() => void loadPage(workspace.id, page, appliedFilters, invoiceQueue)}
             retryDisabled={loading}
-            empty={invoices.length === 0}
+            empty={listEmpty}
             emptyMessage={
               overdueQueueActive
-                ? "Прострочених виставлених рахунків немає (строк оплати раніше за сьогодні)."
+                ? agingBucket
+                  ? `У bucket «${agingBucketLabel(agingBucket)}» немає прострочених рахунків у завантаженому наборі.`
+                  : "Прострочених виставлених рахунків немає (строк оплати раніше за сьогодні)."
                 : filtersActive
                   ? "За поточними фільтрами рахунків немає."
                   : "Рахунків ще немає. Створіть чернетку через форму вище."
@@ -2641,10 +2798,12 @@ export function InvoicesView({
           />
         ) : null}
 
-        {invoices.length > 0 ? (
+        {displayInvoices.length > 0 ? (
           <>
             <p className="meta">
-              Сторінка {page} · показано {invoices.length} · усього {totalCount}
+              {overdueQueueActive
+                ? `Collections queue · показано ${displayInvoices.length} · overdue у запиті ${totalCount}`
+                : `Сторінка ${page} · показано ${displayInvoices.length} · усього ${totalCount}`}
             </p>
             <div className="table-wrap">
               <table>
@@ -2656,19 +2815,28 @@ export function InvoicesView({
                     <th>Валюта</th>
                     <th>Виставлено</th>
                     <th>Строк оплати</th>
+                    <th>Статус</th>
                     <th>Статус строку</th>
-                    <th>Дні</th>
+                    <th>Дні / bucket</th>
                     <th>Дія</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {invoices.map((invoice) => {
+                  {displayInvoices.map((invoice) => {
                     const aging = classifyDueDateAging(invoice.dueDateUtc);
+                    const bucket = agingBucketForInvoice(invoice);
+                    const daysOverdue = overdueDaysForInvoice(invoice);
+                    const selected =
+                      invoice.id === detailTargetId || invoice.id === highlightedId;
                     return (
                     <tr
                       key={invoice.id}
                       data-row-id={invoice.id}
-                      className={invoice.id === highlightedId ? "row-highlight" : undefined}
+                      className={
+                        selected
+                          ? "row-highlight row-selected"
+                          : undefined
+                      }
                     >
                       <td className="cell-wrap">{invoice.documentNumber}</td>
                       <td className="cell-wrap">{invoice.counterpartyReference}</td>
@@ -2676,12 +2844,17 @@ export function InvoicesView({
                       <td>{invoice.currency}</td>
                       <td>{formatDate(invoice.issuedAtUtc)}</td>
                       <td>{formatDate(invoice.dueDateUtc)}</td>
+                      <td>{invoice.status}</td>
                       <td>
                         <span className={`aging-badge aging-badge--${aging.kind}`}>
                           {aging.label}
                         </span>
                       </td>
-                      <td>{aging.dayOffsetLabel}</td>
+                      <td>
+                        {daysOverdue != null && bucket
+                          ? `${daysOverdue} дн. · ${bucket}`
+                          : aging.dayOffsetLabel}
+                      </td>
                       <td>
                         <div className="filter-actions">
                           {canViewInvoiceDetails(invoice) ? (
@@ -2825,7 +2998,7 @@ export function InvoicesView({
                 onClick={() => {
                   const nextPage = Math.max(1, page - 1);
                   setPage(nextPage);
-                  onDiscoveryChange?.(nextPage, appliedFilters, invoiceQueue);
+                  onDiscoveryChange?.(nextPage, appliedFilters, invoiceQueue, agingBucket);
                 }}
               >
                 Назад
@@ -2839,7 +3012,7 @@ export function InvoicesView({
                 onClick={() => {
                   const nextPage = page + 1;
                   setPage(nextPage);
-                  onDiscoveryChange?.(nextPage, appliedFilters, invoiceQueue);
+                  onDiscoveryChange?.(nextPage, appliedFilters, invoiceQueue, agingBucket);
                 }}
               >
                 Далі

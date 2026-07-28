@@ -17,6 +17,20 @@ import {
 import { formatDate, formatMoney } from "../format";
 import { StatusMessage } from "./Panel";
 
+type InvoiceDetailCollectionsContext = {
+  daysOverdue: number | null;
+  bucketLabel: string;
+  bucketId: string | null;
+  amountDisplay: string;
+  counterpartyReference: string;
+  status: string;
+  dueDateDisplay: string;
+  positionLabel: string | null;
+  canGoNext: boolean;
+  isLast: boolean;
+  onNext: () => void;
+};
+
 type InvoiceDetailPanelProps = {
   invoice: Invoice | null;
   loading: boolean;
@@ -40,6 +54,7 @@ type InvoiceDetailPanelProps = {
   relatedAccruals?: Accrual[];
   relatedAccrualsLoading?: boolean;
   relatedAccrualsError?: string | null;
+  collectionsContext?: InvoiceDetailCollectionsContext | null;
   onClose: () => void;
   onRetry: () => void;
   onRetryRelatedAccruals?: () => void;
@@ -76,6 +91,7 @@ export function InvoiceDetailPanel({
   relatedAccruals = [],
   relatedAccrualsLoading = false,
   relatedAccrualsError = null,
+  collectionsContext = null,
   onClose,
   onRetry,
   onRetryRelatedAccruals,
@@ -243,6 +259,76 @@ export function InvoiceDetailPanel({
             </dl>
             <p className="meta due-date-aging-note">{fields.dueDateAging.explanation}</p>
           </section>
+
+          {collectionsContext ? (
+            <section
+              className="collections-context-block"
+              aria-labelledby="invoice-collections-heading"
+            >
+              <h4 id="invoice-collections-heading">Collections</h4>
+              <dl className="facts">
+                <div>
+                  <dt>Дні прострочення</dt>
+                  <dd>
+                    {collectionsContext.daysOverdue == null
+                      ? "—"
+                      : collectionsContext.daysOverdue}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Aging bucket</dt>
+                  <dd>
+                    {collectionsContext.bucketId ? (
+                      <span
+                        className={`aging-badge aging-badge--bucket aging-badge--bucket-${collectionsContext.bucketId.replace("+", "plus")}`}
+                      >
+                        {collectionsContext.bucketLabel}
+                      </span>
+                    ) : (
+                      collectionsContext.bucketLabel
+                    )}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Строк оплати</dt>
+                  <dd>{collectionsContext.dueDateDisplay}</dd>
+                </div>
+                <div>
+                  <dt>Сума рахунка</dt>
+                  <dd>{collectionsContext.amountDisplay}</dd>
+                </div>
+                <div>
+                  <dt>Контрагент</dt>
+                  <dd className="cell-wrap">{collectionsContext.counterpartyReference}</dd>
+                </div>
+                <div>
+                  <dt>Статус invoice</dt>
+                  <dd>{collectionsContext.status}</dd>
+                </div>
+                <div>
+                  <dt>Позиція в queue</dt>
+                  <dd>{collectionsContext.positionLabel ?? "—"}</dd>
+                </div>
+              </dl>
+              <div className="filter-actions">
+                <button
+                  type="button"
+                  disabled={!collectionsContext.canGoNext || closeDisabled}
+                  title={
+                    collectionsContext.isLast
+                      ? "Це останній рахунок у поточній collections queue"
+                      : "Наступний прострочений рахунок у поточному bucket"
+                  }
+                  onClick={collectionsContext.onNext}
+                >
+                  Next overdue invoice
+                </button>
+                {collectionsContext.isLast ? (
+                  <p className="meta">Останній рахунок у поточній collections queue.</p>
+                ) : null}
+              </div>
+            </section>
+          ) : null}
 
           {fields.lines.length > 0 ? (
             <div className="table-wrap">

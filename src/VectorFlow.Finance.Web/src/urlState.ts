@@ -1,4 +1,8 @@
 import type { AccrualListFilters, AccrualStatusFilter } from "./accrualListQuery";
+import {
+  parseAgingBucketParam,
+  type AgingBucketFilter
+} from "./invoiceCollections.ts";
 import type {
   InvoiceListFilters,
   InvoiceQueueMode,
@@ -24,6 +28,11 @@ export type ListDiscovery = {
   accrualFilters: AccrualListFilters;
   /** Issued overdue attention queue (`queue=overdue` in URL). */
   invoiceQueue: InvoiceQueueMode;
+  /**
+   * Collections aging bucket (`aging=` in URL). Meaningful only with queue=overdue.
+   * Empty = all overdue.
+   */
+  agingBucket: AgingBucketFilter;
 };
 
 export type AppUrlState = {
@@ -59,7 +68,8 @@ export const EMPTY_DISCOVERY: ListDiscovery = {
   page: 1,
   invoiceFilters: { ...EMPTY_INVOICE_FILTERS },
   accrualFilters: { ...EMPTY_ACCRUAL_FILTERS },
-  invoiceQueue: ""
+  invoiceQueue: "",
+  agingBucket: ""
 };
 
 export function isAppView(value: string | null | undefined): value is AppView {
@@ -196,7 +206,8 @@ export function createEmptyDiscovery(): ListDiscovery {
     page: 1,
     invoiceFilters: { ...EMPTY_INVOICE_FILTERS },
     accrualFilters: { ...EMPTY_ACCRUAL_FILTERS },
-    invoiceQueue: ""
+    invoiceQueue: "",
+    agingBucket: ""
   };
 }
 
@@ -215,6 +226,10 @@ export function parseUrlSearch(search: string): AppUrlState {
 
   const page = parsePage(params.get("page"));
   const invoiceQueue = view === "invoices" ? parseInvoiceQueue(params.get("queue")) : "";
+  const agingBucket =
+    view === "invoices" && invoiceQueue === "overdue"
+      ? parseAgingBucketParam(params.get("aging"))
+      : "";
 
   const invoiceFilters: InvoiceListFilters = {
     documentNumber: params.get("documentNumber")?.trim() ?? "",
@@ -249,7 +264,8 @@ export function parseUrlSearch(search: string): AppUrlState {
       page,
       invoiceFilters,
       accrualFilters,
-      invoiceQueue
+      invoiceQueue,
+      agingBucket
     }
   };
 }
@@ -301,6 +317,9 @@ export function buildUrlSearch(state: AppUrlState): string {
     }
     if (invoiceQueue === "overdue") {
       params.set("queue", "overdue");
+      if (state.discovery.agingBucket) {
+        params.set("aging", state.discovery.agingBucket);
+      }
     }
     if (page > 1) {
       params.set("page", String(page));
@@ -347,7 +366,8 @@ export function draftInvoicesDiscovery(): ListDiscovery {
       status: "Draft"
     },
     accrualFilters: { ...EMPTY_ACCRUAL_FILTERS },
-    invoiceQueue: ""
+    invoiceQueue: "",
+    agingBucket: ""
   };
 }
 
@@ -363,13 +383,15 @@ export function issuedInvoicesDiscovery(): ListDiscovery {
       status: "Issued"
     },
     accrualFilters: { ...EMPTY_ACCRUAL_FILTERS },
-    invoiceQueue: ""
+    invoiceQueue: "",
+    agingBucket: ""
   };
 }
 
 /**
- * Overdue Issued queue: status=Issued + queue=overdue.
+ * Overdue Issued collections workspace: status=Issued + queue=overdue.
  * Server dueToUtc is computed at query time as end of local yesterday (inclusive bound).
+ * Aging bucket defaults to all overdue.
  */
 export function overdueIssuedInvoicesDiscovery(): ListDiscovery {
   return {
@@ -379,6 +401,7 @@ export function overdueIssuedInvoicesDiscovery(): ListDiscovery {
       status: "Issued"
     },
     accrualFilters: { ...EMPTY_ACCRUAL_FILTERS },
-    invoiceQueue: "overdue"
+    invoiceQueue: "overdue",
+    agingBucket: ""
   };
 }

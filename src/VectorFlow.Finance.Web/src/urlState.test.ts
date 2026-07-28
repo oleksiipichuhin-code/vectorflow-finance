@@ -298,6 +298,7 @@ describe("urlState", () => {
     const workspaceId = "11111111-1111-1111-1111-111111111111";
     const discovery = overdueIssuedInvoicesDiscovery();
     assert.equal(discovery.invoiceQueue, "overdue");
+    assert.equal(discovery.agingBucket, "");
     assert.equal(discovery.invoiceFilters.status, "Issued");
     assert.equal(discovery.invoiceFilters.dueToDate, "");
 
@@ -313,11 +314,50 @@ describe("urlState", () => {
       "?view=invoices&workspaceId=11111111-1111-1111-1111-111111111111&status=Issued&queue=overdue"
     );
     assert.equal(search.includes("dueTo="), false);
+    assert.equal(search.includes("aging="), false);
 
     const parsed = parseUrlSearch(search);
     assert.equal(parsed.discovery.invoiceQueue, "overdue");
+    assert.equal(parsed.discovery.agingBucket, "");
     assert.equal(parsed.discovery.invoiceFilters.status, "Issued");
     assert.equal(parsed.discovery.invoiceFilters.dueToDate, "");
+  });
+
+  it("round-trips collections aging bucket with overdue queue", () => {
+    const workspaceId = "11111111-1111-1111-1111-111111111111";
+    const discovery = {
+      ...overdueIssuedInvoicesDiscovery(),
+      agingBucket: "8-30" as const
+    };
+    const search = buildUrlSearch({
+      view: "invoices",
+      workspaceId,
+      accrualId: null,
+      invoiceId: "b1111111-1111-1111-1111-111111111111",
+      discovery
+    });
+    assert.equal(
+      search,
+      "?view=invoices&workspaceId=11111111-1111-1111-1111-111111111111&status=Issued&queue=overdue&aging=8-30&invoiceId=b1111111-1111-1111-1111-111111111111"
+    );
+    const parsed = parseUrlSearch(search);
+    assert.equal(parsed.discovery.invoiceQueue, "overdue");
+    assert.equal(parsed.discovery.agingBucket, "8-30");
+    assert.equal(parsed.invoiceId, "b1111111-1111-1111-1111-111111111111");
+  });
+
+  it("invalid aging bucket normalizes to all overdue", () => {
+    const parsed = parseUrlSearch(
+      "?view=invoices&status=Issued&queue=overdue&aging=paid"
+    );
+    assert.equal(parsed.discovery.invoiceQueue, "overdue");
+    assert.equal(parsed.discovery.agingBucket, "");
+  });
+
+  it("aging without overdue queue is ignored", () => {
+    const parsed = parseUrlSearch("?view=invoices&status=Issued&aging=1-7");
+    assert.equal(parsed.discovery.invoiceQueue, "");
+    assert.equal(parsed.discovery.agingBucket, "");
   });
 
   it("overdue queue coexists with counterparty filter and invoice detail deep-link", () => {
@@ -337,7 +377,8 @@ describe("urlState", () => {
           dueToDate: "2026-01-01"
         },
         accrualFilters: { ...EMPTY_ACCRUAL_FILTERS },
-        invoiceQueue: "overdue"
+        invoiceQueue: "overdue",
+        agingBucket: ""
       }
     });
 
@@ -349,6 +390,7 @@ describe("urlState", () => {
 
     const parsed = parseUrlSearch(search);
     assert.equal(parsed.discovery.invoiceQueue, "overdue");
+    assert.equal(parsed.discovery.agingBucket, "");
     assert.equal(parsed.discovery.invoiceFilters.counterpartyReference, "acme-ua");
     assert.equal(parsed.invoiceId, invoiceId);
   });

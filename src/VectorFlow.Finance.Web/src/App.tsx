@@ -20,6 +20,7 @@ import {
   type ListDiscovery
 } from "./urlState";
 import type { InvoiceQueueMode } from "./invoiceListQuery";
+import type { AgingBucketFilter } from "./invoiceCollections";
 import { InvoicesView } from "./InvoicesView";
 import { APP_VIEWS, type AppView } from "./navigation";
 import { WorkspaceContextBar } from "./WorkspaceContextBar";
@@ -214,12 +215,18 @@ export default function App() {
   }
 
   const handleInvoiceDiscoveryChange = useCallback(
-    (page: number, filters: ListDiscovery["invoiceFilters"], invoiceQueue: InvoiceQueueMode = "") => {
+    (
+      page: number,
+      filters: ListDiscovery["invoiceFilters"],
+      invoiceQueue: InvoiceQueueMode = "",
+      agingBucket: AgingBucketFilter = ""
+    ) => {
       setDiscovery((current) => ({
         ...current,
         page,
         invoiceFilters: filters,
-        invoiceQueue
+        invoiceQueue,
+        agingBucket: invoiceQueue === "overdue" ? agingBucket : ""
       }));
     },
     []
@@ -451,6 +458,7 @@ export default function App() {
           initialPage={discovery.page}
           initialFilters={discovery.invoiceFilters}
           initialInvoiceQueue={discovery.invoiceQueue}
+          initialAgingBucket={discovery.agingBucket}
           selectedInvoiceId={invoiceId}
           onDiscoveryChange={handleInvoiceDiscoveryChange}
           onSelectedInvoiceIdChange={handleInvoiceIdChange}
