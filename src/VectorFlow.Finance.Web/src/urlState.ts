@@ -17,6 +17,11 @@ import {
   type WorkbenchSortMode
 } from "./collectionWorkbench.ts";
 import {
+  parseHistoryEventTypeParam,
+  parseHistoryFlagParam,
+  type CollectionActivityEventTypeFilter
+} from "./collectionCaseHistory.ts";
+import {
   parsePromiseGroupParam,
   type PromiseGroupFilter
 } from "./promiseToPay.ts";
@@ -68,6 +73,16 @@ export type ListDiscovery = {
   workbenchSort: WorkbenchSortMode;
   /** Hide completed workbench cases (`wbHideCompleted=1`). */
   workbenchHideCompleted: boolean;
+  /**
+   * Case history panel open (`caseHistory=1`). Meaningful with queue=overdue + invoiceId.
+   */
+  caseHistoryOpen: boolean;
+  /** History event type filter (`historyType=`). */
+  caseHistoryType: CollectionActivityEventTypeFilter;
+  /** History note/description search (`historyQ=`). */
+  caseHistorySearch: string;
+  /** Expand full history (`historyExpanded=1`). */
+  caseHistoryExpanded: boolean;
 };
 
 export type AppUrlState = {
@@ -110,7 +125,11 @@ export const EMPTY_DISCOVERY: ListDiscovery = {
   promiseSearch: "",
   workbenchSection: "",
   workbenchSort: "priority",
-  workbenchHideCompleted: false
+  workbenchHideCompleted: false,
+  caseHistoryOpen: false,
+  caseHistoryType: "",
+  caseHistorySearch: "",
+  caseHistoryExpanded: false
 };
 
 export function parseCollectionPanelParam(
@@ -271,7 +290,11 @@ export function createEmptyDiscovery(): ListDiscovery {
     promiseSearch: "",
     workbenchSection: "",
     workbenchSort: "priority",
-    workbenchHideCompleted: false
+    workbenchHideCompleted: false,
+    caseHistoryOpen: false,
+    caseHistoryType: "",
+    caseHistorySearch: "",
+    caseHistoryExpanded: false
   };
 }
 
@@ -321,6 +344,21 @@ export function parseUrlSearch(search: string): AppUrlState {
   const workbenchHideCompleted = workbenchActive
     ? parseWorkbenchHideCompletedParam(params.get("wbHideCompleted"))
     : false;
+  const historyContext =
+    view === "invoices" && invoiceQueue === "overdue" && invoiceId != null;
+  const caseHistoryOpen = historyContext
+    ? parseHistoryFlagParam(params.get("caseHistory"))
+    : false;
+  const caseHistoryType =
+    historyContext && caseHistoryOpen
+      ? parseHistoryEventTypeParam(params.get("historyType"))
+      : "";
+  const caseHistorySearch =
+    historyContext && caseHistoryOpen ? (params.get("historyQ")?.trim() ?? "") : "";
+  const caseHistoryExpanded =
+    historyContext && caseHistoryOpen
+      ? parseHistoryFlagParam(params.get("historyExpanded"))
+      : false;
 
   const invoiceFilters: InvoiceListFilters = {
     documentNumber: params.get("documentNumber")?.trim() ?? "",
@@ -362,7 +400,11 @@ export function parseUrlSearch(search: string): AppUrlState {
       promiseSearch,
       workbenchSection,
       workbenchSort,
-      workbenchHideCompleted
+      workbenchHideCompleted,
+      caseHistoryOpen,
+      caseHistoryType,
+      caseHistorySearch,
+      caseHistoryExpanded
     }
   };
 }
@@ -449,6 +491,16 @@ export function buildUrlSearch(state: AppUrlState): string {
     }
     if (state.invoiceId && isInvoiceId(state.invoiceId)) {
       params.set("invoiceId", state.invoiceId);
+      if (invoiceQueue === "overdue" && state.discovery.caseHistoryOpen) {
+        params.set("caseHistory", "1");
+        if (state.discovery.caseHistoryType) {
+          params.set("historyType", state.discovery.caseHistoryType);
+        }
+        setIfPresent(params, "historyQ", state.discovery.caseHistorySearch);
+        if (state.discovery.caseHistoryExpanded) {
+          params.set("historyExpanded", "1");
+        }
+      }
     }
   }
 
@@ -496,7 +548,11 @@ export function draftInvoicesDiscovery(): ListDiscovery {
     promiseSearch: "",
     workbenchSection: "",
     workbenchSort: "priority",
-    workbenchHideCompleted: false
+    workbenchHideCompleted: false,
+    caseHistoryOpen: false,
+    caseHistoryType: "",
+    caseHistorySearch: "",
+    caseHistoryExpanded: false
   };
 }
 
@@ -519,7 +575,11 @@ export function issuedInvoicesDiscovery(): ListDiscovery {
     promiseSearch: "",
     workbenchSection: "",
     workbenchSort: "priority",
-    workbenchHideCompleted: false
+    workbenchHideCompleted: false,
+    caseHistoryOpen: false,
+    caseHistoryType: "",
+    caseHistorySearch: "",
+    caseHistoryExpanded: false
   };
 }
 
@@ -543,6 +603,10 @@ export function overdueIssuedInvoicesDiscovery(): ListDiscovery {
     promiseSearch: "",
     workbenchSection: "",
     workbenchSort: "priority",
-    workbenchHideCompleted: false
+    workbenchHideCompleted: false,
+    caseHistoryOpen: false,
+    caseHistoryType: "",
+    caseHistorySearch: "",
+    caseHistoryExpanded: false
   };
 }

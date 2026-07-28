@@ -1,0 +1,549 @@
+/**
+ * Collection case activity timeline — extends PromiseToPayRecord.history
+ * (same localStorage key). No separate history store.
+ */
+
+import {
+  calendarDayDiff,
+  localCalendarDateString
+} from "./invoiceDueDateAging.ts";
+import type {
+  CollectionResolution,
+  PromiseFollowUpStatus,
+  PromiseToPayRecord
+} from "./promiseToPay.ts";
+
+export type CollectionActivityEventType =
+  | "promise_created"
+  | "promise_updated"
+  | "promise_broken"
+  | "follow_up_required"
+  | "contacted"
+  | "paid"
+  | "partially_paid"
+  | "new_promise"
+  | "disputed"
+  | "escalated"
+  | "unable_to_contact"
+  | "completed";
+
+export type CollectionActivityEventTypeFilter = "" | CollectionActivityEventType;
+
+export type CollectionActivityEvent = {
+  id: string;
+  type: CollectionActivityEventType;
+  atUtc: string;
+  description: string;
+  note: string | null;
+  promiseDate: string | null;
+};
+
+export type CaseHistorySummary = {
+  currentStatus: string;
+  currentPromise: string | null;
+  lastContactAtUtc: string | null;
+  lastResolutionLabel: string | null;
+  totalFollowUps: number;
+  totalPromises: number;
+};
+
+export type CaseHistoryView = {
+  summary: CaseHistorySummary;
+  events: CollectionActivityEvent[];
+  totalCount: number;
+  visibleCount: number;
+  collapsed: boolean;
+};
+
+export type CaseHistoryQuery = {
+  type?: CollectionActivityEventTypeFilter;
+  search?: string;
+  expanded?: boolean;
+  collapsedLimit?: number;
+};
+
+export const HISTORY_COLLAPSED_LIMIT = 5;
+
+export const ACTIVITY_EVENT_TYPE_OPTIONS: readonly {
+  id: CollectionActivityEventTypeFilter;
+  label: string;
+}[] = [
+  { id: "", label: "Усі події" },
+  { id: "promise_created", label: "Promise created" },
+  { id: "promise_updated", label: "Promise updated" },
+  { id: "promise_broken", label: "Promise broken" },
+  { id: "follow_up_required", label: "Follow-up required" },
+  { id: "contacted", label: "Contacted" },
+  { id: "paid", label: "Paid" },
+  { id: "partially_paid", label: "Partially paid" },
+  { id: "new_promise", label: "New promise" },
+  { id: "disputed", label: "Disputed" },
+  { id: "escalated", label: "Escalated" },
+  { id: "unable_to_contact", label: "Unable to contact" },
+  { id: "completed", label: "Completed" }
+];
+
+const EVENT_TYPE_SET: ReadonlySet<string> = new Set(
+  ACTIVITY_EVENT_TYPE_OPTIONS.map((option) => option.id).filter(Boolean)
+);
+
+const EVENT_LABELS: Record<CollectionActivityEventType, string> = {
+  promise_created: "Promise created",
+  promise_updated: "Promise updated",
+  promise_broken: "Promise broken",
+  follow_up_required: "Follow-up required",
+  contacted: "Contacted",
+  paid: "Paid",
+  partially_paid: "Partially paid",
+  new_promise: "New promise",
+  disputed: "Disputed",
+  escalated: "Escalated",
+  unable_to_contact: "Unable to contact",
+  completed: "Completed"
+};
+
+const STATUS_LABELS: Record<PromiseFollowUpStatus, string> = {
+  awaiting: "Очікується",
+  follow_up_required: "Потрібен повторний контакт",
+  contacted: "Контакт виконано",
+  completed: "Завершено"
+};
+
+const RESOLUTION_LABELS: Record<CollectionResolution["kind"], string> = {
+  paid: "Paid",
+  partially_paid: "Partially Paid",
+  new_promise: "New Promise",
+  disputed: "Disputed",
+  escalated: "Escalated",
+  unable_to_contact: "Unable to Contact"
+};
+
+export function activityEventTypeLabel(type: CollectionActivityEventType): string {
+  return EVENT_LABELS[type] ?? type;
+}
+
+export function parseHistoryEventTypeParam(
+  value: string | null | undefined
+): CollectionActivityEventTypeFilter {
+  if (value == null) {
+    return "";
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+  return EVENT_TYPE_SET.has(trimmed) ? (trimmed as CollectionActivityEventType) : "";
+}
+
+export function parseHistoryFlagParam(value: string | null | undefined): boolean {
+  if (value == null) {
+    return false;
+  }
+  const trimmed = value.trim().toLowerCase();
+  return trimmed === "1" || trimmed === "true" || trimmed === "yes";
+}
+
+export function activityEventFingerprint(
+  event: Pick<CollectionActivityEvent, "type" | "atUtc" | "promiseDate" | "note" | "description">
+): string {
+  return [
+    event.type,
+    event.atUtc,
+    event.promiseDate ?? "",
+    event.note ?? "",
+    event.description
+  ].join("|");
+}
+
+export function createActivityEvent(input: {
+  type: CollectionActivityEventType;
+  atUtc: string;
+  description?: string;
+  note?: string | null;
+  promiseDate?: string | null;
+  id?: string;
+}): CollectionActivityEvent {
+  const note = input.note?.trim() ? input.note.trim() : null;
+  const promiseDate = input.promiseDate?.trim() ? input.promiseDate.trim() : null;
+  const description =
+    input.description?.trim() ||
+    defaultDescription(input.type, promiseDate, note);
+  const draft = {
+    type: input.type,
+    atUtc: input.atUtc,
+    description,
+    note,
+    promiseDate
+  };
+  return {
+    id: input.id?.trim() || activityEventFingerprint(draft),
+    ...draft
+  };
+}
+
+function defaultDescription(
+  type: CollectionActivityEventType,
+  promiseDate: string | null,
+  note: string | null
+): string {
+  const label = activityEventTypeLabel(type);
+  if (type === "promise_created" || type === "promise_updated" || type === "new_promise") {
+    return promiseDate ? `${label}: ${promiseDate}` : label;
+  }
+  if (type === "promise_broken") {
+    return promiseDate ? `${label} (promised ${promiseDate})` : label;
+  }
+  if (note) {
+    return `${label} — ${note}`;
+  }
+  return label;
+}
+
+export function sanitizeActivityEvent(raw: unknown): CollectionActivityEvent | null {
+  if (raw == null || typeof raw !== "object") {
+    return null;
+  }
+  const candidate = raw as Record<string, unknown>;
+  const typeRaw = typeof candidate.type === "string" ? candidate.type.trim() : "";
+  if (!EVENT_TYPE_SET.has(typeRaw)) {
+    return null;
+  }
+  const atUtc =
+    typeof candidate.atUtc === "string" && candidate.atUtc.trim()
+      ? candidate.atUtc.trim()
+      : "";
+  if (!atUtc || !Number.isFinite(Date.parse(atUtc))) {
+    return null;
+  }
+  const note =
+    typeof candidate.note === "string" && candidate.note.trim()
+      ? candidate.note.trim()
+      : null;
+  const promiseDate =
+    typeof candidate.promiseDate === "string" && candidate.promiseDate.trim()
+      ? candidate.promiseDate.trim()
+      : null;
+  const description =
+    typeof candidate.description === "string" && candidate.description.trim()
+      ? candidate.description.trim()
+      : defaultDescription(typeRaw as CollectionActivityEventType, promiseDate, note);
+  const id =
+    typeof candidate.id === "string" && candidate.id.trim()
+      ? candidate.id.trim()
+      : activityEventFingerprint({
+          type: typeRaw as CollectionActivityEventType,
+          atUtc,
+          promiseDate,
+          note,
+          description
+        });
+  return {
+    id,
+    type: typeRaw as CollectionActivityEventType,
+    atUtc,
+    description,
+    note,
+    promiseDate
+  };
+}
+
+export function sanitizeActivityHistory(raw: unknown): CollectionActivityEvent[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  const events: CollectionActivityEvent[] = [];
+  const seen = new Set<string>();
+  for (const item of raw) {
+    const event = sanitizeActivityEvent(item);
+    if (!event) {
+      continue;
+    }
+    const key = event.id || activityEventFingerprint(event);
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    events.push(event);
+  }
+  return events;
+}
+
+/**
+ * Append an event if its fingerprint is not already present (duplicate prevention).
+ */
+export function appendActivityEvent(
+  history: readonly CollectionActivityEvent[] | null | undefined,
+  event: CollectionActivityEvent
+): CollectionActivityEvent[] {
+  const current = sanitizeActivityHistory(history ?? []);
+  const fingerprint = event.id || activityEventFingerprint(event);
+  if (current.some((item) => (item.id || activityEventFingerprint(item)) === fingerprint)) {
+    return current;
+  }
+  return [...current, event];
+}
+
+export function compareActivityEventsDesc(
+  a: CollectionActivityEvent,
+  b: CollectionActivityEvent
+): number {
+  if (a.atUtc !== b.atUtc) {
+    return a.atUtc < b.atUtc ? 1 : -1;
+  }
+  if (a.type !== b.type) {
+    return a.type < b.type ? -1 : 1;
+  }
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+}
+
+function backfillCreatedEvent(record: PromiseToPayRecord): CollectionActivityEvent {
+  return createActivityEvent({
+    type: "promise_created",
+    atUtc: record.updatedAtUtc || new Date(0).toISOString(),
+    promiseDate: record.promiseDate,
+    note: record.note || null,
+    description: `Promise created: ${record.promiseDate}`
+  });
+}
+
+function isPromiseBroken(promiseDate: string, now: Date): boolean {
+  const today = localCalendarDateString(now);
+  const relative = calendarDayDiff(today, promiseDate.trim());
+  return relative != null && relative < 0;
+}
+
+function brokenEventFor(
+  record: PromiseToPayRecord,
+  now: Date
+): CollectionActivityEvent | null {
+  if (!isPromiseBroken(record.promiseDate, now)) {
+    return null;
+  }
+  if (record.status === "completed" || record.resolution?.kind === "paid") {
+    return null;
+  }
+  return createActivityEvent({
+    id: `promise_broken|${record.promiseDate}`,
+    type: "promise_broken",
+    atUtc: `${record.promiseDate}T23:59:59.000Z`,
+    promiseDate: record.promiseDate,
+    note: record.note || null,
+    description: `Promise broken (promised ${record.promiseDate})`
+  });
+}
+
+/**
+ * Build reverse-chronological timeline from persisted history + safe synthesis.
+ */
+export function buildCaseTimeline(
+  record: PromiseToPayRecord | null | undefined,
+  now: Date = new Date()
+): CollectionActivityEvent[] {
+  if (!record) {
+    return [];
+  }
+  let events = sanitizeActivityHistory(record.history);
+  if (events.length === 0) {
+    events = [backfillCreatedEvent(record)];
+  }
+  const broken = brokenEventFor(record, now);
+  if (broken) {
+    events = appendActivityEvent(events, broken);
+  }
+  return events.slice().sort(compareActivityEventsDesc);
+}
+
+export function filterCaseTimeline(
+  events: readonly CollectionActivityEvent[],
+  options: { type?: CollectionActivityEventTypeFilter; search?: string } = {}
+): CollectionActivityEvent[] {
+  const type = options.type ?? "";
+  const search = (options.search ?? "").trim().toLowerCase();
+  return events.filter((event) => {
+    if (type && event.type !== type) {
+      return false;
+    }
+    if (!search) {
+      return true;
+    }
+    const haystack =
+      `${event.description} ${event.note ?? ""} ${event.promiseDate ?? ""} ${activityEventTypeLabel(event.type)}`.toLowerCase();
+    return haystack.includes(search);
+  });
+}
+
+export function buildCaseHistorySummary(
+  record: PromiseToPayRecord | null | undefined,
+  events: readonly CollectionActivityEvent[] = record ? buildCaseTimeline(record) : []
+): CaseHistorySummary {
+  if (!record) {
+    return {
+      currentStatus: "—",
+      currentPromise: null,
+      lastContactAtUtc: null,
+      lastResolutionLabel: null,
+      totalFollowUps: 0,
+      totalPromises: 0
+    };
+  }
+
+  const lastContact = events.find(
+    (event) =>
+      event.type === "contacted" ||
+      event.type === "unable_to_contact" ||
+      event.type === "follow_up_required"
+  );
+
+  const totalFollowUps = events.filter(
+    (event) =>
+      event.type === "follow_up_required" ||
+      event.type === "contacted" ||
+      event.type === "unable_to_contact"
+  ).length;
+
+  const totalPromises = events.filter(
+    (event) =>
+      event.type === "promise_created" ||
+      event.type === "promise_updated" ||
+      event.type === "new_promise"
+  ).length;
+
+  return {
+    currentStatus: STATUS_LABELS[record.status] ?? record.status,
+    currentPromise: record.promiseDate,
+    lastContactAtUtc: lastContact?.atUtc ?? null,
+    lastResolutionLabel: record.resolution
+      ? RESOLUTION_LABELS[record.resolution.kind]
+      : null,
+    totalFollowUps,
+    totalPromises
+  };
+}
+
+export function buildCaseHistoryView(
+  record: PromiseToPayRecord | null | undefined,
+  options: CaseHistoryQuery = {},
+  now: Date = new Date()
+): CaseHistoryView {
+  const all = buildCaseTimeline(record, now);
+  const filtered = filterCaseTimeline(all, {
+    type: options.type,
+    search: options.search
+  });
+  const expanded = options.expanded === true;
+  const limit = options.collapsedLimit ?? HISTORY_COLLAPSED_LIMIT;
+  const collapsed = !expanded && filtered.length > limit;
+  const events = collapsed ? filtered.slice(0, limit) : filtered;
+  return {
+    summary: buildCaseHistorySummary(record, all),
+    events,
+    totalCount: filtered.length,
+    visibleCount: events.length,
+    collapsed
+  };
+}
+
+export function eventTypeForStatusChange(
+  nextStatus: PromiseFollowUpStatus
+): CollectionActivityEventType | null {
+  switch (nextStatus) {
+    case "follow_up_required":
+      return "follow_up_required";
+    case "contacted":
+      return "contacted";
+    case "completed":
+      return "completed";
+    default:
+      return null;
+  }
+}
+
+export function eventTypeForResolution(
+  resolution: CollectionResolution
+): CollectionActivityEventType {
+  return resolution.kind;
+}
+
+export function historyAfterPromiseSave(
+  existing: PromiseToPayRecord | null,
+  next: PromiseToPayRecord,
+  now: Date = new Date()
+): CollectionActivityEvent[] {
+  const type: CollectionActivityEventType = existing ? "promise_updated" : "promise_created";
+  return appendActivityEvent(
+    existing?.history ?? next.history,
+    createActivityEvent({
+      type,
+      atUtc: now.toISOString(),
+      promiseDate: next.promiseDate,
+      note: next.note || null
+    })
+  );
+}
+
+export function historyAfterStatusChange(
+  existing: PromiseToPayRecord,
+  nextStatus: PromiseFollowUpStatus,
+  now: Date = new Date()
+): CollectionActivityEvent[] {
+  let history = existing.history ?? [];
+  const type = eventTypeForStatusChange(nextStatus);
+  if (type) {
+    history = appendActivityEvent(
+      history,
+      createActivityEvent({
+        type,
+        atUtc: now.toISOString(),
+        promiseDate: existing.promiseDate,
+        note: existing.note || null
+      })
+    );
+  }
+  if (nextStatus === "completed" && existing.resolution?.kind !== "paid") {
+    history = appendActivityEvent(
+      history,
+      createActivityEvent({
+        type: "paid",
+        atUtc: now.toISOString(),
+        promiseDate: existing.promiseDate,
+        note: existing.note || null,
+        description: "Paid (completed follow-up)"
+      })
+    );
+  }
+  return history;
+}
+
+export function historyAfterResolution(
+  existing: PromiseToPayRecord,
+  resolution: CollectionResolution,
+  promiseDate: string,
+  now: Date = new Date()
+): CollectionActivityEvent[] {
+  const type = eventTypeForResolution(resolution);
+  let history = appendActivityEvent(
+    existing.history,
+    createActivityEvent({
+      type,
+      atUtc: now.toISOString(),
+      promiseDate,
+      note: resolution.note || resolution.reason || existing.note || null,
+      description:
+        type === "partially_paid" && resolution.paidAmount != null
+          ? `Partially paid: ${resolution.paidAmount.toFixed(2)} (remaining ${resolution.remainingAmount ?? 0})`
+          : undefined
+    })
+  );
+  if (resolution.kind === "paid") {
+    history = appendActivityEvent(
+      history,
+      createActivityEvent({
+        type: "completed",
+        atUtc: now.toISOString(),
+        promiseDate,
+        note: resolution.note || null
+      })
+    );
+  }
+  return history;
+}

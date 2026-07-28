@@ -606,6 +606,67 @@ describe("urlState", () => {
     assert.equal(parsed.discovery.workbenchHideCompleted, false);
   });
 
+  it("serializes and restores case history panel URL state with invoice detail", () => {
+    const workspaceId = "11111111-1111-1111-1111-111111111111";
+    const invoiceId = "b1111111-1111-1111-1111-111111111111";
+    const search = buildUrlSearch({
+      view: "invoices",
+      workspaceId,
+      accrualId: null,
+      invoiceId,
+      discovery: {
+        page: 1,
+        invoiceFilters: {
+          ...EMPTY_INVOICE_FILTERS,
+          status: "Issued"
+        },
+        accrualFilters: { ...EMPTY_ACCRUAL_FILTERS },
+        invoiceQueue: "overdue",
+        agingBucket: "",
+        collectionPanel: "workbench",
+        promiseGroup: "",
+        promiseSearch: "",
+        workbenchSection: "broken",
+        workbenchSort: "priority",
+        workbenchHideCompleted: false,
+        caseHistoryOpen: true,
+        caseHistoryType: "contacted",
+        caseHistorySearch: "alpha",
+        caseHistoryExpanded: true
+      }
+    });
+    assert.match(search, /caseHistory=1/);
+    assert.match(search, /historyType=contacted/);
+    assert.match(search, /historyQ=alpha/);
+    assert.match(search, /historyExpanded=1/);
+    assert.match(search, /panel=workbench/);
+
+    const parsed = parseUrlSearch(search);
+    assert.equal(parsed.discovery.caseHistoryOpen, true);
+    assert.equal(parsed.discovery.caseHistoryType, "contacted");
+    assert.equal(parsed.discovery.caseHistorySearch, "alpha");
+    assert.equal(parsed.discovery.caseHistoryExpanded, true);
+
+    const closed = withoutInvoiceId({
+      view: "invoices",
+      workspaceId,
+      accrualId: null,
+      invoiceId,
+      discovery: parsed.discovery
+    });
+    const closedSearch = buildUrlSearch(closed);
+    assert.equal(closedSearch.includes("caseHistory"), false);
+    assert.equal(closedSearch.includes("historyType"), false);
+  });
+
+  it("ignores case history params without invoice detail", () => {
+    const parsed = parseUrlSearch(
+      "?view=invoices&status=Issued&queue=overdue&caseHistory=1&historyType=paid"
+    );
+    assert.equal(parsed.discovery.caseHistoryOpen, false);
+    assert.equal(parsed.discovery.caseHistoryType, "");
+  });
+
   it("round-trips disputed and escalated promise groups", () => {
     for (const group of ["disputed", "escalated"] as const) {
       const search = buildUrlSearch({

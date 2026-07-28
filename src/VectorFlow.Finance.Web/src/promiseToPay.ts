@@ -9,6 +9,13 @@ import {
   dueDateCalendarString,
   localCalendarDateString
 } from "./invoiceDueDateAging.ts";
+import {
+  historyAfterPromiseSave,
+  historyAfterResolution,
+  historyAfterStatusChange,
+  sanitizeActivityHistory,
+  type CollectionActivityEvent
+} from "./collectionCaseHistory.ts";
 
 export const PROMISE_STORAGE_KEY_PREFIX = "vectorflow.finance.promiseToPay.";
 
@@ -56,6 +63,8 @@ export type PromiseToPayRecord = {
   updatedAtUtc: string;
   completedAtUtc: string | null;
   resolution: CollectionResolution | null;
+  /** Append-only activity timeline (same localStorage record). */
+  history: CollectionActivityEvent[];
 };
 
 export type PromiseToPayInput = {
@@ -453,6 +462,8 @@ export function sanitizePromiseRecord(
       ? null
       : sanitizeResolution(candidate.resolution);
 
+  const history = sanitizeActivityHistory(candidate.history);
+
   return {
     invoiceId,
     promiseDate,
@@ -460,7 +471,8 @@ export function sanitizePromiseRecord(
     status,
     updatedAtUtc,
     completedAtUtc,
-    resolution
+    resolution,
+    history
   };
 }
 
@@ -564,14 +576,20 @@ export function savePromiseToPay(
       ? existing.resolution
       : null;
 
-  const record: PromiseToPayRecord = {
+  const draft: PromiseToPayRecord = {
     invoiceId: invoiceId.trim(),
     promiseDate: validation.promiseDate,
     note: validation.note,
     status,
     updatedAtUtc: now.toISOString(),
     completedAtUtc: null,
-    resolution: keepResolution
+    resolution: keepResolution,
+    history: existing?.history ?? []
+  };
+
+  const record: PromiseToPayRecord = {
+    ...draft,
+    history: historyAfterPromiseSave(existing, draft, now)
   };
 
   if (storage && !writePromiseToStorage(record, storage)) {
@@ -613,7 +631,8 @@ export function updatePromiseStatus(
             }
         : nextStatus === "awaiting"
           ? null
-          : existing.resolution
+          : existing.resolution,
+    history: historyAfterStatusChange(existing, nextStatus, now)
   };
 
   if (storage && !writePromiseToStorage(record, storage)) {
@@ -816,7 +835,13 @@ export function applyCollectionResolution(
     status: validated.status,
     updatedAtUtc: now.toISOString(),
     completedAtUtc: validated.status === "completed" ? now.toISOString() : null,
-    resolution: validated.resolution
+    resolution: validated.resolution,
+    history: historyAfterResolution(
+      existing,
+      validated.resolution,
+      validated.promiseDate,
+      now
+    )
   };
 
   if (storage && !writePromiseToStorage(record, storage)) {

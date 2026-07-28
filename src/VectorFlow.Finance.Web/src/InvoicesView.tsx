@@ -81,6 +81,10 @@ import {
   type WorkbenchSortMode
 } from "./collectionWorkbench";
 import {
+  buildCaseHistoryView,
+  type CollectionActivityEventTypeFilter
+} from "./collectionCaseHistory";
+import {
   canViewInvoiceDetails,
   DETAIL_RELOAD_AFTER_MUTATION_FAILED_MESSAGE,
   interpretInvoiceDetailLoadError,
@@ -165,6 +169,10 @@ type InvoicesViewProps = {
   initialWorkbenchSection?: WorkbenchSectionFilter;
   initialWorkbenchSort?: WorkbenchSortMode;
   initialWorkbenchHideCompleted?: boolean;
+  initialCaseHistoryOpen?: boolean;
+  initialCaseHistoryType?: CollectionActivityEventTypeFilter;
+  initialCaseHistorySearch?: string;
+  initialCaseHistoryExpanded?: boolean;
   selectedInvoiceId?: string | null;
   onDiscoveryChange?: (
     page: number,
@@ -176,7 +184,11 @@ type InvoicesViewProps = {
     promiseSearch?: string,
     workbenchSort?: WorkbenchSortMode,
     workbenchHideCompleted?: boolean,
-    workbenchSection?: WorkbenchSectionFilter
+    workbenchSection?: WorkbenchSectionFilter,
+    caseHistoryOpen?: boolean,
+    caseHistoryType?: CollectionActivityEventTypeFilter,
+    caseHistorySearch?: string,
+    caseHistoryExpanded?: boolean
   ) => void;
   onSelectedInvoiceIdChange?: (
     invoiceId: string | null,
@@ -208,6 +220,10 @@ export function InvoicesView({
   initialWorkbenchSection = "",
   initialWorkbenchSort = "priority",
   initialWorkbenchHideCompleted = false,
+  initialCaseHistoryOpen = false,
+  initialCaseHistoryType = "",
+  initialCaseHistorySearch = "",
+  initialCaseHistoryExpanded = false,
   selectedInvoiceId = null,
   onDiscoveryChange,
   onSelectedInvoiceIdChange,
@@ -267,6 +283,29 @@ export function InvoicesView({
   );
   const [workbenchSelectedIds, setWorkbenchSelectedIds] = useState<string[]>([]);
   const [workbenchMassMessage, setWorkbenchMassMessage] = useState<string | null>(null);
+  const [caseHistoryOpen, setCaseHistoryOpen] = useState(
+    () => initialInvoiceQueue === "overdue" && initialCaseHistoryOpen
+  );
+  const [caseHistoryType, setCaseHistoryType] = useState<CollectionActivityEventTypeFilter>(
+    () =>
+      initialInvoiceQueue === "overdue" && initialCaseHistoryOpen ? initialCaseHistoryType : ""
+  );
+  const [caseHistorySearch, setCaseHistorySearch] = useState(() =>
+    initialInvoiceQueue === "overdue" && initialCaseHistoryOpen
+      ? initialCaseHistorySearch
+      : ""
+  );
+  const [caseHistorySearchDraft, setCaseHistorySearchDraft] = useState(() =>
+    initialInvoiceQueue === "overdue" && initialCaseHistoryOpen
+      ? initialCaseHistorySearch
+      : ""
+  );
+  const [caseHistoryExpanded, setCaseHistoryExpanded] = useState(
+    () =>
+      initialInvoiceQueue === "overdue" &&
+      initialCaseHistoryOpen &&
+      initialCaseHistoryExpanded
+  );
   const [promiseRevision, setPromiseRevision] = useState(0);
   const [promiseFormOpen, setPromiseFormOpen] = useState(false);
   const [promiseDateInput, setPromiseDateInput] = useState("");
@@ -568,10 +607,21 @@ export function InvoicesView({
     nextSearch: string = "",
     nextWorkbenchSort: WorkbenchSortMode = "priority",
     nextHideCompleted: boolean = false,
-    nextWorkbenchSection: WorkbenchSectionFilter = ""
+    nextWorkbenchSection: WorkbenchSectionFilter = "",
+    historyOverride?: {
+      open?: boolean;
+      type?: CollectionActivityEventTypeFilter;
+      search?: string;
+      expanded?: boolean;
+    }
   ) {
     const panel: CollectionPanelMode =
       nextQueue === "overdue" && isPromisePanel(nextPanel) ? nextPanel : "";
+    const historyOpen =
+      nextQueue === "overdue" && (historyOverride?.open ?? caseHistoryOpen);
+    const historyType = historyOverride?.type ?? caseHistoryType;
+    const historySearch = historyOverride?.search ?? caseHistorySearch;
+    const historyExpanded = historyOverride?.expanded ?? caseHistoryExpanded;
     onDiscoveryChange?.(
       nextPage,
       filters,
@@ -582,7 +632,11 @@ export function InvoicesView({
       isPromisePanel(panel) ? nextSearch : "",
       panel === "workbench" ? nextWorkbenchSort : "priority",
       panel === "workbench" ? nextHideCompleted : false,
-      panel === "workbench" ? nextWorkbenchSection : ""
+      panel === "workbench" ? nextWorkbenchSection : "",
+      historyOpen,
+      historyOpen ? historyType : "",
+      historyOpen ? historySearch : "",
+      historyOpen ? historyExpanded : false
     );
   }
 
@@ -596,6 +650,11 @@ export function InvoicesView({
     setWorkbenchHideCompleted(false);
     setWorkbenchSelectedIds([]);
     setWorkbenchMassMessage(null);
+    setCaseHistoryOpen(false);
+    setCaseHistoryType("");
+    setCaseHistorySearch("");
+    setCaseHistorySearchDraft("");
+    setCaseHistoryExpanded(false);
   }
 
   function applyFilters(event: FormEvent<HTMLFormElement>) {
@@ -1222,6 +1281,26 @@ export function InvoicesView({
     }
 
     closeOpenEditorsForDetailClose();
+    if (caseHistoryOpen) {
+      setCaseHistoryOpen(false);
+      setCaseHistoryType("");
+      setCaseHistorySearch("");
+      setCaseHistorySearchDraft("");
+      setCaseHistoryExpanded(false);
+      publishDiscovery(
+        page,
+        appliedFilters,
+        invoiceQueue,
+        agingBucket,
+        collectionPanel,
+        promiseGroup,
+        promiseSearch,
+        workbenchSort,
+        workbenchHideCompleted,
+        workbenchSection,
+        { open: false, type: "", search: "", expanded: false }
+      );
+    }
     dismissDetailFromUrl();
   }
 
@@ -2153,6 +2232,18 @@ export function InvoicesView({
     overdueQueueActive && detailTargetId
       ? readPromiseFromStorage(detailTargetId)
       : null;
+  const caseHistoryView =
+    overdueQueueActive && detailTargetId && caseHistoryOpen
+      ? buildCaseHistoryView(
+          detailPromiseRecord,
+          {
+            type: caseHistoryType,
+            search: caseHistorySearch,
+            expanded: caseHistoryExpanded
+          },
+          collectionsNow
+        )
+      : null;
 
   const displayInvoices = overdueQueueActive ? collectionsQueue : invoices;
   const listEmpty = workbenchPanelActive
@@ -2432,6 +2523,109 @@ export function InvoicesView({
 
   function bumpPromiseRevision() {
     setPromiseRevision((value) => value + 1);
+  }
+
+  function openCaseHistory(invoiceId?: string | null) {
+    if (!isOverdueInvoiceQueue(invoiceQueue)) {
+      return;
+    }
+    if (invoiceId && invoiceId !== detailTargetId) {
+      const invoice = invoices.find((row) => row.id === invoiceId);
+      if (invoice) {
+        beginViewInvoiceDetails(invoice);
+      } else {
+        onSelectedInvoiceIdChange?.(invoiceId);
+      }
+    }
+    setCaseHistoryOpen(true);
+    publishDiscovery(
+      page,
+      appliedFilters,
+      "overdue",
+      agingBucket,
+      collectionPanel,
+      promiseGroup,
+      promiseSearch,
+      workbenchSort,
+      workbenchHideCompleted,
+      workbenchSection,
+      { open: true, type: caseHistoryType, search: caseHistorySearch, expanded: caseHistoryExpanded }
+    );
+  }
+
+  function closeCaseHistory() {
+    setCaseHistoryOpen(false);
+    setCaseHistoryType("");
+    setCaseHistorySearch("");
+    setCaseHistorySearchDraft("");
+    setCaseHistoryExpanded(false);
+    publishDiscovery(
+      page,
+      appliedFilters,
+      invoiceQueue,
+      agingBucket,
+      collectionPanel,
+      promiseGroup,
+      promiseSearch,
+      workbenchSort,
+      workbenchHideCompleted,
+      workbenchSection,
+      { open: false, type: "", search: "", expanded: false }
+    );
+  }
+
+  function applyCaseHistoryType(nextType: CollectionActivityEventTypeFilter) {
+    setCaseHistoryType(nextType);
+    publishDiscovery(
+      page,
+      appliedFilters,
+      "overdue",
+      agingBucket,
+      collectionPanel,
+      promiseGroup,
+      promiseSearch,
+      workbenchSort,
+      workbenchHideCompleted,
+      workbenchSection,
+      { open: true, type: nextType, search: caseHistorySearch, expanded: caseHistoryExpanded }
+    );
+  }
+
+  function applyCaseHistorySearch(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const nextSearch = caseHistorySearchDraft.trim();
+    setCaseHistorySearch(nextSearch);
+    setCaseHistorySearchDraft(nextSearch);
+    publishDiscovery(
+      page,
+      appliedFilters,
+      "overdue",
+      agingBucket,
+      collectionPanel,
+      promiseGroup,
+      promiseSearch,
+      workbenchSort,
+      workbenchHideCompleted,
+      workbenchSection,
+      { open: true, type: caseHistoryType, search: nextSearch, expanded: caseHistoryExpanded }
+    );
+  }
+
+  function applyCaseHistoryExpanded(nextExpanded: boolean) {
+    setCaseHistoryExpanded(nextExpanded);
+    publishDiscovery(
+      page,
+      appliedFilters,
+      "overdue",
+      agingBucket,
+      collectionPanel,
+      promiseGroup,
+      promiseSearch,
+      workbenchSort,
+      workbenchHideCompleted,
+      workbenchSection,
+      { open: true, type: caseHistoryType, search: caseHistorySearch, expanded: nextExpanded }
+    );
   }
 
   function openPromiseForm(existing: PromiseToPayRecord | null) {
@@ -3665,6 +3859,23 @@ export function InvoicesView({
                   }
                 : null
             }
+            historyContext={
+              overdueQueueActive && detailTargetId
+                ? {
+                    open: caseHistoryOpen,
+                    view: caseHistoryView,
+                    typeFilter: caseHistoryType,
+                    searchDraft: caseHistorySearchDraft,
+                    onOpen: () => openCaseHistory(detailTargetId),
+                    onClose: closeCaseHistory,
+                    onTypeChange: applyCaseHistoryType,
+                    onSearchDraftChange: setCaseHistorySearchDraft,
+                    onSearchSubmit: applyCaseHistorySearch,
+                    onToggleExpanded: () =>
+                      applyCaseHistoryExpanded(!caseHistoryExpanded)
+                  }
+                : null
+            }
           />
         ) : null}
 
@@ -3811,6 +4022,13 @@ export function InvoicesView({
                                   }}
                                 >
                                   Відкрити
+                                </button>
+                                <button
+                                  type="button"
+                                  className="button-secondary"
+                                  onClick={() => openCaseHistory(item.invoiceId)}
+                                >
+                                  History
                                 </button>
                                 {item.status !== "completed" ? (
                                   <>

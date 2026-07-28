@@ -23,6 +23,7 @@ import type { InvoiceQueueMode } from "./invoiceListQuery";
 import type { AgingBucketFilter } from "./invoiceCollections";
 import type { PromiseGroupFilter } from "./promiseToPay";
 import type { WorkbenchSortMode } from "./collectionWorkbench";
+import type { CollectionActivityEventTypeFilter } from "./collectionCaseHistory";
 import type { CollectionPanelMode } from "./urlState";
 import { isPromisePanel } from "./urlState";
 import { InvoicesView } from "./InvoicesView";
@@ -229,7 +230,11 @@ export default function App() {
       promiseSearch: string = "",
       workbenchSort: WorkbenchSortMode = "priority",
       workbenchHideCompleted: boolean = false,
-      workbenchSection: ListDiscovery["workbenchSection"] = ""
+      workbenchSection: ListDiscovery["workbenchSection"] = "",
+      caseHistoryOpen: boolean = false,
+      caseHistoryType: CollectionActivityEventTypeFilter = "",
+      caseHistorySearch: string = "",
+      caseHistoryExpanded: boolean = false
     ) => {
       const overdue = invoiceQueue === "overdue";
       const panel: CollectionPanelMode =
@@ -245,7 +250,11 @@ export default function App() {
         promiseSearch: isPromisePanel(panel) ? promiseSearch.trim() : "",
         workbenchSection: panel === "workbench" ? workbenchSection : "",
         workbenchSort: panel === "workbench" ? workbenchSort : "priority",
-        workbenchHideCompleted: panel === "workbench" ? workbenchHideCompleted : false
+        workbenchHideCompleted: panel === "workbench" ? workbenchHideCompleted : false,
+        caseHistoryOpen: overdue ? caseHistoryOpen : false,
+        caseHistoryType: overdue && caseHistoryOpen ? caseHistoryType : "",
+        caseHistorySearch: overdue && caseHistoryOpen ? caseHistorySearch.trim() : "",
+        caseHistoryExpanded: overdue && caseHistoryOpen ? caseHistoryExpanded : false
       }));
     },
     []
@@ -484,6 +493,10 @@ export default function App() {
           initialWorkbenchSection={discovery.workbenchSection}
           initialWorkbenchSort={discovery.workbenchSort}
           initialWorkbenchHideCompleted={discovery.workbenchHideCompleted}
+          initialCaseHistoryOpen={discovery.caseHistoryOpen}
+          initialCaseHistoryType={discovery.caseHistoryType}
+          initialCaseHistorySearch={discovery.caseHistorySearch}
+          initialCaseHistoryExpanded={discovery.caseHistoryExpanded}
           selectedInvoiceId={invoiceId}
           onDiscoveryChange={handleInvoiceDiscoveryChange}
           onSelectedInvoiceIdChange={handleInvoiceIdChange}

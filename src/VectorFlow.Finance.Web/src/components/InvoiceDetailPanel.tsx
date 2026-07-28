@@ -1,4 +1,5 @@
 import type { Accrual, Invoice } from "../api";
+import type { FormEvent } from "react";
 import {
   buildInvoiceDetailFields,
   canAddInvoiceLineFromDetails,
@@ -25,6 +26,12 @@ import {
   promiseStatusLabel,
   resolutionKindLabel
 } from "../promiseToPay";
+import {
+  ACTIVITY_EVENT_TYPE_OPTIONS,
+  activityEventTypeLabel,
+  type CaseHistoryView,
+  type CollectionActivityEventTypeFilter
+} from "../collectionCaseHistory";
 import { StatusMessage } from "./Panel";
 
 type InvoiceDetailCollectionsContext = {
@@ -78,6 +85,19 @@ type InvoiceDetailPromiseContext = {
   onSaveResolution: () => void;
 };
 
+type InvoiceDetailHistoryContext = {
+  open: boolean;
+  view: CaseHistoryView | null;
+  typeFilter: CollectionActivityEventTypeFilter;
+  searchDraft: string;
+  onOpen: () => void;
+  onClose: () => void;
+  onTypeChange: (value: CollectionActivityEventTypeFilter) => void;
+  onSearchDraftChange: (value: string) => void;
+  onSearchSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onToggleExpanded: () => void;
+};
+
 type InvoiceDetailPanelProps = {
   invoice: Invoice | null;
   loading: boolean;
@@ -103,6 +123,7 @@ type InvoiceDetailPanelProps = {
   relatedAccrualsError?: string | null;
   collectionsContext?: InvoiceDetailCollectionsContext | null;
   promiseContext?: InvoiceDetailPromiseContext | null;
+  historyContext?: InvoiceDetailHistoryContext | null;
   onClose: () => void;
   onRetry: () => void;
   onRetryRelatedAccruals?: () => void;
@@ -141,6 +162,7 @@ export function InvoiceDetailPanel({
   relatedAccrualsError = null,
   collectionsContext = null,
   promiseContext = null,
+  historyContext = null,
   onClose,
   onRetry,
   onRetryRelatedAccruals,
@@ -715,6 +737,147 @@ export function InvoiceDetailPanel({
                 Follow-up і resolution зберігаються локально в браузері (localStorage) за invoice
                 id.
               </p>
+            </section>
+          ) : null}
+
+          {historyContext ? (
+            <section
+              className="case-history-block"
+              aria-labelledby="case-history-heading"
+            >
+              <div className="filter-actions">
+                <h4 id="case-history-heading">Case history</h4>
+                {!historyContext.open ? (
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    disabled={closeDisabled}
+                    onClick={historyContext.onOpen}
+                  >
+                    Open history
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    disabled={closeDisabled}
+                    onClick={historyContext.onClose}
+                  >
+                    Close history
+                  </button>
+                )}
+              </div>
+
+              {historyContext.open && historyContext.view ? (
+                <>
+                  <dl className="collections-summary facts collections-kpi case-history-summary">
+                    <div>
+                      <dt>Current Status</dt>
+                      <dd>{historyContext.view.summary.currentStatus}</dd>
+                    </div>
+                    <div>
+                      <dt>Current Promise</dt>
+                      <dd>{historyContext.view.summary.currentPromise ?? "—"}</dd>
+                    </div>
+                    <div>
+                      <dt>Last Contact</dt>
+                      <dd>
+                        {formatDate(historyContext.view.summary.lastContactAtUtc)}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Last Resolution</dt>
+                      <dd>{historyContext.view.summary.lastResolutionLabel ?? "—"}</dd>
+                    </div>
+                    <div>
+                      <dt>Total Follow-ups</dt>
+                      <dd>{historyContext.view.summary.totalFollowUps}</dd>
+                    </div>
+                    <div>
+                      <dt>Total Promises</dt>
+                      <dd>{historyContext.view.summary.totalPromises}</dd>
+                    </div>
+                  </dl>
+
+                  <form
+                    className="filter-form promise-search-form"
+                    onSubmit={historyContext.onSearchSubmit}
+                  >
+                    <label>
+                      Пошук у нотатках
+                      <input
+                        value={historyContext.searchDraft}
+                        onChange={(event) =>
+                          historyContext.onSearchDraftChange(event.target.value)
+                        }
+                        placeholder="note / description"
+                        autoComplete="off"
+                      />
+                    </label>
+                    <label>
+                      Тип події
+                      <select
+                        value={historyContext.typeFilter}
+                        onChange={(event) =>
+                          historyContext.onTypeChange(
+                            event.target.value as CollectionActivityEventTypeFilter
+                          )
+                        }
+                      >
+                        {ACTIVITY_EVENT_TYPE_OPTIONS.map((option) => (
+                          <option key={option.id || "all-events"} value={option.id}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <div className="filter-actions">
+                      <button type="submit">Знайти</button>
+                      <button
+                        type="button"
+                        className="button-secondary"
+                        onClick={historyContext.onToggleExpanded}
+                      >
+                        {historyContext.view.collapsed
+                          ? "Показати всю історію"
+                          : "Згорнути історію"}
+                      </button>
+                    </div>
+                  </form>
+
+                  <p className="meta">
+                    Activity timeline · {historyContext.view.visibleCount} /{" "}
+                    {historyContext.view.totalCount}
+                    {historyContext.view.collapsed ? " · collapsed" : ""}
+                  </p>
+
+                  {historyContext.view.events.length === 0 ? (
+                    <p className="meta">Подій за поточними фільтрами немає.</p>
+                  ) : (
+                    <ol className="case-history-timeline">
+                      {historyContext.view.events.map((event) => (
+                        <li key={event.id} className="case-history-event">
+                          <div className="case-history-event-head">
+                            <span
+                              className={`aging-badge aging-badge--promise aging-badge--history-${event.type}`}
+                            >
+                              {activityEventTypeLabel(event.type)}
+                            </span>
+                            <time dateTime={event.atUtc}>{formatDate(event.atUtc)}</time>
+                          </div>
+                          <p className="case-history-description">{event.description}</p>
+                          {event.note ? (
+                            <p className="meta cell-wrap">Note: {event.note}</p>
+                          ) : null}
+                          {event.promiseDate ? (
+                            <p className="meta">Promise date: {event.promiseDate}</p>
+                          ) : null}
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                </>
+              ) : null}
             </section>
           ) : null}
 
