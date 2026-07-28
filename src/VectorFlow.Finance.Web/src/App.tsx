@@ -22,7 +22,9 @@ import {
 import type { InvoiceQueueMode } from "./invoiceListQuery";
 import type { AgingBucketFilter } from "./invoiceCollections";
 import type { PromiseGroupFilter } from "./promiseToPay";
+import type { WorkbenchSortMode } from "./collectionWorkbench";
 import type { CollectionPanelMode } from "./urlState";
+import { isPromisePanel } from "./urlState";
 import { InvoicesView } from "./InvoicesView";
 import { APP_VIEWS, type AppView } from "./navigation";
 import { WorkspaceContextBar } from "./WorkspaceContextBar";
@@ -224,11 +226,14 @@ export default function App() {
       agingBucket: AgingBucketFilter = "",
       collectionPanel: CollectionPanelMode = "",
       promiseGroup: PromiseGroupFilter = "",
-      promiseSearch: string = ""
+      promiseSearch: string = "",
+      workbenchSort: WorkbenchSortMode = "priority",
+      workbenchHideCompleted: boolean = false,
+      workbenchSection: ListDiscovery["workbenchSection"] = ""
     ) => {
       const overdue = invoiceQueue === "overdue";
       const panel: CollectionPanelMode =
-        overdue && collectionPanel === "followups" ? "followups" : "";
+        overdue && isPromisePanel(collectionPanel) ? collectionPanel : "";
       setDiscovery((current) => ({
         ...current,
         page,
@@ -236,8 +241,11 @@ export default function App() {
         invoiceQueue,
         agingBucket: overdue ? agingBucket : "",
         collectionPanel: panel,
-        promiseGroup: panel === "followups" ? promiseGroup : "",
-        promiseSearch: panel === "followups" ? promiseSearch.trim() : ""
+        promiseGroup: isPromisePanel(panel) ? promiseGroup : "",
+        promiseSearch: isPromisePanel(panel) ? promiseSearch.trim() : "",
+        workbenchSection: panel === "workbench" ? workbenchSection : "",
+        workbenchSort: panel === "workbench" ? workbenchSort : "priority",
+        workbenchHideCompleted: panel === "workbench" ? workbenchHideCompleted : false
       }));
     },
     []
@@ -473,6 +481,9 @@ export default function App() {
           initialCollectionPanel={discovery.collectionPanel}
           initialPromiseGroup={discovery.promiseGroup}
           initialPromiseSearch={discovery.promiseSearch}
+          initialWorkbenchSection={discovery.workbenchSection}
+          initialWorkbenchSort={discovery.workbenchSort}
+          initialWorkbenchHideCompleted={discovery.workbenchHideCompleted}
           selectedInvoiceId={invoiceId}
           onDiscoveryChange={handleInvoiceDiscoveryChange}
           onSelectedInvoiceIdChange={handleInvoiceIdChange}

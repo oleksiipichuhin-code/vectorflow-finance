@@ -266,6 +266,22 @@ body {
   color: #7a3418;
 }
 
+.workbench-mass-actions {
+  margin-top: 0.5rem;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.aging-badge--nba {
+  background: color-mix(in srgb, #0b6e4f 16%, transparent);
+}
+
 .row-attention--promise-broken {
   background: rgba(158, 74, 36, 0.1);
 }

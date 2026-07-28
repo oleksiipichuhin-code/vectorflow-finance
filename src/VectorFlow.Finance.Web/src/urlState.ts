@@ -10,12 +10,19 @@ import type {
 } from "./invoiceListQuery";
 import type { AppView } from "./navigation";
 import {
+  parseWorkbenchHideCompletedParam,
+  parseWorkbenchSectionParam,
+  parseWorkbenchSortParam,
+  type WorkbenchSectionFilter,
+  type WorkbenchSortMode
+} from "./collectionWorkbench.ts";
+import {
   parsePromiseGroupParam,
   type PromiseGroupFilter
 } from "./promiseToPay.ts";
 
-/** Collection workspace panel: overdue queue (default) or promise follow-ups. */
-export type CollectionPanelMode = "" | "followups";
+/** Collection workspace panel: overdue queue (default), follow-ups, or workbench. */
+export type CollectionPanelMode = "" | "followups" | "workbench";
 
 const VIEW_IDS: ReadonlySet<string> = new Set([
   "dashboard",
@@ -41,16 +48,26 @@ export type ListDiscovery = {
    */
   agingBucket: AgingBucketFilter;
   /**
-   * Collection panel (`panel=followups` in URL). Meaningful only with queue=overdue.
+   * Collection panel (`panel=followups|workbench` in URL). Meaningful only with queue=overdue.
    * Empty = overdue queue table.
    */
   collectionPanel: CollectionPanelMode;
   /**
-   * Promise follow-up group filter (`promiseGroup=`). Meaningful only with panel=followups.
+   * Promise follow-up / workbench section filter (`promiseGroup=`).
+   * Meaningful with panel=followups or panel=workbench.
    */
   promiseGroup: PromiseGroupFilter;
-  /** Promise follow-up search (`promiseQ=`): invoice number or counterparty substring. */
+  /** Promise follow-up / workbench search (`promiseQ=`): invoice number or counterparty. */
   promiseSearch: string;
+  /**
+   * Workbench section filter (`wbSection=`). Meaningful only with panel=workbench.
+   * Prefer this over promiseGroup when both are present for workbench section chips.
+   */
+  workbenchSection: WorkbenchSectionFilter;
+  /** Workbench sort (`wbSort=`). Meaningful only with panel=workbench. */
+  workbenchSort: WorkbenchSortMode;
+  /** Hide completed workbench cases (`wbHideCompleted=1`). */
+  workbenchHideCompleted: boolean;
 };
 
 export type AppUrlState = {
@@ -90,7 +107,10 @@ export const EMPTY_DISCOVERY: ListDiscovery = {
   agingBucket: "",
   collectionPanel: "",
   promiseGroup: "",
-  promiseSearch: ""
+  promiseSearch: "",
+  workbenchSection: "",
+  workbenchSort: "priority",
+  workbenchHideCompleted: false
 };
 
 export function parseCollectionPanelParam(
@@ -100,7 +120,14 @@ export function parseCollectionPanelParam(
     return "";
   }
   const trimmed = value.trim();
-  return trimmed === "followups" ? "followups" : "";
+  if (trimmed === "followups" || trimmed === "workbench") {
+    return trimmed;
+  }
+  return "";
+}
+
+export function isPromisePanel(panel: CollectionPanelMode): boolean {
+  return panel === "followups" || panel === "workbench";
 }
 
 export function isAppView(value: string | null | undefined): value is AppView {
@@ -241,7 +268,10 @@ export function createEmptyDiscovery(): ListDiscovery {
     agingBucket: "",
     collectionPanel: "",
     promiseGroup: "",
-    promiseSearch: ""
+    promiseSearch: "",
+    workbenchSection: "",
+    workbenchSort: "priority",
+    workbenchHideCompleted: false
   };
 }
 
@@ -268,14 +298,29 @@ export function parseUrlSearch(search: string): AppUrlState {
     view === "invoices" && invoiceQueue === "overdue"
       ? parseCollectionPanelParam(params.get("panel"))
       : "";
+  const promisePanel = isPromisePanel(collectionPanel);
   const promiseGroup =
-    view === "invoices" && invoiceQueue === "overdue" && collectionPanel === "followups"
+    view === "invoices" && invoiceQueue === "overdue" && promisePanel
       ? parsePromiseGroupParam(params.get("promiseGroup"))
       : "";
   const promiseSearch =
-    view === "invoices" && invoiceQueue === "overdue" && collectionPanel === "followups"
+    view === "invoices" && invoiceQueue === "overdue" && promisePanel
       ? (params.get("promiseQ")?.trim() ?? "")
       : "";
+  const workbenchActive =
+    view === "invoices" && invoiceQueue === "overdue" && collectionPanel === "workbench";
+  let workbenchSection = workbenchActive
+    ? parseWorkbenchSectionParam(params.get("wbSection"))
+    : "";
+  if (workbenchActive && !workbenchSection) {
+    workbenchSection = parseWorkbenchSectionParam(params.get("promiseGroup"));
+  }
+  const workbenchSort = workbenchActive
+    ? parseWorkbenchSortParam(params.get("wbSort"))
+    : "priority";
+  const workbenchHideCompleted = workbenchActive
+    ? parseWorkbenchHideCompletedParam(params.get("wbHideCompleted"))
+    : false;
 
   const invoiceFilters: InvoiceListFilters = {
     documentNumber: params.get("documentNumber")?.trim() ?? "",
@@ -314,7 +359,10 @@ export function parseUrlSearch(search: string): AppUrlState {
       agingBucket,
       collectionPanel,
       promiseGroup,
-      promiseSearch
+      promiseSearch,
+      workbenchSection,
+      workbenchSort,
+      workbenchHideCompleted
     }
   };
 }
@@ -376,6 +424,25 @@ export function buildUrlSearch(state: AppUrlState): string {
         }
         setIfPresent(params, "promiseQ", state.discovery.promiseSearch);
       }
+      if (state.discovery.collectionPanel === "workbench") {
+        params.set("panel", "workbench");
+        if (state.discovery.workbenchSection) {
+          params.set("wbSection", state.discovery.workbenchSection);
+        } else if (state.discovery.promiseGroup) {
+          // Back-compat: allow promiseGroup to drive section when wbSection empty.
+          const section = parseWorkbenchSectionParam(state.discovery.promiseGroup);
+          if (section) {
+            params.set("wbSection", section);
+          }
+        }
+        setIfPresent(params, "promiseQ", state.discovery.promiseSearch);
+        if (state.discovery.workbenchSort && state.discovery.workbenchSort !== "priority") {
+          params.set("wbSort", state.discovery.workbenchSort);
+        }
+        if (state.discovery.workbenchHideCompleted) {
+          params.set("wbHideCompleted", "1");
+        }
+      }
     }
     if (page > 1) {
       params.set("page", String(page));
@@ -426,7 +493,10 @@ export function draftInvoicesDiscovery(): ListDiscovery {
     agingBucket: "",
     collectionPanel: "",
     promiseGroup: "",
-    promiseSearch: ""
+    promiseSearch: "",
+    workbenchSection: "",
+    workbenchSort: "priority",
+    workbenchHideCompleted: false
   };
 }
 
@@ -446,7 +516,10 @@ export function issuedInvoicesDiscovery(): ListDiscovery {
     agingBucket: "",
     collectionPanel: "",
     promiseGroup: "",
-    promiseSearch: ""
+    promiseSearch: "",
+    workbenchSection: "",
+    workbenchSort: "priority",
+    workbenchHideCompleted: false
   };
 }
 
@@ -467,6 +540,9 @@ export function overdueIssuedInvoicesDiscovery(): ListDiscovery {
     agingBucket: "",
     collectionPanel: "",
     promiseGroup: "",
-    promiseSearch: ""
+    promiseSearch: "",
+    workbenchSection: "",
+    workbenchSort: "priority",
+    workbenchHideCompleted: false
   };
 }

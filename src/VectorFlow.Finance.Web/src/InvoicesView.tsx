@@ -22,6 +22,7 @@ import {
   EMPTY_INVOICE_FILTERS,
   draftInvoicesDiscovery,
   issuedInvoicesDiscovery,
+  isPromisePanel,
   overdueIssuedInvoicesDiscovery,
   type CollectionPanelMode
 } from "./urlState";
@@ -67,6 +68,18 @@ import {
   type PromiseGroupFilter,
   type PromiseToPayRecord
 } from "./promiseToPay";
+import {
+  WORKBENCH_SECTION_OPTIONS,
+  WORKBENCH_SORT_OPTIONS,
+  applyWorkbenchMassAction,
+  buildWorkbenchCases,
+  buildWorkbenchKpi,
+  buildWorkbenchSectionSummaries,
+  filterWorkbenchCases,
+  type WorkbenchMassActionId,
+  type WorkbenchSectionFilter,
+  type WorkbenchSortMode
+} from "./collectionWorkbench";
 import {
   canViewInvoiceDetails,
   DETAIL_RELOAD_AFTER_MUTATION_FAILED_MESSAGE,
@@ -149,6 +162,9 @@ type InvoicesViewProps = {
   initialCollectionPanel?: CollectionPanelMode;
   initialPromiseGroup?: PromiseGroupFilter;
   initialPromiseSearch?: string;
+  initialWorkbenchSection?: WorkbenchSectionFilter;
+  initialWorkbenchSort?: WorkbenchSortMode;
+  initialWorkbenchHideCompleted?: boolean;
   selectedInvoiceId?: string | null;
   onDiscoveryChange?: (
     page: number,
@@ -157,7 +173,10 @@ type InvoicesViewProps = {
     agingBucket?: AgingBucketFilter,
     collectionPanel?: CollectionPanelMode,
     promiseGroup?: PromiseGroupFilter,
-    promiseSearch?: string
+    promiseSearch?: string,
+    workbenchSort?: WorkbenchSortMode,
+    workbenchHideCompleted?: boolean,
+    workbenchSection?: WorkbenchSectionFilter
   ) => void;
   onSelectedInvoiceIdChange?: (
     invoiceId: string | null,
@@ -186,6 +205,9 @@ export function InvoicesView({
   initialCollectionPanel = "",
   initialPromiseGroup = "",
   initialPromiseSearch = "",
+  initialWorkbenchSection = "",
+  initialWorkbenchSort = "priority",
+  initialWorkbenchHideCompleted = false,
   selectedInvoiceId = null,
   onDiscoveryChange,
   onSelectedInvoiceIdChange,
@@ -209,25 +231,42 @@ export function InvoicesView({
     () => (initialInvoiceQueue === "overdue" ? initialAgingBucket : "")
   );
   const [collectionPanel, setCollectionPanel] = useState<CollectionPanelMode>(() =>
-    initialInvoiceQueue === "overdue" && initialCollectionPanel === "followups"
-      ? "followups"
+    initialInvoiceQueue === "overdue" && isPromisePanel(initialCollectionPanel)
+      ? initialCollectionPanel
       : ""
   );
   const [promiseGroup, setPromiseGroup] = useState<PromiseGroupFilter>(() =>
-    initialInvoiceQueue === "overdue" && initialCollectionPanel === "followups"
+    initialInvoiceQueue === "overdue" && isPromisePanel(initialCollectionPanel)
       ? initialPromiseGroup
       : ""
   );
   const [promiseSearch, setPromiseSearch] = useState(() =>
-    initialInvoiceQueue === "overdue" && initialCollectionPanel === "followups"
+    initialInvoiceQueue === "overdue" && isPromisePanel(initialCollectionPanel)
       ? initialPromiseSearch
       : ""
   );
   const [promiseSearchDraft, setPromiseSearchDraft] = useState(() =>
-    initialInvoiceQueue === "overdue" && initialCollectionPanel === "followups"
+    initialInvoiceQueue === "overdue" && isPromisePanel(initialCollectionPanel)
       ? initialPromiseSearch
       : ""
   );
+  const [workbenchSection, setWorkbenchSection] = useState<WorkbenchSectionFilter>(() =>
+    initialInvoiceQueue === "overdue" && initialCollectionPanel === "workbench"
+      ? initialWorkbenchSection
+      : ""
+  );
+  const [workbenchSort, setWorkbenchSort] = useState<WorkbenchSortMode>(() =>
+    initialInvoiceQueue === "overdue" && initialCollectionPanel === "workbench"
+      ? initialWorkbenchSort
+      : "priority"
+  );
+  const [workbenchHideCompleted, setWorkbenchHideCompleted] = useState(() =>
+    initialInvoiceQueue === "overdue" && initialCollectionPanel === "workbench"
+      ? initialWorkbenchHideCompleted
+      : false
+  );
+  const [workbenchSelectedIds, setWorkbenchSelectedIds] = useState<string[]>([]);
+  const [workbenchMassMessage, setWorkbenchMassMessage] = useState<string | null>(null);
   const [promiseRevision, setPromiseRevision] = useState(0);
   const [promiseFormOpen, setPromiseFormOpen] = useState(false);
   const [promiseDateInput, setPromiseDateInput] = useState("");
@@ -526,18 +565,24 @@ export function InvoicesView({
     nextAging: AgingBucketFilter,
     nextPanel: CollectionPanelMode = "",
     nextGroup: PromiseGroupFilter = "",
-    nextSearch: string = ""
+    nextSearch: string = "",
+    nextWorkbenchSort: WorkbenchSortMode = "priority",
+    nextHideCompleted: boolean = false,
+    nextWorkbenchSection: WorkbenchSectionFilter = ""
   ) {
     const panel: CollectionPanelMode =
-      nextQueue === "overdue" && nextPanel === "followups" ? "followups" : "";
+      nextQueue === "overdue" && isPromisePanel(nextPanel) ? nextPanel : "";
     onDiscoveryChange?.(
       nextPage,
       filters,
       nextQueue,
       nextQueue === "overdue" ? nextAging : "",
       panel,
-      panel === "followups" ? nextGroup : "",
-      panel === "followups" ? nextSearch : ""
+      isPromisePanel(panel) ? nextGroup : "",
+      isPromisePanel(panel) ? nextSearch : "",
+      panel === "workbench" ? nextWorkbenchSort : "priority",
+      panel === "workbench" ? nextHideCompleted : false,
+      panel === "workbench" ? nextWorkbenchSection : ""
     );
   }
 
@@ -546,6 +591,11 @@ export function InvoicesView({
     setPromiseGroup("");
     setPromiseSearch("");
     setPromiseSearchDraft("");
+    setWorkbenchSection("");
+    setWorkbenchSort("priority");
+    setWorkbenchHideCompleted(false);
+    setWorkbenchSelectedIds([]);
+    setWorkbenchMassMessage(null);
   }
 
   function applyFilters(event: FormEvent<HTMLFormElement>) {
@@ -558,9 +608,13 @@ export function InvoicesView({
     const nextAging: AgingBucketFilter = nextQueue === "overdue" ? agingBucket : "";
     const nextPanel: CollectionPanelMode =
       nextQueue === "overdue" ? collectionPanel : "";
-    const nextGroup: PromiseGroupFilter =
-      nextPanel === "followups" ? promiseGroup : "";
-    const nextSearch = nextPanel === "followups" ? promiseSearch : "";
+    const nextGroup: PromiseGroupFilter = isPromisePanel(nextPanel) ? promiseGroup : "";
+    const nextSearch = isPromisePanel(nextPanel) ? promiseSearch : "";
+    const nextWbSort: WorkbenchSortMode =
+      nextPanel === "workbench" ? workbenchSort : "priority";
+    const nextHide = nextPanel === "workbench" ? workbenchHideCompleted : false;
+    const nextWbSection: WorkbenchSectionFilter =
+      nextPanel === "workbench" ? workbenchSection : "";
     const filtersForQuery =
       nextQueue === "overdue"
         ? { ...draftFilters, status: "Issued" as const }
@@ -592,7 +646,10 @@ export function InvoicesView({
       nextAging,
       nextPanel,
       nextGroup,
-      nextSearch
+      nextSearch,
+      nextWbSort,
+      nextHide,
+      nextWbSection
     );
   }
 
@@ -2035,6 +2092,9 @@ export function InvoicesView({
     collectionPanel === "";
 
   const followUpsPanelActive = overdueQueueActive && collectionPanel === "followups";
+  const workbenchPanelActive = overdueQueueActive && collectionPanel === "workbench";
+  const promisePanelActive = followUpsPanelActive || workbenchPanelActive;
+  const queueTableActive = overdueQueueActive && !promisePanelActive;
 
   const collectionsNow = new Date();
   const collectionsQueue = overdueQueueActive
@@ -2065,17 +2125,43 @@ export function InvoicesView({
     ? groupPromiseFollowUps(promiseFollowUpItems)
     : null;
 
+  const workbenchCasesAll = workbenchPanelActive
+    ? buildWorkbenchCases(invoices, promiseRecords, collectionsNow)
+    : [];
+  const workbenchKpi = workbenchPanelActive
+    ? buildWorkbenchKpi(workbenchCasesAll, collectionsNow)
+    : null;
+  const workbenchFilteredCases = workbenchPanelActive
+    ? filterWorkbenchCases(workbenchCasesAll, {
+        section: workbenchSection,
+        search: promiseSearch,
+        sort: workbenchSort,
+        hideCompleted: workbenchHideCompleted
+      })
+    : [];
+  const workbenchSections = workbenchPanelActive
+    ? buildWorkbenchSectionSummaries(workbenchCasesAll, {
+        section: workbenchSection,
+        search: promiseSearch,
+        sort: workbenchSort,
+        hideCompleted: workbenchHideCompleted
+      })
+    : [];
+  const workbenchVisibleIds = new Set(workbenchFilteredCases.map((item) => item.invoiceId));
+
   const detailPromiseRecord =
     overdueQueueActive && detailTargetId
       ? readPromiseFromStorage(detailTargetId)
       : null;
 
   const displayInvoices = overdueQueueActive ? collectionsQueue : invoices;
-  const listEmpty = followUpsPanelActive
-    ? !loading && !error && promiseFollowUpItems.length === 0
-    : overdueQueueActive
-      ? !loading && !error && collectionsQueue.length === 0
-      : !loading && !error && invoices.length === 0;
+  const listEmpty = workbenchPanelActive
+    ? !loading && !error && workbenchFilteredCases.length === 0
+    : followUpsPanelActive
+      ? !loading && !error && promiseFollowUpItems.length === 0
+      : overdueQueueActive
+        ? !loading && !error && collectionsQueue.length === 0
+        : !loading && !error && invoices.length === 0;
 
   function openNextCollectionsInvoice() {
     if (!collectionsPosition?.nextId) {
@@ -2157,7 +2243,10 @@ export function InvoicesView({
       nextBucket,
       collectionPanel,
       promiseGroup,
-      promiseSearch
+      promiseSearch,
+      workbenchSort,
+      workbenchHideCompleted,
+      workbenchSection
     );
   }
 
@@ -2166,12 +2255,23 @@ export function InvoicesView({
       return;
     }
 
-    const panel: CollectionPanelMode = nextPanel === "followups" ? "followups" : "";
+    const panel: CollectionPanelMode = isPromisePanel(nextPanel) ? nextPanel : "";
     setCollectionPanel(panel);
-    if (panel !== "followups") {
+    setWorkbenchSelectedIds([]);
+    setWorkbenchMassMessage(null);
+    if (!isPromisePanel(panel)) {
       setPromiseGroup("");
       setPromiseSearch("");
       setPromiseSearchDraft("");
+      setWorkbenchSection("");
+      setWorkbenchSort("priority");
+      setWorkbenchHideCompleted(false);
+    } else if (panel === "followups") {
+      setWorkbenchSection("");
+      setWorkbenchSort("priority");
+      setWorkbenchHideCompleted(false);
+    } else if (panel === "workbench") {
+      setPromiseGroup("");
     }
     setPage(1);
     publishDiscovery(
@@ -2181,7 +2281,10 @@ export function InvoicesView({
       agingBucket,
       panel,
       panel === "followups" ? promiseGroup : "",
-      panel === "followups" ? promiseSearch : ""
+      isPromisePanel(panel) ? promiseSearch : "",
+      panel === "workbench" ? workbenchSort : "priority",
+      panel === "workbench" ? workbenchHideCompleted : false,
+      panel === "workbench" ? workbenchSection : ""
     );
   }
 
@@ -2204,7 +2307,7 @@ export function InvoicesView({
 
   function applyPromiseSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!isOverdueInvoiceQueue(invoiceQueue) || collectionPanel !== "followups") {
+    if (!isOverdueInvoiceQueue(invoiceQueue) || !isPromisePanel(collectionPanel)) {
       return;
     }
 
@@ -2216,10 +2319,115 @@ export function InvoicesView({
       appliedFilters,
       "overdue",
       agingBucket,
-      "followups",
-      promiseGroup,
-      nextSearch
+      collectionPanel,
+      collectionPanel === "followups" ? promiseGroup : "",
+      nextSearch,
+      workbenchSort,
+      workbenchHideCompleted,
+      workbenchSection
     );
+  }
+
+  function applyWorkbenchSection(nextSection: WorkbenchSectionFilter) {
+    if (!isOverdueInvoiceQueue(invoiceQueue) || collectionPanel !== "workbench") {
+      return;
+    }
+
+    setWorkbenchSection(nextSection);
+    setWorkbenchSelectedIds([]);
+    publishDiscovery(
+      1,
+      appliedFilters,
+      "overdue",
+      agingBucket,
+      "workbench",
+      "",
+      promiseSearch,
+      workbenchSort,
+      workbenchHideCompleted,
+      nextSection
+    );
+  }
+
+  function applyWorkbenchSort(nextSort: WorkbenchSortMode) {
+    if (!isOverdueInvoiceQueue(invoiceQueue) || collectionPanel !== "workbench") {
+      return;
+    }
+
+    setWorkbenchSort(nextSort);
+    publishDiscovery(
+      1,
+      appliedFilters,
+      "overdue",
+      agingBucket,
+      "workbench",
+      "",
+      promiseSearch,
+      nextSort,
+      workbenchHideCompleted,
+      workbenchSection
+    );
+  }
+
+  function applyWorkbenchHideCompleted(nextHide: boolean) {
+    if (!isOverdueInvoiceQueue(invoiceQueue) || collectionPanel !== "workbench") {
+      return;
+    }
+
+    setWorkbenchHideCompleted(nextHide);
+    setWorkbenchSelectedIds((current) =>
+      nextHide
+        ? current.filter((id) => {
+            const match = workbenchCasesAll.find((item) => item.invoiceId === id);
+            return match ? match.group !== "completed" : false;
+          })
+        : current
+    );
+    publishDiscovery(
+      1,
+      appliedFilters,
+      "overdue",
+      agingBucket,
+      "workbench",
+      "",
+      promiseSearch,
+      workbenchSort,
+      nextHide,
+      workbenchSection
+    );
+  }
+
+  function toggleWorkbenchSelection(invoiceId: string) {
+    setWorkbenchSelectedIds((current) =>
+      current.includes(invoiceId)
+        ? current.filter((id) => id !== invoiceId)
+        : [...current, invoiceId]
+    );
+  }
+
+  function toggleWorkbenchSelectAllVisible() {
+    const visible = workbenchFilteredCases.map((item) => item.invoiceId);
+    const allSelected =
+      visible.length > 0 && visible.every((id) => workbenchSelectedIds.includes(id));
+    setWorkbenchSelectedIds(allSelected ? [] : visible);
+  }
+
+  function runWorkbenchMassAction(action: WorkbenchMassActionId) {
+    const selected = workbenchSelectedIds.filter((id) => workbenchVisibleIds.has(id));
+    if (selected.length === 0) {
+      setWorkbenchMassMessage("Оберіть хоча б один кейс для масової дії.");
+      return;
+    }
+
+    const result = applyWorkbenchMassAction(selected, action);
+    bumpPromiseRevision();
+    setWorkbenchSelectedIds([]);
+    const parts = [
+      `Оновлено: ${result.okIds.length}`,
+      result.skippedIds.length ? `пропущено: ${result.skippedIds.length}` : null,
+      result.errorIds.length ? `помилок: ${result.errorIds.length}` : null
+    ].filter(Boolean);
+    setWorkbenchMassMessage(parts.join(" · "));
   }
 
   function bumpPromiseRevision() {
@@ -2424,15 +2632,28 @@ export function InvoicesView({
                   <button
                     type="button"
                     className={
-                      !followUpsPanelActive
+                      queueTableActive
                         ? "list-shortcut list-shortcut--active"
                         : "list-shortcut"
                     }
-                    aria-pressed={!followUpsPanelActive}
+                    aria-pressed={queueTableActive}
                     disabled={loading}
                     onClick={() => applyCollectionPanel("")}
                   >
                     Overdue queue
+                  </button>
+                  <button
+                    type="button"
+                    className={
+                      workbenchPanelActive
+                        ? "list-shortcut list-shortcut--attention list-shortcut--active"
+                        : "list-shortcut list-shortcut--attention"
+                    }
+                    aria-pressed={workbenchPanelActive}
+                    disabled={loading}
+                    onClick={() => applyCollectionPanel("workbench")}
+                  >
+                    Collection Workbench
                   </button>
                   <button
                     type="button"
@@ -2448,7 +2669,7 @@ export function InvoicesView({
                     Promise Follow-ups
                   </button>
                 </div>
-                {!followUpsPanelActive && collectionsSummary ? (
+                {queueTableActive && collectionsSummary ? (
                   <dl className="collections-summary facts collections-kpi">
                     <div>
                       <dt>Total Overdue</dt>
@@ -2485,6 +2706,34 @@ export function InvoicesView({
                     </div>
                   </dl>
                 ) : null}
+                {workbenchPanelActive && workbenchKpi ? (
+                  <dl className="collections-summary facts collections-kpi">
+                    <div>
+                      <dt>Active Collection Cases</dt>
+                      <dd>{workbenchKpi.activeCollectionCases}</dd>
+                    </div>
+                    <div>
+                      <dt>Due Today</dt>
+                      <dd>{workbenchKpi.dueTodayCount}</dd>
+                    </div>
+                    <div>
+                      <dt>Broken Promises</dt>
+                      <dd>{workbenchKpi.brokenCount}</dd>
+                    </div>
+                    <div>
+                      <dt>Escalated</dt>
+                      <dd>{workbenchKpi.escalatedCount}</dd>
+                    </div>
+                    <div>
+                      <dt>Disputed</dt>
+                      <dd>{workbenchKpi.disputedCount}</dd>
+                    </div>
+                    <div>
+                      <dt>Completed Today</dt>
+                      <dd>{workbenchKpi.completedTodayCount}</dd>
+                    </div>
+                  </dl>
+                ) : null}
                 {followUpsPanelActive && promiseSummary ? (
                   <dl className="collections-summary facts collections-kpi">
                     <div>
@@ -2515,7 +2764,7 @@ export function InvoicesView({
                     {COLLECTIONS_PAGE_SIZE}). Підсумок і Next — у межах завантаженого набору.
                   </p>
                 ) : null}
-                {!followUpsPanelActive ? (
+                {queueTableActive ? (
                   <div
                     className="aging-bucket-row"
                     role="group"
@@ -2538,7 +2787,8 @@ export function InvoicesView({
                       </button>
                     ))}
                   </div>
-                ) : (
+                ) : null}
+                {followUpsPanelActive ? (
                   <>
                     <div
                       className="aging-bucket-row"
@@ -2599,7 +2849,143 @@ export function InvoicesView({
                       </div>
                     </form>
                   </>
-                )}
+                ) : null}
+                {workbenchPanelActive ? (
+                  <>
+                    <div
+                      className="aging-bucket-row"
+                      role="group"
+                      aria-label="Collection workbench sections"
+                    >
+                      {WORKBENCH_SECTION_OPTIONS.map((option) => (
+                        <button
+                          key={option.id || "all-workbench"}
+                          type="button"
+                          className={
+                            workbenchSection === option.id
+                              ? "list-shortcut list-shortcut--active"
+                              : "list-shortcut"
+                          }
+                          aria-pressed={workbenchSection === option.id}
+                          disabled={loading}
+                          onClick={() => applyWorkbenchSection(option.id)}
+                        >
+                          {option.shortLabel}
+                        </button>
+                      ))}
+                    </div>
+                    <form className="filter-form promise-search-form" onSubmit={applyPromiseSearch}>
+                      <label>
+                        Пошук workbench
+                        <input
+                          value={promiseSearchDraft}
+                          onChange={(event) => setPromiseSearchDraft(event.target.value)}
+                          placeholder="номер рахунку, контрагент або next action"
+                          autoComplete="off"
+                        />
+                      </label>
+                      <label>
+                        Сортування
+                        <select
+                          value={workbenchSort}
+                          onChange={(event) =>
+                            applyWorkbenchSort(event.target.value as WorkbenchSortMode)
+                          }
+                        >
+                          {WORKBENCH_SORT_OPTIONS.map((option) => (
+                            <option key={option.id} value={option.id}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <div className="filter-actions">
+                        <button type="submit" disabled={loading}>
+                          Знайти
+                        </button>
+                        <button
+                          type="button"
+                          className="button-secondary"
+                          disabled={loading}
+                          onClick={() => {
+                            setPromiseSearchDraft("");
+                            setPromiseSearch("");
+                            publishDiscovery(
+                              1,
+                              appliedFilters,
+                              "overdue",
+                              agingBucket,
+                              "workbench",
+                              "",
+                              "",
+                              workbenchSort,
+                              workbenchHideCompleted,
+                              workbenchSection
+                            );
+                          }}
+                        >
+                          Скинути пошук
+                        </button>
+                        <button
+                          type="button"
+                          className={
+                            workbenchHideCompleted
+                              ? "list-shortcut list-shortcut--active"
+                              : "list-shortcut"
+                          }
+                          aria-pressed={workbenchHideCompleted}
+                          disabled={loading}
+                          onClick={() => applyWorkbenchHideCompleted(!workbenchHideCompleted)}
+                        >
+                          Hide Completed
+                        </button>
+                      </div>
+                    </form>
+                    <div
+                      className="aging-bucket-row workbench-mass-actions"
+                      role="group"
+                      aria-label="Workbench mass actions"
+                    >
+                      <button
+                        type="button"
+                        className="button-secondary"
+                        disabled={loading || workbenchSelectedIds.length === 0}
+                        onClick={() => runWorkbenchMassAction("mark_contacted")}
+                      >
+                        Mark Contacted
+                      </button>
+                      <button
+                        type="button"
+                        className="button-secondary"
+                        disabled={loading || workbenchSelectedIds.length === 0}
+                        onClick={() => runWorkbenchMassAction("mark_follow_up_required")}
+                      >
+                        Mark Follow-up Required
+                      </button>
+                      <button
+                        type="button"
+                        className="button-secondary"
+                        disabled={loading || workbenchSelectedIds.length === 0}
+                        onClick={() => runWorkbenchMassAction("complete")}
+                      >
+                        Complete
+                      </button>
+                      <button
+                        type="button"
+                        className="button-secondary"
+                        disabled={loading}
+                        onClick={() => applyWorkbenchHideCompleted(true)}
+                      >
+                        Hide Completed
+                      </button>
+                    </div>
+                    {workbenchMassMessage ? (
+                      <p className="meta" role="status">
+                        {workbenchMassMessage}
+                      </p>
+                    ) : null}
+                  </>
+                ) : null}
               </div>
             ) : null}
 
@@ -3291,19 +3677,194 @@ export function InvoicesView({
             retryDisabled={loading}
             empty={listEmpty}
             emptyMessage={
-              followUpsPanelActive
-                ? promiseGroup || promiseSearch
-                  ? "За поточними follow-up фільтрами обіцянок немає."
-                  : "Немає збережених promise-to-pay follow-ups для завантажених рахунків."
-                : overdueQueueActive
-                  ? agingBucket
-                    ? `У bucket «${agingBucketLabel(agingBucket)}» немає прострочених рахунків у завантаженому наборі.`
-                    : "Немає рахунків до збору оплат (прострочені або строк сьогодні)."
-                  : filtersActive
-                    ? "За поточними фільтрами рахунків немає."
-                    : "Рахунків ще немає. Створіть чернетку через форму вище."
+              workbenchPanelActive
+                ? workbenchSection || promiseSearch || workbenchHideCompleted
+                  ? "За поточними workbench фільтрами кейсів немає."
+                  : "Немає відкритих collection cases для завантажених рахунків."
+                : followUpsPanelActive
+                  ? promiseGroup || promiseSearch
+                    ? "За поточними follow-up фільтрами обіцянок немає."
+                    : "Немає збережених promise-to-pay follow-ups для завантажених рахунків."
+                  : overdueQueueActive
+                    ? agingBucket
+                      ? `У bucket «${agingBucketLabel(agingBucket)}» немає прострочених рахунків у завантаженому наборі.`
+                      : "Немає рахунків до збору оплат (прострочені або строк сьогодні)."
+                    : filtersActive
+                      ? "За поточними фільтрами рахунків немає."
+                      : "Рахунків ще немає. Створіть чернетку через форму вище."
             }
           />
+        ) : null}
+
+        {workbenchPanelActive && workbenchFilteredCases.length > 0 ? (
+          <>
+            <p className="meta">
+              Collection Workbench · показано {workbenchFilteredCases.length}
+              {workbenchSection
+                ? ` · ${WORKBENCH_SECTION_OPTIONS.find((o) => o.id === workbenchSection)?.label}`
+                : ""}
+              {promiseSearch ? ` · пошук «${promiseSearch}»` : ""}
+              {workbenchHideCompleted ? " · completed hidden" : ""}
+              {workbenchSelectedIds.length > 0
+                ? ` · вибрано ${workbenchSelectedIds.length}`
+                : ""}
+            </p>
+            {workbenchSections.map((section) => (
+              <div key={section.id} className="promise-group-section workbench-section">
+                <h4 className="promise-group-title">
+                  {section.label}
+                  <span className="meta">
+                    {" "}
+                    · {section.count} · {formatTotals(section.totalsByCurrency)}
+                  </span>
+                </h4>
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>
+                          <input
+                            type="checkbox"
+                            checked={
+                              section.cases.length > 0 &&
+                              section.cases.every((item) =>
+                                workbenchSelectedIds.includes(item.invoiceId)
+                              )
+                            }
+                            onChange={() => {
+                              const ids = section.cases.map((item) => item.invoiceId);
+                              const allOn = ids.every((id) =>
+                                workbenchSelectedIds.includes(id)
+                              );
+                              setWorkbenchSelectedIds((current) =>
+                                allOn
+                                  ? current.filter((id) => !ids.includes(id))
+                                  : [...new Set([...current, ...ids])]
+                              );
+                            }}
+                            aria-label={`Select ${section.label}`}
+                          />
+                        </th>
+                        <th>Invoice Number</th>
+                        <th>Customer</th>
+                        <th>Amount</th>
+                        <th>Promise date</th>
+                        <th>Next Best Action</th>
+                        <th>Status</th>
+                        <th>Дія</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {section.cases.map((item) => {
+                        const selected =
+                          item.invoiceId === detailTargetId ||
+                          item.invoiceId === highlightedId;
+                        const checked = workbenchSelectedIds.includes(item.invoiceId);
+                        return (
+                          <tr
+                            key={item.invoiceId}
+                            data-row-id={item.invoiceId}
+                            className={
+                              selected
+                                ? `row-attention row-attention--promise-${item.group} row-highlight row-selected`
+                                : `row-attention row-attention--promise-${item.group}`
+                            }
+                          >
+                            <td>
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => toggleWorkbenchSelection(item.invoiceId)}
+                                aria-label={`Select ${item.documentNumber}`}
+                              />
+                            </td>
+                            <td className="cell-wrap">{item.documentNumber}</td>
+                            <td className="cell-wrap">{item.counterpartyReference}</td>
+                            <td>{formatMoney(item.overdueAmount, item.currency)}</td>
+                            <td>{item.promiseDate}</td>
+                            <td>
+                              <span className="aging-badge aging-badge--promise aging-badge--nba">
+                                {item.nextBestActionLabel}
+                              </span>
+                            </td>
+                            <td>
+                              <span
+                                className={`aging-badge aging-badge--promise aging-badge--promise-${item.status}`}
+                              >
+                                {item.statusLabel}
+                              </span>
+                            </td>
+                            <td>
+                              <div className="row-actions">
+                                <button
+                                  type="button"
+                                  className="button-secondary"
+                                  onClick={() => {
+                                    const invoice = invoices.find(
+                                      (row) => row.id === item.invoiceId
+                                    );
+                                    if (invoice) {
+                                      beginViewInvoiceDetails(invoice);
+                                    } else {
+                                      onSelectedInvoiceIdChange?.(item.invoiceId);
+                                    }
+                                  }}
+                                >
+                                  Відкрити
+                                </button>
+                                {item.status !== "completed" ? (
+                                  <>
+                                    <button
+                                      type="button"
+                                      className="button-secondary"
+                                      onClick={() => {
+                                        updatePromiseStatus(item.invoiceId, "contacted");
+                                        bumpPromiseRevision();
+                                      }}
+                                    >
+                                      Contacted
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="button-secondary"
+                                      onClick={() => {
+                                        updatePromiseStatus(
+                                          item.invoiceId,
+                                          "follow_up_required"
+                                        );
+                                        bumpPromiseRevision();
+                                      }}
+                                    >
+                                      Follow-up
+                                    </button>
+                                  </>
+                                ) : null}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ))}
+            {workbenchFilteredCases.length > 0 ? (
+              <p className="meta">
+                <button
+                  type="button"
+                  className="button-secondary"
+                  onClick={toggleWorkbenchSelectAllVisible}
+                >
+                  {workbenchFilteredCases.every((item) =>
+                    workbenchSelectedIds.includes(item.invoiceId)
+                  )
+                    ? "Зняти вибір"
+                    : "Вибрати всі видимі"}
+                </button>
+              </p>
+            ) : null}
+          </>
         ) : null}
 
         {followUpsPanelActive && promiseGroups && promiseFollowUpItems.length > 0 ? (
@@ -3432,7 +3993,7 @@ export function InvoicesView({
           </>
         ) : null}
 
-        {!followUpsPanelActive && displayInvoices.length > 0 ? (
+        {!promisePanelActive && displayInvoices.length > 0 ? (
           <>
             <p className="meta">
               {overdueQueueActive
@@ -3690,7 +4251,10 @@ export function InvoicesView({
                     agingBucket,
                     collectionPanel,
                     promiseGroup,
-                    promiseSearch
+                    promiseSearch,
+                    workbenchSort,
+                    workbenchHideCompleted,
+                    workbenchSection
                   );
                 }}
               >
@@ -3712,7 +4276,10 @@ export function InvoicesView({
                     agingBucket,
                     collectionPanel,
                     promiseGroup,
-                    promiseSearch
+                    promiseSearch,
+                    workbenchSort,
+                    workbenchHideCompleted,
+                    workbenchSection
                   );
                 }}
               >

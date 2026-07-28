@@ -532,6 +532,80 @@ describe("urlState", () => {
     assert.equal(parsed.discovery.promiseGroup, "");
   });
 
+  it("serializes collection workbench panel, section, sort, search, and hide completed", () => {
+    const workspaceId = "11111111-1111-1111-1111-111111111111";
+    const search = buildUrlSearch({
+      view: "invoices",
+      workspaceId,
+      accrualId: null,
+      invoiceId: null,
+      discovery: {
+        page: 1,
+        invoiceFilters: {
+          ...EMPTY_INVOICE_FILTERS,
+          status: "Issued"
+        },
+        accrualFilters: { ...EMPTY_ACCRUAL_FILTERS },
+        invoiceQueue: "overdue",
+        agingBucket: "",
+        collectionPanel: "workbench",
+        promiseGroup: "",
+        promiseSearch: "acme",
+        workbenchSection: "broken",
+        workbenchSort: "amount_desc",
+        workbenchHideCompleted: true
+      }
+    });
+
+    assert.equal(
+      search,
+      "?view=invoices&workspaceId=11111111-1111-1111-1111-111111111111&status=Issued&queue=overdue&panel=workbench&wbSection=broken&promiseQ=acme&wbSort=amount_desc&wbHideCompleted=1"
+    );
+  });
+
+  it("restores collection workbench state from URL and preserves it across detail open/close", () => {
+    const workspaceId = "11111111-1111-1111-1111-111111111111";
+    const invoiceId = "b1111111-1111-1111-1111-111111111111";
+    const parsed = parseUrlSearch(
+      "?view=invoices&status=Issued&queue=overdue&panel=workbench&wbSection=due_today&promiseQ=INV&wbSort=customer_asc&wbHideCompleted=1"
+    );
+    assert.equal(parsed.discovery.collectionPanel, "workbench");
+    assert.equal(parsed.discovery.workbenchSection, "due_today");
+    assert.equal(parsed.discovery.promiseSearch, "INV");
+    assert.equal(parsed.discovery.workbenchSort, "customer_asc");
+    assert.equal(parsed.discovery.workbenchHideCompleted, true);
+
+    const base = {
+      view: "invoices" as const,
+      workspaceId,
+      accrualId: null as string | null,
+      invoiceId: null as string | null,
+      discovery: parsed.discovery
+    };
+    const opened = withInvoiceId(base, invoiceId);
+    const openedSearch = buildUrlSearch(opened);
+    assert.match(openedSearch, /panel=workbench/);
+    assert.match(openedSearch, /wbSection=due_today/);
+    assert.match(openedSearch, /wbHideCompleted=1/);
+    assert.match(openedSearch, new RegExp(`invoiceId=${invoiceId}`));
+
+    const closed = withoutInvoiceId(opened);
+    const restored = parseUrlSearch(buildUrlSearch(closed));
+    assert.equal(restored.discovery.collectionPanel, "workbench");
+    assert.equal(restored.discovery.workbenchSection, "due_today");
+    assert.equal(restored.discovery.workbenchHideCompleted, true);
+    assert.equal(restored.invoiceId, null);
+  });
+
+  it("ignores workbench params outside workbench panel", () => {
+    const parsed = parseUrlSearch(
+      "?view=invoices&status=Issued&queue=overdue&wbSection=broken&wbHideCompleted=1"
+    );
+    assert.equal(parsed.discovery.collectionPanel, "");
+    assert.equal(parsed.discovery.workbenchSection, "");
+    assert.equal(parsed.discovery.workbenchHideCompleted, false);
+  });
+
   it("round-trips disputed and escalated promise groups", () => {
     for (const group of ["disputed", "escalated"] as const) {
       const search = buildUrlSearch({
