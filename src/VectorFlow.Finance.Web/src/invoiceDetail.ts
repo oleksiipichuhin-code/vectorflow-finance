@@ -5,6 +5,7 @@ import { canEditDraftInvoiceHeader } from "./draftInvoiceHeaderEditor.ts";
 import { canRemoveDraftInvoiceLine } from "./draftInvoiceLineRemoveEditor.ts";
 import { canUpdateDraftInvoiceLine } from "./draftInvoiceLineUpdateEditor.ts";
 import { canCreateAccrualFromInvoice } from "./invoiceAccrualBridge.ts";
+import { classifyDueDateAging, type DueDateAging } from "./invoiceDueDateAging.ts";
 import { isDraftInvoice } from "./invoiceIssue.ts";
 import { formatDate, formatMoney } from "./format.ts";
 
@@ -208,6 +209,8 @@ export type InvoiceDetailFieldView = {
   updatedAtDisplay: string;
   invoiceId: string;
   lines: InvoiceDetailLineView[];
+  /** Calendar due-date aging only — never payment settlement. */
+  dueDateAging: DueDateAging;
 };
 
 function formatQuantity(value: number): string {
@@ -226,7 +229,10 @@ function toLineView(line: InvoiceLine, currency: string): InvoiceDetailLineView 
 }
 
 /** Build read-only display fields from authoritative Invoice DTO. */
-export function buildInvoiceDetailFields(invoice: Invoice): InvoiceDetailFieldView {
+export function buildInvoiceDetailFields(
+  invoice: Invoice,
+  now: Date = new Date()
+): InvoiceDetailFieldView {
   const lines = (invoice.lines ?? [])
     .slice()
     .sort((a, b) => a.sequence - b.sequence)
@@ -243,6 +249,7 @@ export function buildInvoiceDetailFields(invoice: Invoice): InvoiceDetailFieldVi
     createdAtDisplay: formatDate(invoice.createdAtUtc),
     updatedAtDisplay: formatDate(invoice.updatedAtUtc),
     invoiceId: invoice.id,
-    lines
+    lines,
+    dueDateAging: classifyDueDateAging(invoice.dueDateUtc, now)
   };
 }

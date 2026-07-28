@@ -76,20 +76,27 @@ describe("buildInvoiceDetailFields", () => {
     assert.equal(fields.issuedAtDisplay, "—");
     assert.equal(fields.invoiceId, "i1111111-1111-1111-1111-111111111111");
     assert.deepEqual(fields.lines, []);
+    assert.equal(fields.dueDateAging.kind, "no_due_date");
+    assert.match(fields.dueDateAging.explanation, /фактичну оплату в системі відсутні/);
   });
 
   it("shows issued and due dates when present", () => {
+    const now = new Date(2026, 6, 27, 12, 0, 0);
     const fields = buildInvoiceDetailFields(
       sampleInvoice({
         status: "Issued",
-        dueDateUtc: "2026-08-01T00:00:00.000Z",
+        dueDateUtc: "2026-07-20T00:00:00.000Z",
         issuedAtUtc: "2026-07-03T08:00:00.000Z",
         totalAmount: 100
-      })
+      }),
+      now
     );
     assert.equal(fields.status, "Issued");
     assert.notEqual(fields.dueDateDisplay, "—");
     assert.notEqual(fields.issuedAtDisplay, "—");
+    assert.equal(fields.dueDateAging.kind, "overdue");
+    assert.equal(fields.dueDateAging.label, "Прострочено");
+    assert.equal(fields.dueDateAging.dayOffset, 7);
   });
 
   it("renders nullable line description as em dash and sorts lines", () => {

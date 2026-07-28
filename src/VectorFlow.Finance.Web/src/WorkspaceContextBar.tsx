@@ -8,6 +8,7 @@ type WorkspaceContextBarProps = {
   onCopyLink: () => void;
   onShowDraftInvoices: () => void;
   onShowIssuedInvoices: () => void;
+  onShowOverdueIssuedInvoices: () => void;
 };
 
 export function WorkspaceContextBar({
@@ -17,7 +18,8 @@ export function WorkspaceContextBar({
   onOpenWorkspace,
   onCopyLink,
   onShowDraftInvoices,
-  onShowIssuedInvoices
+  onShowIssuedInvoices,
+  onShowOverdueIssuedInvoices
 }: WorkspaceContextBarProps) {
   return (
     <div className="workspace-context" aria-live="polite">
@@ -36,6 +38,13 @@ export function WorkspaceContextBar({
             </button>
             <button type="button" className="button-secondary" onClick={onShowIssuedInvoices}>
               Виставлені
+            </button>
+            <button
+              type="button"
+              className="button-secondary"
+              onClick={onShowOverdueIssuedInvoices}
+            >
+              Прострочені
             </button>
             <button type="button" className="button-secondary" onClick={onCopyLink}>
               Скопіювати посилання

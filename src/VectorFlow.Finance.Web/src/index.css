@@ -138,6 +138,83 @@ body {
   border-color: #1b2430;
 }
 
+.list-shortcut--attention {
+  border-color: rgba(158, 74, 36, 0.55);
+  background: rgba(158, 74, 36, 0.08);
+  color: #7a3418;
+}
+
+.list-shortcut--attention.list-shortcut--active {
+  background: #7a3418;
+  color: #fff8f3;
+  border-color: #7a3418;
+}
+
+.queue-banner {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0 0 0.85rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid rgba(158, 74, 36, 0.35);
+  background: rgba(158, 74, 36, 0.08);
+}
+
+.queue-banner-title {
+  margin: 0;
+  font-weight: 650;
+  color: #7a3418;
+}
+
+.due-date-aging-block {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0.85rem 0 0;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid rgba(27, 36, 48, 0.14);
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.due-date-aging-block h4 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.due-date-aging-note {
+  margin: 0;
+}
+
+.aging-badge {
+  display: inline-block;
+  padding: 0.15rem 0.45rem;
+  border: 1px solid rgba(27, 36, 48, 0.18);
+  background: rgba(255, 255, 255, 0.8);
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.aging-badge--overdue {
+  border-color: rgba(158, 74, 36, 0.55);
+  background: rgba(158, 74, 36, 0.12);
+  color: #7a3418;
+}
+
+.aging-badge--due_today {
+  border-color: rgba(120, 90, 20, 0.45);
+  background: rgba(196, 149, 40, 0.14);
+  color: #6a4d10;
+}
+
+.aging-badge--not_due_yet {
+  border-color: rgba(31, 107, 69, 0.4);
+  background: rgba(31, 107, 69, 0.1);
+  color: #1f6b45;
+}
+
+.aging-badge--no_due_date {
+  color: #445466;
+}
+
 .nav-cards {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));

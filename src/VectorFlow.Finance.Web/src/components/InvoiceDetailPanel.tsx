@@ -195,7 +195,7 @@ export function InvoiceDetailPanel({
               <dd>{fields.currency}</dd>
             </div>
             <div>
-              <dt>Дата оплати</dt>
+              <dt>Строк оплати</dt>
               <dd>{fields.dueDateDisplay}</dd>
             </div>
             <div>
@@ -215,6 +215,34 @@ export function InvoiceDetailPanel({
               <dd className="mono">{fields.invoiceId}</dd>
             </div>
           </dl>
+
+          <section
+            className="due-date-aging-block"
+            aria-labelledby="invoice-due-aging-heading"
+          >
+            <h4 id="invoice-due-aging-heading">Строк оплати (календар)</h4>
+            <dl className="facts">
+              <div>
+                <dt>Строк оплати</dt>
+                <dd>{fields.dueDateDisplay}</dd>
+              </div>
+              <div>
+                <dt>Статус строку</dt>
+                <dd>
+                  <span
+                    className={`aging-badge aging-badge--${fields.dueDateAging.kind}`}
+                  >
+                    {fields.dueDateAging.label}
+                  </span>
+                </dd>
+              </div>
+              <div>
+                <dt>Дні відносно строку</dt>
+                <dd>{fields.dueDateAging.dayOffsetLabel}</dd>
+              </div>
+            </dl>
+            <p className="meta due-date-aging-note">{fields.dueDateAging.explanation}</p>
+          </section>
 
           {fields.lines.length > 0 ? (
             <div className="table-wrap">

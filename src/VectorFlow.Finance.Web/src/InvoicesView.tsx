@@ -21,17 +21,24 @@ import {
 import {
   EMPTY_INVOICE_FILTERS,
   draftInvoicesDiscovery,
-  issuedInvoicesDiscovery
+  issuedInvoicesDiscovery,
+  overdueIssuedInvoicesDiscovery
 } from "./urlState";
 import {
   INVOICE_PAGE_SIZE,
   INVOICE_STATUS_OPTIONS,
   buildInvoiceListQuery,
-  hasActiveInvoiceFilters,
+  hasActiveInvoiceDiscovery,
+  isOverdueInvoiceQueue,
   totalPages,
   type InvoiceListFilters,
+  type InvoiceQueueMode,
   type InvoiceStatusFilter
 } from "./invoiceListQuery";
+import {
+  classifyDueDateAging,
+  overdueQueueDueToDateInput
+} from "./invoiceDueDateAging";
 import {
   canViewInvoiceDetails,
   DETAIL_RELOAD_AFTER_MUTATION_FAILED_MESSAGE,
@@ -109,14 +116,20 @@ type InvoicesViewProps = {
   workspace: FinanceWorkspace | null;
   initialPage?: number;
   initialFilters?: InvoiceListFilters;
+  initialInvoiceQueue?: InvoiceQueueMode;
   selectedInvoiceId?: string | null;
-  onDiscoveryChange?: (page: number, filters: InvoiceListFilters) => void;
+  onDiscoveryChange?: (
+    page: number,
+    filters: InvoiceListFilters,
+    invoiceQueue?: InvoiceQueueMode
+  ) => void;
   onSelectedInvoiceIdChange?: (
     invoiceId: string | null,
     options?: InvoiceIdChangeOptions
   ) => void;
   onShowDraftInvoices?: () => void;
   onShowIssuedInvoices?: () => void;
+  onShowOverdueIssuedInvoices?: () => void;
   /** Cross-view handoff: open Accruals detail for a created/related accrual. */
   onOpenAccrual?: (accrualId: string) => void;
 };
@@ -132,11 +145,13 @@ export function InvoicesView({
   workspace,
   initialPage = 1,
   initialFilters = emptyFilters,
+  initialInvoiceQueue = "",
   selectedInvoiceId = null,
   onDiscoveryChange,
   onSelectedInvoiceIdChange,
   onShowDraftInvoices,
   onShowIssuedInvoices,
+  onShowOverdueIssuedInvoices,
   onOpenAccrual
 }: InvoicesViewProps) {
   const [draftFilters, setDraftFilters] = useState<InvoiceListFilters>(() => ({
@@ -147,6 +162,9 @@ export function InvoicesView({
     ...emptyFilters,
     ...initialFilters
   }));
+  const [invoiceQueue, setInvoiceQueue] = useState<InvoiceQueueMode>(
+    () => initialInvoiceQueue
+  );
   const [filterValidationError, setFilterValidationError] = useState<string | null>(null);
 
   const [page, setPage] = useState(() => (initialPage < 1 ? 1 : Math.floor(initialPage)));
@@ -320,16 +338,23 @@ export function InvoicesView({
       setLineRemoveError(null);
       setLineRemoveSuccess(null);
       dismissDetailFromUrl({ replace: true });
-      onDiscoveryChange?.(1, emptyFilters);
+      setInvoiceQueue("");
+      onDiscoveryChange?.(1, emptyFilters, "");
     }
   }, [workspace?.id, onDiscoveryChange, onSelectedInvoiceIdChange, selectedInvoiceId]);
 
   const loadPage = useCallback(
-    async (workspaceId: string, nextPage: number, filters: InvoiceListFilters) => {
+    async (
+      workspaceId: string,
+      nextPage: number,
+      filters: InvoiceListFilters,
+      queue: InvoiceQueueMode = ""
+    ) => {
       const { query, validationError } = buildInvoiceListQuery(
         nextPage,
         INVOICE_PAGE_SIZE,
-        filters
+        filters,
+        queue
       );
 
       if (validationError) {
@@ -385,16 +410,30 @@ export function InvoicesView({
       return;
     }
 
-    void loadPage(workspace.id, page, appliedFilters);
+    void loadPage(workspace.id, page, appliedFilters, invoiceQueue);
 
     return () => {
       abortRef.current?.abort();
     };
-  }, [workspace, page, appliedFilters, loadPage]);
+  }, [workspace, page, appliedFilters, invoiceQueue, loadPage]);
 
   function applyFilters(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const { validationError } = buildInvoiceListQuery(1, INVOICE_PAGE_SIZE, draftFilters);
+    const nextQueue: InvoiceQueueMode =
+      invoiceQueue === "overdue" &&
+      (draftFilters.status === "Issued" || draftFilters.status === "")
+        ? "overdue"
+        : "";
+    const filtersForQuery =
+      nextQueue === "overdue"
+        ? { ...draftFilters, status: "Issued" as const }
+        : { ...draftFilters };
+    const { validationError } = buildInvoiceListQuery(
+      1,
+      INVOICE_PAGE_SIZE,
+      filtersForQuery,
+      nextQueue
+    );
     if (validationError) {
       setFilterValidationError(validationError);
       return;
@@ -402,16 +441,35 @@ export function InvoicesView({
 
     setFilterValidationError(null);
     setPage(1);
-    setAppliedFilters({ ...draftFilters });
-    onDiscoveryChange?.(1, { ...draftFilters });
+    setAppliedFilters({ ...filtersForQuery });
+    setDraftFilters({ ...filtersForQuery });
+    setInvoiceQueue(nextQueue);
+    onDiscoveryChange?.(1, { ...filtersForQuery }, nextQueue);
   }
 
   function clearFilters() {
+    if (isOverdueInvoiceQueue(invoiceQueue)) {
+      if (onShowIssuedInvoices) {
+        onShowIssuedInvoices();
+        return;
+      }
+
+      const next = issuedInvoicesDiscovery().invoiceFilters;
+      setDraftFilters(next);
+      setAppliedFilters(next);
+      setInvoiceQueue("");
+      setFilterValidationError(null);
+      setPage(1);
+      onDiscoveryChange?.(1, next, "");
+      return;
+    }
+
     setDraftFilters(emptyFilters);
     setAppliedFilters(emptyFilters);
+    setInvoiceQueue("");
     setFilterValidationError(null);
     setPage(1);
-    onDiscoveryChange?.(1, emptyFilters);
+    onDiscoveryChange?.(1, emptyFilters, "");
   }
 
   async function handleCreateInvoice(event: FormEvent<HTMLFormElement>) {
@@ -446,6 +504,7 @@ export function InvoicesView({
       setDocumentNumber(buildDemoDocumentNumber());
       setDraftFilters(emptyFilters);
       setAppliedFilters(emptyFilters);
+      setInvoiceQueue("");
       setFilterValidationError(null);
       setPage(1);
       setHighlightedId(created.id);
@@ -462,8 +521,8 @@ export function InvoicesView({
       setCreateSuccess(
         `Чернетку рахунка «${created.documentNumber}» створено. Запис показано у списку нижче.`
       );
-      onDiscoveryChange?.(1, emptyFilters);
-      await loadPage(workspace.id, 1, emptyFilters);
+      onDiscoveryChange?.(1, emptyFilters, "");
+      await loadPage(workspace.id, 1, emptyFilters, "");
     } catch (createErr) {
       setCreateError(
         createErr instanceof Error ? createErr.message : "Не вдалося створити рахунок."
@@ -1068,7 +1127,7 @@ export function InvoicesView({
       }
 
       if (failure.refreshList) {
-        await loadPage(workspaceId, page, appliedFilters);
+        await loadPage(workspaceId, page, appliedFilters, invoiceQueue);
       }
     }
   }
@@ -1219,7 +1278,7 @@ export function InvoicesView({
       setIssueSuccess(
         `Рахунок «${issued.documentNumber}» виставлено. Статус: ${issued.status}.`
       );
-      await loadPage(workspace.id, page, appliedFilters);
+      await loadPage(workspace.id, page, appliedFilters, invoiceQueue);
       await refreshDetailAfterMutation(issued.id);
     } catch (issueErr) {
       const failure = interpretInvoiceIssueError(issueErr);
@@ -1230,7 +1289,7 @@ export function InvoicesView({
 
       if (failure.refreshList) {
         try {
-          await loadPage(workspace.id, page, appliedFilters);
+          await loadPage(workspace.id, page, appliedFilters, invoiceQueue);
           await refreshDetailAfterEditorFailure(invoice.id);
         } catch {
           // Keep the issue error; list refresh failure is secondary.
@@ -1336,7 +1395,7 @@ export function InvoicesView({
       setDueDateEditSuccess(
         `Дату оплати рахунка «${updated.documentNumber}» оновлено.`
       );
-      await loadPage(workspace.id, page, appliedFilters);
+      await loadPage(workspace.id, page, appliedFilters, invoiceQueue);
       await refreshDetailAfterMutation(updated.id);
     } catch (editErr) {
       const failure = interpretDraftInvoiceDueDateEditError(editErr);
@@ -1348,7 +1407,7 @@ export function InvoicesView({
 
       if (failure.refreshList) {
         try {
-          await loadPage(workspace.id, page, appliedFilters);
+          await loadPage(workspace.id, page, appliedFilters, invoiceQueue);
           await refreshDetailAfterEditorFailure(target.id);
         } catch {
           // Keep the due-date error; list refresh failure is secondary.
@@ -1424,7 +1483,7 @@ export function InvoicesView({
       setHeaderEditSuccess(
         `Реквізити рахунка «${updated.documentNumber}» оновлено.`
       );
-      await loadPage(workspace.id, page, appliedFilters);
+      await loadPage(workspace.id, page, appliedFilters, invoiceQueue);
       await refreshDetailAfterMutation(updated.id);
     } catch (editErr) {
       const failure = interpretDraftInvoiceHeaderEditorError(editErr);
@@ -1436,7 +1495,7 @@ export function InvoicesView({
 
       if (failure.refreshList) {
         try {
-          await loadPage(workspace.id, page, appliedFilters);
+          await loadPage(workspace.id, page, appliedFilters, invoiceQueue);
           await refreshDetailAfterEditorFailure(target.id);
         } catch {
           // Keep the header error; list refresh failure is secondary.
@@ -1519,7 +1578,7 @@ export function InvoicesView({
 
       if (failure.refreshInvoice) {
         try {
-          await loadPage(workspace.id, page, appliedFilters);
+          await loadPage(workspace.id, page, appliedFilters, invoiceQueue);
           await refreshDetailAfterEditorFailure(target.id);
         } catch {
           // Keep the create error; invoice refresh failure is secondary.
@@ -1581,7 +1640,7 @@ export function InvoicesView({
       resetLineAddForm();
       setHighlightedId(updated.id);
       setLineAddSuccess(`Рядок додано до рахунка «${updated.documentNumber}».`);
-      await loadPage(workspace.id, page, appliedFilters);
+      await loadPage(workspace.id, page, appliedFilters, invoiceQueue);
       await refreshDetailAfterMutation(updated.id);
     } catch (addErr) {
       const failure = interpretDraftInvoiceLineAddError(addErr);
@@ -1593,7 +1652,7 @@ export function InvoicesView({
 
       if (failure.refreshList) {
         try {
-          await loadPage(workspace.id, page, appliedFilters);
+          await loadPage(workspace.id, page, appliedFilters, invoiceQueue);
           await refreshDetailAfterEditorFailure(target.id);
         } catch {
           // Keep the line-add error; list refresh failure is secondary.
@@ -1657,7 +1716,7 @@ export function InvoicesView({
       clearLineUpdateEditor();
       setHighlightedId(updated.id);
       setLineUpdateSuccess(`Рядок оновлено в рахунку «${updated.documentNumber}».`);
-      await loadPage(workspace.id, page, appliedFilters);
+      await loadPage(workspace.id, page, appliedFilters, invoiceQueue);
       await refreshDetailAfterMutation(updated.id);
     } catch (updateErr) {
       const failure = interpretDraftInvoiceLineUpdateError(updateErr);
@@ -1668,7 +1727,7 @@ export function InvoicesView({
 
       if (failure.refreshList) {
         try {
-          await loadPage(workspace.id, page, appliedFilters);
+          await loadPage(workspace.id, page, appliedFilters, invoiceQueue);
           await refreshDetailAfterEditorFailure(target.invoice.id);
         } catch {
           // Keep the line-update error; list refresh failure is secondary.
@@ -1726,7 +1785,7 @@ export function InvoicesView({
       clearLineRemoveEditor();
       setHighlightedId(updated.id);
       setLineRemoveSuccess(`Рядок видалено з рахунка «${updated.documentNumber}».`);
-      await loadPage(workspace.id, page, appliedFilters);
+      await loadPage(workspace.id, page, appliedFilters, invoiceQueue);
       await refreshDetailAfterMutation(updated.id);
     } catch (removeErr) {
       const failure = interpretDraftInvoiceLineRemoveError(removeErr);
@@ -1737,7 +1796,7 @@ export function InvoicesView({
 
       if (failure.refreshList) {
         try {
-          await loadPage(workspace.id, page, appliedFilters);
+          await loadPage(workspace.id, page, appliedFilters, invoiceQueue);
           await refreshDetailAfterEditorFailure(target.invoice.id);
         } catch {
           // Keep the line-remove error; list refresh failure is secondary.
@@ -1765,8 +1824,13 @@ export function InvoicesView({
   const pages = totalPages(totalCount, pageSize);
   const canGoPrevious = page > 1 && !loading;
   const canGoNext = page < pages && !loading;
-  const filtersActive = hasActiveInvoiceFilters(appliedFilters);
+  const overdueQueueActive = isOverdueInvoiceQueue(invoiceQueue);
+  const filtersActive = hasActiveInvoiceDiscovery(appliedFilters, invoiceQueue);
+  const effectiveDueToForSummary = overdueQueueActive
+    ? overdueQueueDueToDateInput()
+    : appliedFilters.dueToDate?.trim() || "";
   const draftFilterActive =
+    !overdueQueueActive &&
     appliedFilters.status === "Draft" &&
     !appliedFilters.documentNumber?.trim() &&
     !appliedFilters.counterpartyReference?.trim() &&
@@ -1779,6 +1843,7 @@ export function InvoicesView({
     page === 1;
 
   const issuedFilterActive =
+    !overdueQueueActive &&
     appliedFilters.status === "Issued" &&
     !appliedFilters.documentNumber?.trim() &&
     !appliedFilters.counterpartyReference?.trim() &&
@@ -1790,6 +1855,18 @@ export function InvoicesView({
     !appliedFilters.dueToDate?.trim() &&
     page === 1;
 
+  const overdueFilterActive =
+    overdueQueueActive &&
+    appliedFilters.status === "Issued" &&
+    page === 1 &&
+    !appliedFilters.documentNumber?.trim() &&
+    !appliedFilters.counterpartyReference?.trim() &&
+    !appliedFilters.createdFromDate?.trim() &&
+    !appliedFilters.createdToDate?.trim() &&
+    !appliedFilters.issuedFromDate?.trim() &&
+    !appliedFilters.issuedToDate?.trim() &&
+    !appliedFilters.dueFromDate?.trim();
+
   function applyDraftInvoicesFilter() {
     if (onShowDraftInvoices) {
       onShowDraftInvoices();
@@ -1799,9 +1876,10 @@ export function InvoicesView({
     const next = draftInvoicesDiscovery().invoiceFilters;
     setDraftFilters(next);
     setAppliedFilters(next);
+    setInvoiceQueue("");
     setFilterValidationError(null);
     setPage(1);
-    onDiscoveryChange?.(1, next);
+    onDiscoveryChange?.(1, next, "");
   }
 
   function applyIssuedInvoicesFilter() {
@@ -1813,9 +1891,25 @@ export function InvoicesView({
     const next = issuedInvoicesDiscovery().invoiceFilters;
     setDraftFilters(next);
     setAppliedFilters(next);
+    setInvoiceQueue("");
     setFilterValidationError(null);
     setPage(1);
-    onDiscoveryChange?.(1, next);
+    onDiscoveryChange?.(1, next, "");
+  }
+
+  function applyOverdueIssuedInvoicesFilter() {
+    if (onShowOverdueIssuedInvoices) {
+      onShowOverdueIssuedInvoices();
+      return;
+    }
+
+    const discovery = overdueIssuedInvoicesDiscovery();
+    setDraftFilters(discovery.invoiceFilters);
+    setAppliedFilters(discovery.invoiceFilters);
+    setInvoiceQueue("overdue");
+    setFilterValidationError(null);
+    setPage(1);
+    onDiscoveryChange?.(1, discovery.invoiceFilters, "overdue");
   }
 
   return (
@@ -1835,7 +1929,7 @@ export function InvoicesView({
         actions={
           <button
             type="button"
-            onClick={() => workspace && void loadPage(workspace.id, page, appliedFilters)}
+            onClick={() => workspace && void loadPage(workspace.id, page, appliedFilters, invoiceQueue)}
             disabled={!workspace || loading}
           >
             Оновити
@@ -1885,13 +1979,38 @@ export function InvoicesView({
                 >
                   Виставлені
                 </button>
+                <button
+                  type="button"
+                  className={
+                    overdueFilterActive
+                      ? "list-shortcut list-shortcut--attention list-shortcut--active"
+                      : "list-shortcut list-shortcut--attention"
+                  }
+                  title="status=Issued · queue=overdue · строк раніше за сьогодні · не факт оплати"
+                  aria-pressed={overdueFilterActive}
+                  disabled={loading}
+                  onClick={applyOverdueIssuedInvoicesFilter}
+                >
+                  Прострочені
+                </button>
               </div>
               <p className="meta">
-                Чернетки — Draft. Виставлені — Issued (робочий пошук). Стан у URL; відновлюється
-                після оновлення сторінки. Нижче — контрагент, номер, період виставлення та строк
-                оплати.
+                Чернетки — Draft. Виставлені — Issued. Прострочені — Issued зі строком оплати
+                раніше за сьогоднішню календарну дату (класифікація строку, не оплати). Стан у
+                URL.
               </p>
             </div>
+
+            {overdueQueueActive ? (
+              <div className="queue-banner" role="status">
+                <p className="queue-banner-title">Черга: прострочені виставлені рахунки</p>
+                <p className="meta">
+                  Серверний фільтр: <span className="mono">status=Issued</span>, строк оплати по{" "}
+                  <span className="mono">{effectiveDueToForSummary}</span> (включно; сьогоднішній
+                  строк виключено). Це не статус оплати.
+                </p>
+              </div>
+            ) : null}
 
             <form className="filter-form" onSubmit={applyFilters}>
               <label>
@@ -2025,7 +2144,7 @@ export function InvoicesView({
                   Застосувати
                 </button>
                 <button type="button" onClick={clearFilters} disabled={loading}>
-                  Скинути
+                  {overdueQueueActive ? "Скинути чергу" : "Скинути"}
                 </button>
               </div>
             </form>
@@ -2036,6 +2155,7 @@ export function InvoicesView({
             {filtersActive ? (
               <p className="meta">
                 Активні фільтри:
+                {overdueQueueActive ? " черга прострочених" : ""}
                 {appliedFilters.documentNumber?.trim()
                   ? ` номер «${appliedFilters.documentNumber.trim()}»`
                   : ""}
@@ -2060,7 +2180,9 @@ export function InvoicesView({
                 {appliedFilters.dueFromDate
                   ? ` строк з ${appliedFilters.dueFromDate}`
                   : ""}
-                {appliedFilters.dueToDate ? ` строк по ${appliedFilters.dueToDate}` : ""}
+                {effectiveDueToForSummary
+                  ? ` строк по ${effectiveDueToForSummary}`
+                  : ""}
               </p>
             ) : (
               <p className="meta">Фільтри не застосовані.</p>
@@ -2506,13 +2628,15 @@ export function InvoicesView({
             loading={loading}
             loadingMessage="Завантаження рахунків…"
             error={error}
-            onRetry={() => void loadPage(workspace.id, page, appliedFilters)}
+            onRetry={() => void loadPage(workspace.id, page, appliedFilters, invoiceQueue)}
             retryDisabled={loading}
             empty={invoices.length === 0}
             emptyMessage={
-              filtersActive
-                ? "За поточними фільтрами рахунків немає."
-                : "Рахунків ще немає. Створіть чернетку через форму вище."
+              overdueQueueActive
+                ? "Прострочених виставлених рахунків немає (строк оплати раніше за сьогодні)."
+                : filtersActive
+                  ? "За поточними фільтрами рахунків немає."
+                  : "Рахунків ще немає. Створіть чернетку через форму вище."
             }
           />
         ) : null}
@@ -2527,29 +2651,37 @@ export function InvoicesView({
                 <thead>
                   <tr>
                     <th>Номер</th>
-                    <th>Статус</th>
                     <th>Контрагент</th>
                     <th>Сума</th>
+                    <th>Валюта</th>
                     <th>Виставлено</th>
-                    <th>Дата оплати</th>
-                    <th>Створено</th>
+                    <th>Строк оплати</th>
+                    <th>Статус строку</th>
+                    <th>Дні</th>
                     <th>Дія</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {invoices.map((invoice) => (
+                  {invoices.map((invoice) => {
+                    const aging = classifyDueDateAging(invoice.dueDateUtc);
+                    return (
                     <tr
                       key={invoice.id}
                       data-row-id={invoice.id}
                       className={invoice.id === highlightedId ? "row-highlight" : undefined}
                     >
                       <td className="cell-wrap">{invoice.documentNumber}</td>
-                      <td>{invoice.status}</td>
                       <td className="cell-wrap">{invoice.counterpartyReference}</td>
                       <td>{formatMoney(invoice.totalAmount, invoice.currency)}</td>
+                      <td>{invoice.currency}</td>
                       <td>{formatDate(invoice.issuedAtUtc)}</td>
                       <td>{formatDate(invoice.dueDateUtc)}</td>
-                      <td>{formatDate(invoice.createdAtUtc)}</td>
+                      <td>
+                        <span className={`aging-badge aging-badge--${aging.kind}`}>
+                          {aging.label}
+                        </span>
+                      </td>
+                      <td>{aging.dayOffsetLabel}</td>
                       <td>
                         <div className="filter-actions">
                           {canViewInvoiceDetails(invoice) ? (
@@ -2681,7 +2813,8 @@ export function InvoicesView({
                         </div>
                       </td>
                     </tr>
-                  ))}
+                  );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -2692,7 +2825,7 @@ export function InvoicesView({
                 onClick={() => {
                   const nextPage = Math.max(1, page - 1);
                   setPage(nextPage);
-                  onDiscoveryChange?.(nextPage, appliedFilters);
+                  onDiscoveryChange?.(nextPage, appliedFilters, invoiceQueue);
                 }}
               >
                 Назад
@@ -2706,7 +2839,7 @@ export function InvoicesView({
                 onClick={() => {
                   const nextPage = page + 1;
                   setPage(nextPage);
-                  onDiscoveryChange?.(nextPage, appliedFilters);
+                  onDiscoveryChange?.(nextPage, appliedFilters, invoiceQueue);
                 }}
               >
                 Далі

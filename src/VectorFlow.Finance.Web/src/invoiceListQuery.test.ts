@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   buildInvoiceListQuery,
   hasActiveInvoiceFilters,
+  hasActiveInvoiceDiscovery,
   INVOICE_PAGE_SIZE,
   validateDueDateRange,
   validateIssuedDateRange
@@ -26,6 +27,32 @@ describe("invoiceListQuery", () => {
       documentNumber: "INV-9",
       status: "Issued"
     });
+  });
+
+  it("overdue queue forces Issued and dueTo end of local yesterday", () => {
+    const now = new Date(2026, 6, 27, 10, 0, 0);
+    const { query, validationError } = buildInvoiceListQuery(
+      1,
+      INVOICE_PAGE_SIZE,
+      {
+        status: "Draft",
+        counterpartyReference: "acme",
+        dueToDate: "2099-01-01"
+      },
+      "overdue",
+      now
+    );
+
+    assert.equal(validationError, null);
+    assert.equal(query.status, "Issued");
+    assert.equal(query.counterpartyReference, "acme");
+    assert.equal(query.dueToUtc, "2026-07-26T23:59:59.999Z");
+  });
+
+  it("hasActiveInvoiceDiscovery treats overdue queue as active", () => {
+    assert.equal(hasActiveInvoiceDiscovery({}, ""), false);
+    assert.equal(hasActiveInvoiceDiscovery({}, "overdue"), true);
+    assert.equal(hasActiveInvoiceDiscovery({ status: "Issued" }, ""), true);
   });
 
   it("maps due date inputs to inclusive UTC bounds", () => {

@@ -6,6 +6,7 @@ import {
   buildUrlSearch,
   draftInvoicesDiscovery,
   issuedInvoicesDiscovery,
+  overdueIssuedInvoicesDiscovery,
   parseAccrualIdParam,
   parseInvoiceIdParam,
   parseUrlSearch,
@@ -25,6 +26,7 @@ describe("urlState", () => {
     assert.equal(state.discovery.page, 1);
     assert.deepEqual(state.discovery.invoiceFilters, EMPTY_INVOICE_FILTERS);
     assert.deepEqual(state.discovery.accrualFilters, EMPTY_ACCRUAL_FILTERS);
+    assert.equal(state.discovery.invoiceQueue, "");
   });
 
   it("round-trips draft invoices discovery", () => {
@@ -72,7 +74,8 @@ describe("urlState", () => {
           status: "Recognized",
           recognitionFromDate: "2026-07-01",
           recognitionToDate: "2026-07-24"
-        }
+        },
+        invoiceQueue: ""
       }
     });
 
@@ -100,7 +103,8 @@ describe("urlState", () => {
           dueFromDate: "2026-08-01",
           dueToDate: "2026-08-31"
         },
-        accrualFilters: { ...EMPTY_ACCRUAL_FILTERS }
+        accrualFilters: { ...EMPTY_ACCRUAL_FILTERS },
+        invoiceQueue: ""
       }
     });
 
@@ -140,7 +144,8 @@ describe("urlState", () => {
           dueFromDate: "2026-08-01",
           dueToDate: "2026-08-31"
         },
-        accrualFilters: { ...EMPTY_ACCRUAL_FILTERS }
+        accrualFilters: { ...EMPTY_ACCRUAL_FILTERS },
+        invoiceQueue: ""
       }
     });
 
@@ -195,7 +200,8 @@ describe("urlState", () => {
         accrualFilters: {
           ...EMPTY_ACCRUAL_FILTERS,
           status: "Recognized"
-        }
+        },
+        invoiceQueue: ""
       }
     });
 
@@ -227,7 +233,8 @@ describe("urlState", () => {
           status: "Draft",
           recognitionFromDate: "2026-07-01",
           recognitionToDate: "2026-07-31"
-        }
+        },
+        invoiceQueue: ""
       }
     });
 
@@ -263,6 +270,7 @@ describe("urlState", () => {
     const discovery = issuedInvoicesDiscovery();
     assert.equal(discovery.page, 1);
     assert.equal(discovery.invoiceFilters.status, "Issued");
+    assert.equal(discovery.invoiceQueue, "");
     assert.equal(discovery.invoiceFilters.documentNumber, "");
     assert.equal(discovery.invoiceFilters.counterpartyReference, "");
     assert.equal(discovery.invoiceFilters.createdFromDate, "");
@@ -285,6 +293,97 @@ describe("urlState", () => {
       "?view=invoices&workspaceId=11111111-1111-1111-1111-111111111111&status=Issued"
     );
   });
+
+  it("round-trips overdue issued invoice queue without freezing dueTo in URL", () => {
+    const workspaceId = "11111111-1111-1111-1111-111111111111";
+    const discovery = overdueIssuedInvoicesDiscovery();
+    assert.equal(discovery.invoiceQueue, "overdue");
+    assert.equal(discovery.invoiceFilters.status, "Issued");
+    assert.equal(discovery.invoiceFilters.dueToDate, "");
+
+    const search = buildUrlSearch({
+      view: "invoices",
+      workspaceId,
+      accrualId: null,
+      invoiceId: null,
+      discovery
+    });
+    assert.equal(
+      search,
+      "?view=invoices&workspaceId=11111111-1111-1111-1111-111111111111&status=Issued&queue=overdue"
+    );
+    assert.equal(search.includes("dueTo="), false);
+
+    const parsed = parseUrlSearch(search);
+    assert.equal(parsed.discovery.invoiceQueue, "overdue");
+    assert.equal(parsed.discovery.invoiceFilters.status, "Issued");
+    assert.equal(parsed.discovery.invoiceFilters.dueToDate, "");
+  });
+
+  it("overdue queue coexists with counterparty filter and invoice detail deep-link", () => {
+    const workspaceId = "11111111-1111-1111-1111-111111111111";
+    const invoiceId = "b1111111-1111-1111-1111-111111111111";
+    const search = buildUrlSearch({
+      view: "invoices",
+      workspaceId,
+      accrualId: null,
+      invoiceId,
+      discovery: {
+        page: 1,
+        invoiceFilters: {
+          ...EMPTY_INVOICE_FILTERS,
+          status: "Issued",
+          counterpartyReference: "acme-ua",
+          dueToDate: "2026-01-01"
+        },
+        accrualFilters: { ...EMPTY_ACCRUAL_FILTERS },
+        invoiceQueue: "overdue"
+      }
+    });
+
+    assert.equal(
+      search,
+      "?view=invoices&workspaceId=11111111-1111-1111-1111-111111111111&counterpartyReference=acme-ua&status=Issued&queue=overdue&invoiceId=b1111111-1111-1111-1111-111111111111"
+    );
+    assert.equal(search.includes("dueTo="), false);
+
+    const parsed = parseUrlSearch(search);
+    assert.equal(parsed.discovery.invoiceQueue, "overdue");
+    assert.equal(parsed.discovery.invoiceFilters.counterpartyReference, "acme-ua");
+    assert.equal(parsed.invoiceId, invoiceId);
+  });
+
+  it("queue=overdue without status still restores Issued overdue queue", () => {
+    const parsed = parseUrlSearch(
+      "?view=invoices&workspaceId=11111111-1111-1111-1111-111111111111&queue=overdue"
+    );
+    assert.equal(parsed.discovery.invoiceQueue, "overdue");
+    assert.equal(parsed.discovery.invoiceFilters.status, "Issued");
+  });
+
+  it("unknown queue values are ignored", () => {
+    const parsed = parseUrlSearch("?view=invoices&status=Issued&queue=paid");
+    assert.equal(parsed.discovery.invoiceQueue, "");
+    assert.equal(parsed.discovery.invoiceFilters.status, "Issued");
+  });
+
+  it("clearing overdue queue means issued discovery without queue marker", () => {
+    const overdue = overdueIssuedInvoicesDiscovery();
+    const cleared = issuedInvoicesDiscovery();
+    assert.equal(overdue.invoiceQueue, "overdue");
+    assert.equal(cleared.invoiceQueue, "");
+    assert.equal(cleared.invoiceFilters.status, "Issued");
+    assert.equal(
+      buildUrlSearch({
+        view: "invoices",
+        workspaceId: null,
+        accrualId: null,
+        invoiceId: null,
+        discovery: cleared
+      }),
+      "?view=invoices&status=Issued"
+    );
+  });
 });
 
 describe("accrual detail deep-link URL policy", () => {
@@ -305,7 +404,8 @@ describe("accrual detail deep-link URL policy", () => {
         status: "Draft" as const,
         recognitionFromDate: "2026-07-01",
         recognitionToDate: "2026-07-31"
-      }
+      },
+      invoiceQueue: "" as const
     }
   };
 
@@ -434,7 +534,8 @@ describe("invoice detail deep-link URL policy", () => {
         createdFromDate: "2026-07-01",
         createdToDate: "2026-07-31"
       },
-      accrualFilters: { ...EMPTY_ACCRUAL_FILTERS }
+      accrualFilters: { ...EMPTY_ACCRUAL_FILTERS },
+      invoiceQueue: "" as const
     }
   };
 
@@ -540,7 +641,8 @@ describe("accrual → invoice reverse-link URL handoff", () => {
       discovery: {
         page: 1,
         invoiceFilters: { ...EMPTY_INVOICE_FILTERS },
-        accrualFilters: { ...EMPTY_ACCRUAL_FILTERS }
+        accrualFilters: { ...EMPTY_ACCRUAL_FILTERS },
+        invoiceQueue: ""
       }
     };
 
@@ -564,7 +666,8 @@ describe("accrual → invoice reverse-link URL handoff", () => {
       discovery: {
         page: 1,
         invoiceFilters: { ...EMPTY_INVOICE_FILTERS },
-        accrualFilters: { ...EMPTY_ACCRUAL_FILTERS }
+        accrualFilters: { ...EMPTY_ACCRUAL_FILTERS },
+        invoiceQueue: ""
       }
     };
 

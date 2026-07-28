@@ -1,4 +1,9 @@
+import { overdueQueueDueToDateInput } from "./invoiceDueDateAging.ts";
+
 export type InvoiceStatusFilter = "" | "Draft" | "Issued";
+
+/** Durable attention queue marker (URL `queue=overdue`). */
+export type InvoiceQueueMode = "" | "overdue";
 
 export type InvoiceListFilters = {
   documentNumber?: string;
@@ -81,21 +86,45 @@ export function validateDueDateRange(fromDate: string, toDate: string): string |
   return null;
 }
 
+/**
+ * Resolve list filters for API query.
+ * Overdue queue forces status=Issued and dueTo=local yesterday (inclusive dueToUtc excludes today).
+ * Explicit dueToDate in filters is overridden while the queue is active so reload stays current.
+ */
+export function resolveInvoiceFiltersForQuery(
+  filters: InvoiceListFilters,
+  invoiceQueue: InvoiceQueueMode = "",
+  now: Date = new Date()
+): InvoiceListFilters {
+  if (invoiceQueue !== "overdue") {
+    return filters;
+  }
+
+  return {
+    ...filters,
+    status: "Issued",
+    dueToDate: overdueQueueDueToDateInput(now)
+  };
+}
+
 export function buildInvoiceListQuery(
   page: number,
   pageSize: number,
-  filters: InvoiceListFilters
+  filters: InvoiceListFilters,
+  invoiceQueue: InvoiceQueueMode = "",
+  now: Date = new Date()
 ): { query: InvoiceListQuery; validationError: string | null } {
-  const documentNumber = filters.documentNumber?.trim() || undefined;
-  const counterpartyReference = filters.counterpartyReference?.trim() || undefined;
+  const resolved = resolveInvoiceFiltersForQuery(filters, invoiceQueue, now);
+  const documentNumber = resolved.documentNumber?.trim() || undefined;
+  const counterpartyReference = resolved.counterpartyReference?.trim() || undefined;
   const status =
-    filters.status === "Draft" || filters.status === "Issued" ? filters.status : undefined;
-  const createdFromDate = filters.createdFromDate?.trim() || undefined;
-  const createdToDate = filters.createdToDate?.trim() || undefined;
-  const issuedFromDate = filters.issuedFromDate?.trim() || undefined;
-  const issuedToDate = filters.issuedToDate?.trim() || undefined;
-  const dueFromDate = filters.dueFromDate?.trim() || undefined;
-  const dueToDate = filters.dueToDate?.trim() || undefined;
+    resolved.status === "Draft" || resolved.status === "Issued" ? resolved.status : undefined;
+  const createdFromDate = resolved.createdFromDate?.trim() || undefined;
+  const createdToDate = resolved.createdToDate?.trim() || undefined;
+  const issuedFromDate = resolved.issuedFromDate?.trim() || undefined;
+  const issuedToDate = resolved.issuedToDate?.trim() || undefined;
+  const dueFromDate = resolved.dueFromDate?.trim() || undefined;
+  const dueToDate = resolved.dueToDate?.trim() || undefined;
 
   const createdRangeError = validateCreatedDateRange(
     createdFromDate ?? "",
@@ -181,6 +210,17 @@ export function hasActiveInvoiceFilters(filters: InvoiceListFilters): boolean {
       filters.dueFromDate?.trim() ||
       filters.dueToDate?.trim()
   );
+}
+
+export function isOverdueInvoiceQueue(invoiceQueue: InvoiceQueueMode | undefined): boolean {
+  return invoiceQueue === "overdue";
+}
+
+export function hasActiveInvoiceDiscovery(
+  filters: InvoiceListFilters,
+  invoiceQueue: InvoiceQueueMode = ""
+): boolean {
+  return isOverdueInvoiceQueue(invoiceQueue) || hasActiveInvoiceFilters(filters);
 }
 
 export function totalPages(totalCount: number, pageSize: number): number {

@@ -14,10 +14,12 @@ import {
   createEmptyDiscovery,
   draftInvoicesDiscovery,
   issuedInvoicesDiscovery,
+  overdueIssuedInvoicesDiscovery,
   parseUrlSearch,
   type AppUrlState,
   type ListDiscovery
 } from "./urlState";
+import type { InvoiceQueueMode } from "./invoiceListQuery";
 import { InvoicesView } from "./InvoicesView";
 import { APP_VIEWS, type AppView } from "./navigation";
 import { WorkspaceContextBar } from "./WorkspaceContextBar";
@@ -68,6 +70,8 @@ export default function App() {
   const [workspaceBusy, setWorkspaceBusy] = useState(false);
 
   const skipUrlWrite = useRef(true);
+  /** First URL sync may normalize the entry URL; later skips (popstate) must not rewrite history. */
+  const isFirstUrlSync = useRef(true);
   const urlWriteModeRef = useRef<"push" | "replace">("push");
 
   const refreshHealth = useCallback(async () => {
@@ -125,15 +129,20 @@ export default function App() {
   useEffect(() => {
     if (skipUrlWrite.current) {
       skipUrlWrite.current = false;
-      const expected = buildUrlSearch({
-        view: initialUrl.view,
-        workspaceId: initialUrl.workspaceId,
-        accrualId: initialUrl.accrualId,
-        invoiceId: initialUrl.invoiceId,
-        discovery: initialUrl.discovery
-      });
-      if (window.location.search !== expected) {
-        window.history.replaceState(null, "", `${window.location.pathname}${expected}`);
+      // Only the initial mount may normalize the landed URL. Subsequent skips come from
+      // popstate; rewriting to initialUrl would destroy Back/Forward (overdue queue ↔ detail).
+      if (isFirstUrlSync.current) {
+        isFirstUrlSync.current = false;
+        const expected = buildUrlSearch({
+          view: initialUrl.view,
+          workspaceId: initialUrl.workspaceId,
+          accrualId: initialUrl.accrualId,
+          invoiceId: initialUrl.invoiceId,
+          discovery: initialUrl.discovery
+        });
+        if (window.location.search !== expected) {
+          window.history.replaceState(null, "", `${window.location.pathname}${expected}`);
+        }
       }
       return;
     }
@@ -205,11 +214,12 @@ export default function App() {
   }
 
   const handleInvoiceDiscoveryChange = useCallback(
-    (page: number, filters: ListDiscovery["invoiceFilters"]) => {
+    (page: number, filters: ListDiscovery["invoiceFilters"], invoiceQueue: InvoiceQueueMode = "") => {
       setDiscovery((current) => ({
         ...current,
         page,
-        invoiceFilters: filters
+        invoiceFilters: filters,
+        invoiceQueue
       }));
     },
     []
@@ -266,6 +276,19 @@ export default function App() {
     }
 
     setDiscovery(issuedInvoicesDiscovery());
+    setAccrualId(null);
+    setInvoiceId(null);
+    setListEpoch((value) => value + 1);
+    setView("invoices");
+  }, [workspace]);
+
+  const showOverdueIssuedInvoices = useCallback(() => {
+    if (!workspace) {
+      setView("workspace");
+      return;
+    }
+
+    setDiscovery(overdueIssuedInvoicesDiscovery());
     setAccrualId(null);
     setInvoiceId(null);
     setListEpoch((value) => value + 1);
@@ -387,6 +410,7 @@ export default function App() {
         onCopyLink={() => void handleCopyLink()}
         onShowDraftInvoices={showDraftInvoices}
         onShowIssuedInvoices={showIssuedInvoices}
+        onShowOverdueIssuedInvoices={showOverdueIssuedInvoices}
       />
 
       {view === "dashboard" ? (
@@ -404,6 +428,7 @@ export default function App() {
           onNavigate={navigate}
           onShowDraftInvoices={showDraftInvoices}
           onShowIssuedInvoices={showIssuedInvoices}
+          onShowOverdueIssuedInvoices={showOverdueIssuedInvoices}
         />
       ) : null}
 
@@ -425,11 +450,13 @@ export default function App() {
           workspace={workspace}
           initialPage={discovery.page}
           initialFilters={discovery.invoiceFilters}
+          initialInvoiceQueue={discovery.invoiceQueue}
           selectedInvoiceId={invoiceId}
           onDiscoveryChange={handleInvoiceDiscoveryChange}
           onSelectedInvoiceIdChange={handleInvoiceIdChange}
           onShowDraftInvoices={showDraftInvoices}
           onShowIssuedInvoices={showIssuedInvoices}
+          onShowOverdueIssuedInvoices={showOverdueIssuedInvoices}
           onOpenAccrual={openAccrualDetail}
         />
       ) : null}

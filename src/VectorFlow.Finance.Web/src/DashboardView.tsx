@@ -19,6 +19,7 @@ type DashboardViewProps = {
   onNavigate: (view: AppView) => void;
   onShowDraftInvoices: () => void;
   onShowIssuedInvoices: () => void;
+  onShowOverdueIssuedInvoices: () => void;
 };
 
 function invoiceCardCopy(workspace: FinanceWorkspace | null, totals: WorkspaceTotals | null): string {
@@ -68,7 +69,8 @@ export function DashboardView({
   onRetryWorkspace,
   onNavigate,
   onShowDraftInvoices,
-  onShowIssuedInvoices
+  onShowIssuedInvoices,
+  onShowOverdueIssuedInvoices
 }: DashboardViewProps) {
   const [totals, setTotals] = useState<WorkspaceTotals | null>(null);
   const handleTotalsChange = useCallback((next: WorkspaceTotals | null) => {
@@ -208,12 +210,19 @@ export function DashboardView({
               <button type="button" className="list-shortcut" onClick={onShowIssuedInvoices}>
                 Виставлені рахунки
               </button>
+              <button
+                type="button"
+                className="list-shortcut list-shortcut--attention"
+                onClick={onShowOverdueIssuedInvoices}
+              >
+                Прострочені рахунки
+              </button>
             </div>
             <p className="meta">
               Чернетки — <span className="mono">status=Draft</span>. Виставлені —
-              <span className="mono"> status=Issued</span> (робочий пошук). Сторінка 1, стан у
-              shareable URL; у списку можна звузити за контрагентом, номером, періодом виставлення
-              та строком оплати.
+              <span className="mono"> status=Issued</span>. Прострочені — Issued зі строком
+              оплати раніше за сьогоднішню календарну дату (не факт оплати). Сторінка 1, стан у
+              shareable URL.
             </p>
           </div>
         ) : (

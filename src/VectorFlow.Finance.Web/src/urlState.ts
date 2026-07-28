@@ -1,5 +1,9 @@
 import type { AccrualListFilters, AccrualStatusFilter } from "./accrualListQuery";
-import type { InvoiceListFilters, InvoiceStatusFilter } from "./invoiceListQuery";
+import type {
+  InvoiceListFilters,
+  InvoiceQueueMode,
+  InvoiceStatusFilter
+} from "./invoiceListQuery";
 import type { AppView } from "./navigation";
 
 const VIEW_IDS: ReadonlySet<string> = new Set([
@@ -18,6 +22,8 @@ export type ListDiscovery = {
   page: number;
   invoiceFilters: InvoiceListFilters;
   accrualFilters: AccrualListFilters;
+  /** Issued overdue attention queue (`queue=overdue` in URL). */
+  invoiceQueue: InvoiceQueueMode;
 };
 
 export type AppUrlState = {
@@ -52,7 +58,8 @@ export const EMPTY_ACCRUAL_FILTERS: AccrualListFilters = {
 export const EMPTY_DISCOVERY: ListDiscovery = {
   page: 1,
   invoiceFilters: { ...EMPTY_INVOICE_FILTERS },
-  accrualFilters: { ...EMPTY_ACCRUAL_FILTERS }
+  accrualFilters: { ...EMPTY_ACCRUAL_FILTERS },
+  invoiceQueue: ""
 };
 
 export function isAppView(value: string | null | undefined): value is AppView {
@@ -176,11 +183,20 @@ function parseAccrualStatus(value: string | null): AccrualStatusFilter {
   return "";
 }
 
+function parseInvoiceQueue(value: string | null): InvoiceQueueMode {
+  if (value === "overdue") {
+    return "overdue";
+  }
+
+  return "";
+}
+
 export function createEmptyDiscovery(): ListDiscovery {
   return {
     page: 1,
     invoiceFilters: { ...EMPTY_INVOICE_FILTERS },
-    accrualFilters: { ...EMPTY_ACCRUAL_FILTERS }
+    accrualFilters: { ...EMPTY_ACCRUAL_FILTERS },
+    invoiceQueue: ""
   };
 }
 
@@ -198,6 +214,7 @@ export function parseUrlSearch(search: string): AppUrlState {
   const invoiceId = parseInvoiceIdParam(params.get("invoiceId"));
 
   const page = parsePage(params.get("page"));
+  const invoiceQueue = view === "invoices" ? parseInvoiceQueue(params.get("queue")) : "";
 
   const invoiceFilters: InvoiceListFilters = {
     documentNumber: params.get("documentNumber")?.trim() ?? "",
@@ -210,6 +227,11 @@ export function parseUrlSearch(search: string): AppUrlState {
     dueFromDate: parseDateInput(params.get("dueFrom")),
     dueToDate: parseDateInput(params.get("dueTo"))
   };
+
+  // Overdue queue is Issued-only; repair missing/invalid status from the durable marker.
+  if (invoiceQueue === "overdue") {
+    invoiceFilters.status = "Issued";
+  }
 
   const accrualFilters: AccrualListFilters = {
     descriptionPrefix: params.get("descriptionPrefix")?.trim() ?? "",
@@ -226,7 +248,8 @@ export function parseUrlSearch(search: string): AppUrlState {
     discovery: {
       page,
       invoiceFilters,
-      accrualFilters
+      accrualFilters,
+      invoiceQueue
     }
   };
 }
@@ -258,17 +281,27 @@ export function buildUrlSearch(state: AppUrlState): string {
 
   if (state.view === "invoices") {
     const filters = state.discovery.invoiceFilters;
+    const invoiceQueue = state.discovery.invoiceQueue === "overdue" ? "overdue" : "";
     setIfPresent(params, "documentNumber", filters.documentNumber);
     setIfPresent(params, "counterpartyReference", filters.counterpartyReference);
-    if (filters.status === "Draft" || filters.status === "Issued") {
-      params.set("status", filters.status);
+    if (invoiceQueue === "overdue" || filters.status === "Draft" || filters.status === "Issued") {
+      params.set(
+        "status",
+        invoiceQueue === "overdue" ? "Issued" : (filters.status as "Draft" | "Issued")
+      );
     }
     setIfPresent(params, "createdFrom", filters.createdFromDate);
     setIfPresent(params, "createdTo", filters.createdToDate);
     setIfPresent(params, "issuedFrom", filters.issuedFromDate);
     setIfPresent(params, "issuedTo", filters.issuedToDate);
     setIfPresent(params, "dueFrom", filters.dueFromDate);
-    setIfPresent(params, "dueTo", filters.dueToDate);
+    // Overdue queue derives dueTo at query time; do not freeze yesterday into the URL.
+    if (invoiceQueue !== "overdue") {
+      setIfPresent(params, "dueTo", filters.dueToDate);
+    }
+    if (invoiceQueue === "overdue") {
+      params.set("queue", "overdue");
+    }
     if (page > 1) {
       params.set("page", String(page));
     }
@@ -313,7 +346,8 @@ export function draftInvoicesDiscovery(): ListDiscovery {
       ...EMPTY_INVOICE_FILTERS,
       status: "Draft"
     },
-    accrualFilters: { ...EMPTY_ACCRUAL_FILTERS }
+    accrualFilters: { ...EMPTY_ACCRUAL_FILTERS },
+    invoiceQueue: ""
   };
 }
 
@@ -328,6 +362,23 @@ export function issuedInvoicesDiscovery(): ListDiscovery {
       ...EMPTY_INVOICE_FILTERS,
       status: "Issued"
     },
-    accrualFilters: { ...EMPTY_ACCRUAL_FILTERS }
+    accrualFilters: { ...EMPTY_ACCRUAL_FILTERS },
+    invoiceQueue: ""
+  };
+}
+
+/**
+ * Overdue Issued queue: status=Issued + queue=overdue.
+ * Server dueToUtc is computed at query time as end of local yesterday (inclusive bound).
+ */
+export function overdueIssuedInvoicesDiscovery(): ListDiscovery {
+  return {
+    page: 1,
+    invoiceFilters: {
+      ...EMPTY_INVOICE_FILTERS,
+      status: "Issued"
+    },
+    accrualFilters: { ...EMPTY_ACCRUAL_FILTERS },
+    invoiceQueue: "overdue"
   };
 }
