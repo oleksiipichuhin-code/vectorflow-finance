@@ -37,6 +37,9 @@ export type CollectionActivityEventType =
   | "installment_payment_recorded"
   | "payment_plan_completed"
   | "payment_plan_cancelled"
+  | "note_added"
+  | "note_updated"
+  | "note_archived"
   | "unable_to_contact"
   | "completed";
 
@@ -157,6 +160,9 @@ export const ACTIVITY_EVENT_TYPE_OPTIONS: readonly {
   { id: "installment_payment_recorded", label: "Installment payment recorded" },
   { id: "payment_plan_completed", label: "Payment plan completed" },
   { id: "payment_plan_cancelled", label: "Payment plan cancelled" },
+  { id: "note_added", label: "Note added" },
+  { id: "note_updated", label: "Note updated" },
+  { id: "note_archived", label: "Note archived" },
   { id: "unable_to_contact", label: "Unable to contact" },
   { id: "completed", label: "Completed" }
 ];
@@ -296,6 +302,9 @@ const EVENT_LABELS: Record<CollectionActivityEventType, string> = {
   installment_payment_recorded: "Installment payment recorded",
   payment_plan_completed: "Payment plan completed",
   payment_plan_cancelled: "Payment plan cancelled",
+  note_added: "Note added",
+  note_updated: "Note updated",
+  note_archived: "Note archived",
   unable_to_contact: "Unable to contact",
   completed: "Completed"
 };
@@ -1159,6 +1168,27 @@ export function historyAfterPaymentPlanChange(
       note: detail.note?.trim() ? detail.note.trim() : null,
       promiseDate: detail.promiseDate ?? existing?.promiseDate ?? null,
       followUpAt: detail.followUpAt ?? null
+    })
+  );
+}
+
+export function historyAfterNoteChange(
+  existing: PromiseToPayRecord | null,
+  type: "note_added" | "note_updated" | "note_archived",
+  detail: {
+    note?: string | null;
+    promiseDate?: string | null;
+  },
+  now: Date = new Date()
+): CollectionActivityEvent[] {
+  return appendActivityEvent(
+    existing?.history ?? [],
+    createActivityEvent({
+      type,
+      atUtc: now.toISOString(),
+      note: detail.note?.trim() ? detail.note.trim() : null,
+      promiseDate: detail.promiseDate ?? existing?.promiseDate ?? null,
+      followUpAt: null
     })
   );
 }

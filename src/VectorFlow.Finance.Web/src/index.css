@@ -485,6 +485,37 @@ body {
   align-items: flex-start;
 }
 
+.collection-notes-list {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 0.75rem;
+}
+
+.collection-note-item {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.65rem;
+  border: 1px solid rgba(27, 36, 48, 0.14);
+  border-radius: 0.35rem;
+  background: rgba(255, 255, 255, 0.45);
+}
+
+.collection-note-item--pinned {
+  border-left: 3px solid #b7791f;
+  background: rgba(196, 149, 40, 0.08);
+}
+
+.collection-note-item p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.aging-badge--note-handoff {
+  border-color: rgba(14, 116, 144, 0.4);
+  background: rgba(14, 116, 144, 0.1);
+  color: #0e7490;
+}
+
 .row-attention--payment-overdue td {
   background: rgba(138, 47, 36, 0.06);
 }

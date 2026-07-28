@@ -18,6 +18,7 @@ import {
 import { formatDate, formatMoney } from "../format";
 import type {
   CollectionResolutionKind,
+  CollectionNoteCategory,
   EscalationStatus,
   PaymentPlanStatus,
   PromiseFollowUpStatus,
@@ -33,14 +34,19 @@ import {
   installmentStatusLabel,
   isActiveDispute,
   isActiveEscalation,
+  isActiveCollectionNote,
   isActivePaymentPlan,
+  listActiveCollectionNotes,
   listOverdueInstallments,
   paymentPlanStatusLabel,
   planInstallmentRemaining,
   planPaidTotal,
   planRemainingTotal,
+  noteCategoryLabel,
   promiseStatusLabel,
   resolutionKindLabel,
+  sortCollectionNotesForDisplay,
+  NOTE_CATEGORY_OPTIONS,
   selectNextInstallment
 } from "../promiseToPay";
 import type { PaymentPlanInstallmentInput } from "../paymentPlan";
@@ -127,6 +133,12 @@ type InvoiceDetailPromiseContext = {
   escalationDueDate: string;
   escalationNote: string;
   escalationCompleteComment: string;
+  notesOpen: boolean;
+  notesEditId: string;
+  noteBody: string;
+  noteAuthor: string;
+  noteCategory: CollectionNoteCategory | "";
+  notePinned: boolean;
   paymentPlanOpen: boolean;
   paymentPlanEditMode: boolean;
   paymentPlanCancelMode: boolean;
@@ -190,6 +202,15 @@ type InvoiceDetailPromiseContext = {
   onEscalationCompleteCommentChange: (value: string) => void;
   onSaveEscalation: () => void;
   onConfirmCompleteEscalation: () => void;
+  onOpenAddNote: () => void;
+  onOpenEditNote: (noteId: string) => void;
+  onCloseNotesForm: () => void;
+  onNoteBodyChange: (value: string) => void;
+  onNoteAuthorChange: (value: string) => void;
+  onNoteCategoryChange: (value: CollectionNoteCategory | "") => void;
+  onNotePinnedChange: (value: boolean) => void;
+  onSaveNote: () => void;
+  onArchiveNote: (noteId: string) => void;
   onOpenCreatePaymentPlan: () => void;
   onOpenEditPaymentPlan: () => void;
   onOpenCancelPaymentPlan: () => void;
@@ -598,6 +619,43 @@ export function InvoiceDetailPanel({
                       <dd className="cell-wrap">{promiseContext.record.note}</dd>
                     </div>
                   ) : null}
+                  <div className="collection-notes-list">
+                    <dt>Internal notes</dt>
+                    <dd>
+                      {(() => {
+                        const activeNotes = sortCollectionNotesForDisplay(
+                          listActiveCollectionNotes(promiseContext.record.notes)
+                        );
+                        if (activeNotes.length === 0) {
+                          return "0 active";
+                        }
+                        return (
+                          <>
+                            <span>{activeNotes.length} active</span>
+                            {activeNotes.map((note) => (
+                              <span
+                                key={note.id}
+                                className={`collection-note-item${
+                                  note.pinned ? " collection-note-item--pinned" : ""
+                                }`}
+                              >
+                                {note.category === "handoff" ? (
+                                  <span className="aging-badge aging-badge--note-handoff">
+                                    Handoff
+                                  </span>
+                                ) : null}
+                                {note.pinned ? "Pinned · " : ""}
+                                {noteCategoryLabel(note.category)} · {note.author} ·{" "}
+                                {note.body.length > 120
+                                  ? `${note.body.slice(0, 117)}…`
+                                  : note.body}
+                              </span>
+                            ))}
+                          </>
+                        );
+                      })()}
+                    </dd>
+                  </div>
                   {promiseContext.record.nextFollowUpAt ? (
                     <div>
                       <dt>Next follow-up</dt>
@@ -1845,12 +1903,109 @@ export function InvoiceDetailPanel({
                 </form>
               ) : null}
 
+              {promiseContext.notesOpen ? (
+                <form
+                  className="filter-form collection-notes-form"
+                  aria-labelledby="collection-notes-heading"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    promiseContext.onSaveNote();
+                  }}
+                >
+                  <h4 id="collection-notes-heading">
+                    {promiseContext.notesEditId ? "Update internal note" : "Add internal note"}
+                  </h4>
+                  <label>
+                    Author *
+                    <input
+                      value={promiseContext.noteAuthor}
+                      onChange={(event) =>
+                        promiseContext.onNoteAuthorChange(event.target.value)
+                      }
+                      autoComplete="name"
+                      disabled={promiseContext.busy}
+                      required
+                    />
+                  </label>
+                  <label>
+                    Category *
+                    <select
+                      value={promiseContext.noteCategory}
+                      onChange={(event) =>
+                        promiseContext.onNoteCategoryChange(
+                          event.target.value as CollectionNoteCategory | ""
+                        )
+                      }
+                      disabled={promiseContext.busy}
+                      required
+                    >
+                      <option value="">Оберіть категорію…</option>
+                      {NOTE_CATEGORY_OPTIONS.map((option) => (
+                        <option key={option.id} value={option.id}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Body *
+                    <textarea
+                      value={promiseContext.noteBody}
+                      onChange={(event) =>
+                        promiseContext.onNoteBodyChange(event.target.value)
+                      }
+                      disabled={promiseContext.busy}
+                      required
+                      rows={4}
+                    />
+                  </label>
+                  <label className="checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={promiseContext.notePinned}
+                      onChange={(event) =>
+                        promiseContext.onNotePinnedChange(event.target.checked)
+                      }
+                      disabled={promiseContext.busy}
+                    />
+                    Pin note
+                  </label>
+                  <div className="filter-actions">
+                    <button
+                      type="submit"
+                      disabled={
+                        promiseContext.busy ||
+                        closeDisabled ||
+                        !promiseContext.noteAuthor.trim() ||
+                        !promiseContext.noteCategory ||
+                        !promiseContext.noteBody.trim()
+                      }
+                    >
+                      {promiseContext.busy
+                        ? "Збереження…"
+                        : promiseContext.notesEditId
+                          ? "Update note"
+                          : "Save note"}
+                    </button>
+                    <button
+                      type="button"
+                      className="button-secondary"
+                      disabled={promiseContext.busy || closeDisabled}
+                      onClick={promiseContext.onCloseNotesForm}
+                    >
+                      Скасувати
+                    </button>
+                  </div>
+                </form>
+              ) : null}
+
               {!promiseContext.formOpen &&
               !promiseContext.resolutionOpen &&
               !promiseContext.contactOpen &&
               !promiseContext.disputeOpen &&
               !promiseContext.escalationOpen &&
-              !promiseContext.paymentPlanOpen ? (
+              !promiseContext.paymentPlanOpen &&
+              !promiseContext.notesOpen ? (
                 <div className="filter-actions">
                   <button
                     type="button"
@@ -1858,6 +2013,13 @@ export function InvoiceDetailPanel({
                     onClick={promiseContext.onOpenContact}
                   >
                     Log contact
+                  </button>
+                  <button
+                    type="button"
+                    disabled={closeDisabled || promiseContext.busy}
+                    onClick={promiseContext.onOpenAddNote}
+                  >
+                    Add note
                   </button>
                   {isActiveDispute(promiseContext.record?.dispute) ? (
                     <>
@@ -2011,8 +2173,51 @@ export function InvoiceDetailPanel({
                   ) : null}
                 </div>
               ) : null}
+              {promiseContext.record ? (
+                <div className="collection-notes-list">
+                  {sortCollectionNotesForDisplay(promiseContext.record.notes)
+                    .filter((note) => isActiveCollectionNote(note))
+                    .map((note) => (
+                      <article
+                        key={note.id}
+                        className={`collection-note-item${
+                          note.pinned ? " collection-note-item--pinned" : ""
+                        }`}
+                      >
+                        <div>
+                          {note.category === "handoff" ? (
+                            <span className="aging-badge aging-badge--note-handoff">
+                              Handoff
+                            </span>
+                          ) : null}
+                          <strong>{noteCategoryLabel(note.category)}</strong> · {note.author}
+                          {note.pinned ? " · pinned" : ""}
+                        </div>
+                        <p>{note.body}</p>
+                        <div className="row-actions">
+                          <button
+                            type="button"
+                            className="button-secondary"
+                            disabled={closeDisabled || promiseContext.busy}
+                            onClick={() => promiseContext.onOpenEditNote(note.id)}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            className="button-secondary"
+                            disabled={closeDisabled || promiseContext.busy}
+                            onClick={() => promiseContext.onArchiveNote(note.id)}
+                          >
+                            Archive
+                          </button>
+                        </div>
+                      </article>
+                    ))}
+                </div>
+              ) : null}
               <p className="meta promise-persistence-note">
-                Contact, dispute, escalation, payment plan, follow-up і resolution
+                Contact, dispute, escalation, payment plan, internal notes, follow-up і resolution
                 зберігаються локально в браузері (localStorage) за invoice id. Payment plan
                 payments are operational tracking only.
               </p>

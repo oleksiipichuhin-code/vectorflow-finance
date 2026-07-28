@@ -28,6 +28,7 @@ export type WorkbenchSectionId =
   | "escalated"
   | "disputed"
   | "payment_plans"
+  | "handoffs"
   | "follow_up_required";
 
 export type WorkbenchSectionFilter = "" | WorkbenchSectionId;
@@ -46,6 +47,7 @@ export type NextBestActionId =
   | "review_escalation"
   | "review_dispute"
   | "track_payment_plan"
+  | "review_handoff"
   | "retry_contact"
   | "follow_up"
   | "none";
@@ -75,6 +77,7 @@ export type WorkbenchKpi = {
   escalatedCount: number;
   disputedCount: number;
   paymentPlanCount: number;
+  handoffCount: number;
   completedTodayCount: number;
 };
 
@@ -95,6 +98,7 @@ export const WORKBENCH_SECTION_IDS: readonly WorkbenchSectionId[] = [
   "escalated",
   "disputed",
   "payment_plans",
+  "handoffs",
   "follow_up_required"
 ];
 
@@ -105,6 +109,7 @@ export const WORKBENCH_SECTION_OPTIONS: readonly WorkbenchSectionOption[] = [
   { id: "escalated", label: "Escalated", shortLabel: "Escalated" },
   { id: "disputed", label: "Disputed", shortLabel: "Disputed" },
   { id: "payment_plans", label: "Payment plans", shortLabel: "Plans" },
+  { id: "handoffs", label: "Handoffs", shortLabel: "Handoffs" },
   {
     id: "follow_up_required",
     label: "Follow-up Required",
@@ -137,6 +142,7 @@ const NBA_LABELS: Record<NextBestActionId, string> = {
   review_escalation: "Review Escalation",
   review_dispute: "Review Dispute",
   track_payment_plan: "Track Payment Plan",
+  review_handoff: "Review Handoff Note",
   retry_contact: "Retry Contact",
   follow_up: "Follow Up",
   none: "—"
@@ -192,9 +198,13 @@ export function nextBestActionLabel(action: NextBestActionId): string {
 /**
  * Deterministic next-best-action rules for an open collection case.
  * Resolution "unable_to_contact" wins over calendar/group buckets.
+ * Open handoff notes nudge review when no higher-priority action applies.
  */
 export function resolveNextBestAction(
-  item: Pick<PromiseFollowUpItem, "group" | "resolution" | "status">
+  item: Pick<
+    PromiseFollowUpItem,
+    "group" | "resolution" | "status" | "hasOpenHandoffNotes"
+  >
 ): NextBestActionId {
   if (item.group === "completed" || item.status === "completed") {
     return "none";
@@ -208,7 +218,7 @@ export function resolveNextBestAction(
     case "broken":
       return "contact_customer";
     case "upcoming":
-      return "wait";
+      return item.hasOpenHandoffNotes ? "review_handoff" : "wait";
     case "due_today":
       return "verify_payment";
     case "escalated":
@@ -218,9 +228,9 @@ export function resolveNextBestAction(
     case "payment_plans":
       return "track_payment_plan";
     case "follow_up_required":
-      return "contact_customer";
+      return item.hasOpenHandoffNotes ? "review_handoff" : "contact_customer";
     default:
-      return "follow_up";
+      return item.hasOpenHandoffNotes ? "review_handoff" : "follow_up";
   }
 }
 
@@ -258,8 +268,8 @@ function isCompletedToday(item: PromiseFollowUpItem, now: Date): boolean {
 
 export function isWorkbenchSectionGroup(
   group: PromiseGroupId
-): group is WorkbenchSectionId {
-  return SECTION_SET.has(group);
+): group is Exclude<WorkbenchSectionId, "handoffs"> {
+  return group !== "upcoming" && group !== "completed" && SECTION_SET.has(group);
 }
 
 export function compareWorkbenchCases(
@@ -309,7 +319,8 @@ export type WorkbenchQueryOptions = {
 };
 
 /**
- * Filter + sort workbench cases. Section filter maps to promise group ids.
+ * Filter + sort workbench cases. Section filter maps to promise group ids,
+ * except "handoffs" which selects cases with open handoff notes (cross-cutting).
  * When hideCompleted is true, completed cases are excluded.
  */
 export function filterWorkbenchCases(
@@ -325,7 +336,11 @@ export function filterWorkbenchCases(
     if (hideCompleted && item.group === "completed") {
       return false;
     }
-    if (section && item.group !== section) {
+    if (section === "handoffs") {
+      if (!item.hasOpenHandoffNotes) {
+        return false;
+      }
+    } else if (section && item.group !== section) {
       return false;
     }
     if (!search) {
@@ -361,6 +376,9 @@ export function buildWorkbenchKpi(
     escalatedCount: cases.filter((item) => item.group === "escalated").length,
     disputedCount: cases.filter((item) => item.group === "disputed").length,
     paymentPlanCount: cases.filter((item) => item.group === "payment_plans").length,
+    handoffCount: cases.filter(
+      (item) => item.group !== "completed" && item.hasOpenHandoffNotes
+    ).length,
     completedTodayCount: cases.filter((item) => isCompletedToday(item, now))
       .length
   };
@@ -372,7 +390,9 @@ export function groupWorkbenchSections(
 ): WorkbenchSectionSummary[] {
   return WORKBENCH_SECTION_IDS.map((id) => {
     const sectionCases = cases
-      .filter((item) => item.group === id)
+      .filter((item) =>
+        id === "handoffs" ? item.hasOpenHandoffNotes : item.group === id
+      )
       .slice()
       .sort((a, b) => compareWorkbenchCases(a, b, sort));
     return {

@@ -55,8 +55,11 @@ import {
 import {
   PROMISE_GROUP_OPTIONS,
   applyCollectionResolution,
+  addCollectionNote,
+  archiveCollectionNote,
   buildPromiseFollowUpItems,
   buildPromiseFollowUpSummary,
+  NOTE_CATEGORY_OPTIONS,
   filterPromiseFollowUps,
   groupPromiseFollowUps,
   listPromiseRecordsFromStorage,
@@ -70,13 +73,16 @@ import {
   cancelPaymentPlan,
   emptyInstallmentDraft,
   recordInstallmentPayment,
+  readLastCollectionNoteAuthor,
   saveCollectionContact,
   savePromiseToPay,
   updateCollectionDispute,
   updateCollectionEscalation,
+  updateCollectionNote,
   updateContactFollowUp,
   updatePaymentPlan,
   updatePromiseStatus,
+  type CollectionNoteCategory,
   type CollectionResolutionKind,
   type PromiseFollowUpItem,
   type PromiseGroupFilter,
@@ -387,6 +393,12 @@ export function InvoicesView({
     useState("");
   const [paymentPlanRecordAmount, setPaymentPlanRecordAmount] = useState("");
   const [paymentPlanRecordNote, setPaymentPlanRecordNote] = useState("");
+  const [notesOpen, setNotesOpen] = useState(false);
+  const [notesEditId, setNotesEditId] = useState("");
+  const [noteBody, setNoteBody] = useState("");
+  const [noteAuthor, setNoteAuthor] = useState("");
+  const [noteCategory, setNoteCategory] = useState<CollectionNoteCategory | "">("");
+  const [notePinned, setNotePinned] = useState(false);
   const [filterValidationError, setFilterValidationError] = useState<string | null>(null);
 
   const [page, setPage] = useState(() => (initialPage < 1 ? 1 : Math.floor(initialPage)));
@@ -699,6 +711,12 @@ export function InvoicesView({
     setPaymentPlanRecordInstallmentId("");
     setPaymentPlanRecordAmount("");
     setPaymentPlanRecordNote("");
+    setNotesOpen(false);
+    setNotesEditId("");
+    setNoteBody("");
+    setNoteAuthor("");
+    setNoteCategory("");
+    setNotePinned(false);
   }, [detailTargetId]);
 
   function publishDiscovery(
@@ -2738,6 +2756,8 @@ export function InvoicesView({
     setDisputeOpen(false);
     setEscalationOpen(false);
     setPaymentPlanOpen(false);
+    setNotesOpen(false);
+    setNotesEditId("");
     setPromiseFormOpen(true);
     setPromiseDateInput(existing?.promiseDate ?? "");
     setPromiseNoteInput(existing?.note ?? "");
@@ -2756,6 +2776,8 @@ export function InvoicesView({
     setDisputeOpen(false);
     setEscalationOpen(false);
     setPaymentPlanOpen(false);
+    setNotesOpen(false);
+    setNotesEditId("");
     setResolutionOpen(true);
     setResolutionKind("");
     setResolutionPaymentDate("");
@@ -2779,6 +2801,8 @@ export function InvoicesView({
     setDisputeOpen(false);
     setEscalationOpen(false);
     setPaymentPlanOpen(false);
+    setNotesOpen(false);
+    setNotesEditId("");
     setContactOpen(true);
     setContactChannel("");
     setContactResult("");
@@ -2799,6 +2823,8 @@ export function InvoicesView({
     setContactOpen(false);
     setEscalationOpen(false);
     setPaymentPlanOpen(false);
+    setNotesOpen(false);
+    setNotesEditId("");
     setDisputeOpen(true);
     setDisputeEditMode(false);
     setDisputeCloseMode("");
@@ -2818,6 +2844,8 @@ export function InvoicesView({
     setContactOpen(false);
     setEscalationOpen(false);
     setPaymentPlanOpen(false);
+    setNotesOpen(false);
+    setNotesEditId("");
     setDisputeOpen(true);
     setDisputeEditMode(true);
     setDisputeCloseMode("");
@@ -2836,6 +2864,8 @@ export function InvoicesView({
     setContactOpen(false);
     setEscalationOpen(false);
     setPaymentPlanOpen(false);
+    setNotesOpen(false);
+    setNotesEditId("");
     setDisputeOpen(true);
     setDisputeEditMode(false);
     setDisputeCloseMode("resolve");
@@ -2850,6 +2880,8 @@ export function InvoicesView({
     setContactOpen(false);
     setEscalationOpen(false);
     setPaymentPlanOpen(false);
+    setNotesOpen(false);
+    setNotesEditId("");
     setDisputeOpen(true);
     setDisputeEditMode(false);
     setDisputeCloseMode("reject");
@@ -2871,6 +2903,8 @@ export function InvoicesView({
     setContactOpen(false);
     setDisputeOpen(false);
     setPaymentPlanOpen(false);
+    setNotesOpen(false);
+    setNotesEditId("");
     setEscalationOpen(true);
     setEscalationEditMode(false);
     setEscalationCompleteMode(false);
@@ -2892,6 +2926,8 @@ export function InvoicesView({
     setContactOpen(false);
     setDisputeOpen(false);
     setPaymentPlanOpen(false);
+    setNotesOpen(false);
+    setNotesEditId("");
     setEscalationOpen(true);
     setEscalationEditMode(true);
     setEscalationCompleteMode(false);
@@ -2912,6 +2948,8 @@ export function InvoicesView({
     setContactOpen(false);
     setDisputeOpen(false);
     setPaymentPlanOpen(false);
+    setNotesOpen(false);
+    setNotesEditId("");
     setEscalationOpen(true);
     setEscalationEditMode(false);
     setEscalationCompleteMode(true);
@@ -2927,12 +2965,100 @@ export function InvoicesView({
     setPromiseFormError(null);
   }
 
+  function openAddNoteForm() {
+    setPromiseFormOpen(false);
+    setResolutionOpen(false);
+    setContactOpen(false);
+    setDisputeOpen(false);
+    setEscalationOpen(false);
+    setPaymentPlanOpen(false);
+    setNotesOpen(true);
+    setNotesEditId("");
+    setNoteBody("");
+    setNoteAuthor(readLastCollectionNoteAuthor());
+    setNoteCategory(
+      NOTE_CATEGORY_OPTIONS.find((option) => option.id === "general")?.id ?? "general"
+    );
+    setNotePinned(false);
+    setPromiseFormError(null);
+    setPromiseFormSuccess(null);
+  }
+
+  function openEditNoteForm(noteId: string) {
+    const note = detailPromiseRecord?.notes.find((item) => item.id === noteId);
+    if (!note) {
+      return;
+    }
+    setPromiseFormOpen(false);
+    setResolutionOpen(false);
+    setContactOpen(false);
+    setDisputeOpen(false);
+    setEscalationOpen(false);
+    setPaymentPlanOpen(false);
+    setNotesOpen(true);
+    setNotesEditId(note.id);
+    setNoteBody(note.body);
+    setNoteAuthor(note.author);
+    setNoteCategory(note.category);
+    setNotePinned(note.pinned);
+    setPromiseFormError(null);
+    setPromiseFormSuccess(null);
+  }
+
+  function closeNotesForm() {
+    setNotesOpen(false);
+    setNotesEditId("");
+    setPromiseFormError(null);
+  }
+
+  function handleSaveNote(invoiceId: string) {
+    setPromiseBusy(true);
+    setPromiseFormError(null);
+    setPromiseFormSuccess(null);
+    const input = {
+      body: noteBody,
+      author: noteAuthor,
+      category: noteCategory,
+      pinned: notePinned
+    };
+    const result = notesEditId
+      ? updateCollectionNote(invoiceId, { ...input, noteId: notesEditId })
+      : addCollectionNote(invoiceId, input);
+    setPromiseBusy(false);
+    if (!result.ok) {
+      setPromiseFormError(result.error);
+      return;
+    }
+    setPromiseFormSuccess(notesEditId ? "Internal note updated." : "Internal note saved.");
+    closeNotesForm();
+    bumpPromiseRevision();
+  }
+
+  function handleArchiveNote(invoiceId: string, noteId: string) {
+    setPromiseBusy(true);
+    setPromiseFormError(null);
+    setPromiseFormSuccess(null);
+    const result = archiveCollectionNote(invoiceId, noteId);
+    setPromiseBusy(false);
+    if (!result.ok) {
+      setPromiseFormError(result.error);
+      return;
+    }
+    if (notesEditId === noteId) {
+      closeNotesForm();
+    }
+    setPromiseFormSuccess("Internal note archived.");
+    bumpPromiseRevision();
+  }
+
   function closeOtherCollectionFormsForPaymentPlan() {
     setPromiseFormOpen(false);
     setResolutionOpen(false);
     setContactOpen(false);
     setDisputeOpen(false);
     setEscalationOpen(false);
+    setNotesOpen(false);
+    setNotesEditId("");
   }
 
   function openCreatePaymentPlanForm() {
@@ -3504,6 +3630,10 @@ export function InvoicesView({
                     <div>
                       <dt>Payment plans</dt>
                       <dd>{workbenchKpi.paymentPlanCount}</dd>
+                    </div>
+                    <div>
+                      <dt>Handoffs</dt>
+                      <dd>{workbenchKpi.handoffCount}</dd>
                     </div>
                     <div>
                       <dt>Completed Today</dt>
@@ -4441,6 +4571,12 @@ export function InvoicesView({
                     escalationDueDate,
                     escalationNote,
                     escalationCompleteComment,
+                    notesOpen,
+                    notesEditId,
+                    noteBody,
+                    noteAuthor,
+                    noteCategory,
+                    notePinned,
                     onOpenForm: () => openPromiseForm(detailPromiseRecord),
                     onCloseForm: closePromiseForm,
                     onPromiseDateChange: setPromiseDateInput,
@@ -4496,6 +4632,15 @@ export function InvoicesView({
                     onSaveEscalation: () => handleSaveEscalation(detailTargetId),
                     onConfirmCompleteEscalation: () =>
                       handleConfirmCompleteEscalation(detailTargetId),
+                    onOpenAddNote: openAddNoteForm,
+                    onOpenEditNote: openEditNoteForm,
+                    onCloseNotesForm: closeNotesForm,
+                    onNoteBodyChange: setNoteBody,
+                    onNoteAuthorChange: setNoteAuthor,
+                    onNoteCategoryChange: setNoteCategory,
+                    onNotePinnedChange: setNotePinned,
+                    onSaveNote: () => handleSaveNote(detailTargetId),
+                    onArchiveNote: (noteId) => handleArchiveNote(detailTargetId, noteId),
                     paymentPlanOpen,
                     paymentPlanEditMode,
                     paymentPlanCancelMode,

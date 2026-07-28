@@ -13,6 +13,7 @@ import {
   historyAfterContact,
   historyAfterDisputeChange,
   historyAfterEscalationChange,
+  historyAfterNoteChange,
   historyAfterPaymentPlanChange,
   historyAfterPromiseSave,
   historyAfterResolution,
@@ -54,6 +55,19 @@ import {
   type PaymentPlanCreateInput,
   type PaymentPlanUpdateInput
 } from "./paymentPlan.ts";
+import {
+  createCollectionNoteEntity,
+  hasOpenHandoffNotes,
+  isActiveCollectionNote,
+  listActiveCollectionNotes,
+  listPinnedCollectionNotes,
+  sanitizeCollectionNotes,
+  summarizeNoteForHistory,
+  validateCollectionNoteInput,
+  type CollectionNote,
+  type CollectionNoteInput,
+  type CollectionNoteUpdateInput
+} from "./collectionNotes.ts";
 
 export type {
   CollectionPaymentInstallment,
@@ -65,6 +79,14 @@ export type {
   PaymentPlanStatus,
   PaymentPlanUpdateInput
 } from "./paymentPlan.ts";
+
+export type {
+  CollectionNote,
+  CollectionNoteCategory,
+  CollectionNoteInput,
+  CollectionNoteUpdateInput,
+  CollectionNoteVisibility
+} from "./collectionNotes.ts";
 
 export {
   computeInstallmentStatus,
@@ -87,6 +109,19 @@ export {
   validatePaymentPlanCreateInput,
   validatePaymentPlanUpdateInput
 } from "./paymentPlan.ts";
+
+export {
+  NOTE_CATEGORY_OPTIONS,
+  countActiveCollectionNotes,
+  hasOpenHandoffNotes,
+  isActiveCollectionNote,
+  listActiveCollectionNotes,
+  listPinnedCollectionNotes,
+  noteCategoryLabel,
+  parseNoteCategory,
+  sortCollectionNotesForDisplay,
+  validateCollectionNoteInput
+} from "./collectionNotes.ts";
 
 export const PROMISE_STORAGE_KEY_PREFIX = "vectorflow.finance.promiseToPay.";
 
@@ -184,6 +219,8 @@ export type PromiseToPayRecord = {
   escalation: CollectionEscalation | null;
   /** Agreed multi-installment repayment schedule (operational tracking). */
   paymentPlan: CollectionPaymentPlan | null;
+  /** Internal collaboration notes thread (append / edit / archive). */
+  notes: CollectionNote[];
   /** Append-only activity timeline (same localStorage record). */
   history: CollectionActivityEvent[];
 };
@@ -331,6 +368,10 @@ export type PromiseFollowUpItem = {
   paymentPlanNextDueAt: string | null;
   paymentPlanOverdue: boolean;
   paymentPlanProgress: number | null;
+  notes: CollectionNote[];
+  activeNotesCount: number;
+  pinnedNotesCount: number;
+  hasOpenHandoffNotes: boolean;
   nextActionKind: NextActionKind | null;
   nextActionLabel: string | null;
 };
@@ -1168,6 +1209,7 @@ export function sanitizePromiseRecord(
       ? null
       : sanitizePaymentPlan(candidate.paymentPlan);
 
+  const notes = sanitizeCollectionNotes(candidate.notes);
   const history = sanitizeActivityHistory(candidate.history);
 
   return {
@@ -1183,6 +1225,7 @@ export function sanitizePromiseRecord(
     dispute,
     escalation,
     paymentPlan,
+    notes,
     history
   };
 }
@@ -1307,6 +1350,7 @@ export function savePromiseToPay(
     dispute: existing?.dispute ?? null,
     escalation: existing?.escalation ?? null,
     paymentPlan: existing?.paymentPlan ?? null,
+    notes: existing?.notes ?? [],
     history: existing?.history ?? []
   };
 
@@ -1573,6 +1617,7 @@ export function applyCollectionResolution(
     dispute: existing.dispute,
     escalation: existing.escalation,
     paymentPlan: existing.paymentPlan,
+    notes: existing.notes,
     history: historyAfterResolution(
       existing,
       validated.resolution,
@@ -1661,6 +1706,7 @@ export function saveCollectionContact(
     dispute: existing?.dispute ?? null,
     escalation: existing?.escalation ?? null,
     paymentPlan: existing?.paymentPlan ?? null,
+    notes: existing?.notes ?? [],
     history: existing?.history ?? []
   };
 
@@ -1798,6 +1844,7 @@ export function raiseCollectionDispute(
     dispute,
     escalation: existing?.escalation ?? null,
     paymentPlan: existing?.paymentPlan ?? null,
+    notes: existing?.notes ?? [],
     history: existing?.history ?? []
   };
 
@@ -2021,6 +2068,7 @@ export function raiseCollectionEscalation(
     dispute: existing?.dispute ?? null,
     escalation,
     paymentPlan: existing?.paymentPlan ?? null,
+    notes: existing?.notes ?? [],
     history: existing?.history ?? []
   };
 
@@ -2245,6 +2293,7 @@ export function createPaymentPlan(
     dispute: existing?.dispute ?? null,
     escalation: existing?.escalation ?? null,
     paymentPlan,
+    notes: existing?.notes ?? [],
     history: existing?.history ?? []
   };
 
@@ -2483,6 +2532,262 @@ export function cancelPaymentPlan(
   return { ok: true, record };
 }
 
+const NOTE_AUTHOR_STORAGE_KEY = "vectorflow.finance.collectionNoteAuthor";
+
+export function readLastCollectionNoteAuthor(
+  storage: Storage | null | undefined = defaultStorage()
+): string {
+  if (!storage) {
+    return "";
+  }
+  try {
+    const raw = storage.getItem(NOTE_AUTHOR_STORAGE_KEY);
+    return typeof raw === "string" ? raw.trim() : "";
+  } catch {
+    return "";
+  }
+}
+
+function writeLastCollectionNoteAuthor(
+  author: string,
+  storage: Storage | null | undefined
+): void {
+  if (!storage) {
+    return;
+  }
+  try {
+    const trimmed = author.trim();
+    if (!trimmed) {
+      storage.removeItem(NOTE_AUTHOR_STORAGE_KEY);
+      return;
+    }
+    storage.setItem(NOTE_AUTHOR_STORAGE_KEY, trimmed);
+  } catch {
+    // Ignore author preference write failures.
+  }
+}
+
+function ensureCaseShellForNotes(
+  invoiceId: string,
+  existing: PromiseToPayRecord | null,
+  now: Date
+): PromiseToPayRecord {
+  if (existing) {
+    return existing;
+  }
+  const at = now.toISOString();
+  return {
+    invoiceId: invoiceId.trim(),
+    promiseDate: localCalendarDateString(now),
+    note: "",
+    status: "awaiting",
+    updatedAtUtc: at,
+    completedAtUtc: null,
+    resolution: null,
+    nextFollowUpAt: null,
+    lastContact: null,
+    dispute: null,
+    escalation: null,
+    paymentPlan: null,
+    notes: [],
+    history: []
+  };
+}
+
+/**
+ * Add an internal collaboration note to the collection case.
+ * Creates a minimal case record when none exists yet.
+ */
+export function addCollectionNote(
+  invoiceId: string,
+  input: CollectionNoteInput,
+  options?: { storage?: Storage | null; now?: Date }
+): { ok: true; record: PromiseToPayRecord } | { ok: false; error: string } {
+  const validation = validateCollectionNoteInput(input);
+  if (!validation.ok) {
+    return validation;
+  }
+  if (!UUID_RE.test(invoiceId.trim())) {
+    return { ok: false, error: "Некоректний ідентифікатор рахунку." };
+  }
+
+  const storage = options?.storage === undefined ? defaultStorage() : options.storage;
+  const now = options?.now ?? new Date();
+  const existing = readPromiseFromStorage(invoiceId, storage);
+  const base = ensureCaseShellForNotes(invoiceId, existing, now);
+  const note = createCollectionNoteEntity(invoiceId, validation, now);
+  const notes = [...base.notes, note];
+  const at = now.toISOString();
+
+  const record: PromiseToPayRecord = {
+    ...base,
+    notes,
+    updatedAtUtc: at,
+    history: historyAfterNoteChange(
+      existing,
+      "note_added",
+      {
+        note: summarizeNoteForHistory(note),
+        promiseDate: base.promiseDate
+      },
+      now
+    )
+  };
+
+  if (storage && !writePromiseToStorage(record, storage)) {
+    return { ok: false, error: "Не вдалося зберегти нотатку у браузері." };
+  }
+  writeLastCollectionNoteAuthor(validation.author, storage);
+
+  return { ok: true, record };
+}
+
+/**
+ * Update an active (non-archived) internal note.
+ */
+export function updateCollectionNote(
+  invoiceId: string,
+  input: CollectionNoteUpdateInput,
+  options?: { storage?: Storage | null; now?: Date }
+): { ok: true; record: PromiseToPayRecord } | { ok: false; error: string } {
+  const validation = validateCollectionNoteInput(input);
+  if (!validation.ok) {
+    return validation;
+  }
+  if (!UUID_RE.test(invoiceId.trim())) {
+    return { ok: false, error: "Некоректний ідентифікатор рахунку." };
+  }
+  const noteId = (input.noteId ?? "").trim();
+  if (!noteId) {
+    return { ok: false, error: "Некоректний ідентифікатор нотатки." };
+  }
+
+  const storage = options?.storage === undefined ? defaultStorage() : options.storage;
+  const now = options?.now ?? new Date();
+  const existing = readPromiseFromStorage(invoiceId, storage);
+  if (!existing) {
+    return { ok: false, error: "Кейс стягнення для цього рахунку не знайдено." };
+  }
+
+  const index = existing.notes.findIndex((item) => item.id === noteId);
+  if (index < 0) {
+    return { ok: false, error: "Нотатку не знайдено." };
+  }
+  const previous = existing.notes[index]!;
+  if (!isActiveCollectionNote(previous)) {
+    return { ok: false, error: "Архівовану нотатку не можна редагувати." };
+  }
+
+  const unchanged =
+    previous.body === validation.body &&
+    previous.author === validation.author &&
+    previous.category === validation.category &&
+    previous.pinned === validation.pinned;
+  if (unchanged) {
+    return { ok: true, record: existing };
+  }
+
+  const at = now.toISOString();
+  const nextNote: CollectionNote = {
+    ...previous,
+    body: validation.body,
+    author: validation.author,
+    category: validation.category,
+    pinned: validation.pinned,
+    updatedAtUtc: at
+  };
+  const notes = existing.notes.map((item, itemIndex) =>
+    itemIndex === index ? nextNote : item
+  );
+
+  const record: PromiseToPayRecord = {
+    ...existing,
+    notes,
+    updatedAtUtc: at,
+    history: historyAfterNoteChange(
+      existing,
+      "note_updated",
+      {
+        note: summarizeNoteForHistory(nextNote),
+        promiseDate: existing.promiseDate
+      },
+      now
+    )
+  };
+
+  if (storage && !writePromiseToStorage(record, storage)) {
+    return { ok: false, error: "Не вдалося оновити нотатку у браузері." };
+  }
+  writeLastCollectionNoteAuthor(validation.author, storage);
+
+  return { ok: true, record };
+}
+
+/**
+ * Soft-archive an internal note (keeps history; removes from active thread).
+ */
+export function archiveCollectionNote(
+  invoiceId: string,
+  noteId: string,
+  options?: { storage?: Storage | null; now?: Date }
+): { ok: true; record: PromiseToPayRecord } | { ok: false; error: string } {
+  if (!UUID_RE.test(invoiceId.trim())) {
+    return { ok: false, error: "Некоректний ідентифікатор рахунку." };
+  }
+  const id = noteId.trim();
+  if (!id) {
+    return { ok: false, error: "Некоректний ідентифікатор нотатки." };
+  }
+
+  const storage = options?.storage === undefined ? defaultStorage() : options.storage;
+  const now = options?.now ?? new Date();
+  const existing = readPromiseFromStorage(invoiceId, storage);
+  if (!existing) {
+    return { ok: false, error: "Кейс стягнення для цього рахунку не знайдено." };
+  }
+
+  const index = existing.notes.findIndex((item) => item.id === id);
+  if (index < 0) {
+    return { ok: false, error: "Нотатку не знайдено." };
+  }
+  const previous = existing.notes[index]!;
+  if (!isActiveCollectionNote(previous)) {
+    return { ok: true, record: existing };
+  }
+
+  const at = now.toISOString();
+  const nextNote: CollectionNote = {
+    ...previous,
+    pinned: false,
+    archivedAtUtc: at,
+    updatedAtUtc: at
+  };
+  const notes = existing.notes.map((item, itemIndex) =>
+    itemIndex === index ? nextNote : item
+  );
+
+  const record: PromiseToPayRecord = {
+    ...existing,
+    notes,
+    updatedAtUtc: at,
+    history: historyAfterNoteChange(
+      existing,
+      "note_archived",
+      {
+        note: summarizeNoteForHistory(nextNote),
+        promiseDate: existing.promiseDate
+      },
+      now
+    )
+  };
+
+  if (storage && !writePromiseToStorage(record, storage)) {
+    return { ok: false, error: "Не вдалося архівувати нотатку у браузері." };
+  }
+
+  return { ok: true, record };
+}
+
 export function listPromiseRecordsFromStorage(
   storage: Storage | null | undefined = defaultStorage()
 ): PromiseToPayRecord[] {
@@ -2586,6 +2891,10 @@ export function buildPromiseFollowUpItem(
         ? Math.min(1, planPaidTotal(record.paymentPlan) / record.paymentPlan.planAmount)
         : 0
       : null,
+    notes: record.notes,
+    activeNotesCount: listActiveCollectionNotes(record.notes).length,
+    pinnedNotesCount: listPinnedCollectionNotes(record.notes).length,
+    hasOpenHandoffNotes: hasOpenHandoffNotes(record.notes),
     nextActionKind: nextAction?.kind ?? null,
     nextActionLabel: nextAction?.label ?? null
   };

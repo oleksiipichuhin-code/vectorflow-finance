@@ -110,6 +110,10 @@ function baseItem(
     paymentPlanNextDueAt: null,
     paymentPlanOverdue: false,
     paymentPlanProgress: null,
+    notes: [],
+    activeNotesCount: 0,
+    pinnedNotesCount: 0,
+    hasOpenHandoffNotes: false,
     nextActionKind: null,
     nextActionLabel: null,
     ...overrides
@@ -125,6 +129,12 @@ describe("collectionWorkbench next best action", () => {
     assert.equal(
       resolveNextBestAction(baseItem({ group: "upcoming" })),
       "wait"
+    );
+    assert.equal(
+      resolveNextBestAction(
+        baseItem({ group: "upcoming", hasOpenHandoffNotes: true })
+      ),
+      "review_handoff"
     );
     assert.equal(
       resolveNextBestAction(baseItem({ group: "due_today" })),
@@ -229,6 +239,7 @@ describe("collectionWorkbench grouping and KPI", () => {
     assert.equal(kpi.escalatedCount, 1);
     assert.equal(kpi.disputedCount, 1);
     assert.equal(kpi.paymentPlanCount, 0);
+    assert.equal(kpi.handoffCount, 0);
     assert.equal(kpi.completedTodayCount, 0);
 
     updatePromiseStatus(INVOICE_A, "completed", { storage, now: NOW });
