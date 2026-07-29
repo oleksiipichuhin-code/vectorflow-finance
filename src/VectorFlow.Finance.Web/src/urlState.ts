@@ -36,7 +36,8 @@ const VIEW_IDS: ReadonlySet<string> = new Set([
   "invoices",
   "accruals",
   "journals",
-  "trial-balance"
+  "trial-balance",
+  "account-statement"
 ]);
 
 export type JournalStatusFilter = "" | "Draft" | "Posted";
@@ -95,6 +96,14 @@ export type ListDiscovery = {
   caseHistorySearch: string;
   /** Expand full history (`historyExpanded=1`). */
   caseHistoryExpanded: boolean;
+  /**
+   * Account statement period from (`periodFrom=` YYYY-MM-DD) when `view=account-statement`.
+   */
+  statementPeriodFrom: string;
+  /**
+   * Account statement period to (`periodTo=` YYYY-MM-DD) when `view=account-statement`.
+   */
+  statementPeriodTo: string;
 };
 
 export type AppUrlState = {
@@ -106,6 +115,8 @@ export type AppUrlState = {
   invoiceId: string | null;
   /** Journal entry detail deep-link; omitted outside journals view. */
   journalEntryId: string | null;
+  /** Account statement detail deep-link; omitted outside account-statement view. */
+  accountId: string | null;
   discovery: ListDiscovery;
 };
 
@@ -145,7 +156,9 @@ export const EMPTY_DISCOVERY: ListDiscovery = {
   caseHistoryOpen: false,
   caseHistoryType: "",
   caseHistorySearch: "",
-  caseHistoryExpanded: false
+  caseHistoryExpanded: false,
+  statementPeriodFrom: "",
+  statementPeriodTo: ""
 };
 
 export function parseCollectionPanelParam(
@@ -185,6 +198,11 @@ export function isInvoiceId(value: string | null | undefined): value is string {
 
 /** Same GUID shape; invalid values never become journal detail targets. */
 export function isJournalEntryId(value: string | null | undefined): value is string {
+  return isWorkspaceId(value);
+}
+
+/** Same GUID shape; invalid values never become account statement targets. */
+export function isAccountId(value: string | null | undefined): value is string {
   return isWorkspaceId(value);
 }
 
@@ -241,6 +259,23 @@ export function parseJournalEntryIdParam(
   return isJournalEntryId(trimmed) ? trimmed : null;
 }
 
+/**
+ * Parse accountId query value for account-statement view.
+ * Missing/blank/invalid → null (no API call; normalize strips the param).
+ */
+export function parseAccountIdParam(value: string | null | undefined): string | null {
+  if (value == null) {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  return isAccountId(trimmed) ? trimmed : null;
+}
+
 /** Open accrual detail: set accrualId while preserving all other AppUrlState fields. */
 export function withAccrualId(state: AppUrlState, accrualId: string | null): AppUrlState {
   return {
@@ -290,6 +325,22 @@ export function withoutJournalEntryId(state: AppUrlState): AppUrlState {
   return {
     ...state,
     journalEntryId: null
+  };
+}
+
+/** Open account statement: set accountId while preserving other AppUrlState fields. */
+export function withAccountId(state: AppUrlState, accountId: string | null): AppUrlState {
+  return {
+    ...state,
+    accountId: accountId && isAccountId(accountId) ? accountId : null
+  };
+}
+
+/** Close account statement detail: clear only accountId. */
+export function withoutAccountId(state: AppUrlState): AppUrlState {
+  return {
+    ...state,
+    accountId: null
   };
 }
 
@@ -364,7 +415,9 @@ export function createEmptyDiscovery(): ListDiscovery {
     caseHistoryOpen: false,
     caseHistoryType: "",
     caseHistorySearch: "",
-    caseHistoryExpanded: false
+    caseHistoryExpanded: false,
+    statementPeriodFrom: "",
+    statementPeriodTo: ""
   };
 }
 
@@ -381,6 +434,7 @@ export function parseUrlSearch(search: string): AppUrlState {
   const accrualId = parseAccrualIdParam(params.get("accrualId"));
   const invoiceId = parseInvoiceIdParam(params.get("invoiceId"));
   const journalEntryId = parseJournalEntryIdParam(params.get("journalEntryId"));
+  const accountId = parseAccountIdParam(params.get("accountId"));
 
   const page = parsePage(params.get("page"));
   const invoiceQueue = view === "invoices" ? parseInvoiceQueue(params.get("queue")) : "";
@@ -462,12 +516,18 @@ export function parseUrlSearch(search: string): AppUrlState {
   const journalStatus =
     view === "journals" ? parseJournalStatus(params.get("status")) : "";
 
+  const statementPeriodFrom =
+    view === "account-statement" ? parseDateInput(params.get("periodFrom")) : "";
+  const statementPeriodTo =
+    view === "account-statement" ? parseDateInput(params.get("periodTo")) : "";
+
   return {
     view,
     workspaceId,
     accrualId: view === "accruals" ? accrualId : null,
     invoiceId: view === "invoices" ? invoiceId : null,
     journalEntryId: view === "journals" ? journalEntryId : null,
+    accountId: view === "account-statement" ? accountId : null,
     discovery: {
       page,
       invoiceFilters,
@@ -485,7 +545,9 @@ export function parseUrlSearch(search: string): AppUrlState {
       caseHistoryOpen,
       caseHistoryType,
       caseHistorySearch,
-      caseHistoryExpanded
+      caseHistoryExpanded,
+      statementPeriodFrom,
+      statementPeriodTo
     }
   };
 }
@@ -623,6 +685,14 @@ export function buildUrlSearch(state: AppUrlState): string {
     }
   }
 
+  if (state.view === "account-statement") {
+    setIfPresent(params, "periodFrom", state.discovery.statementPeriodFrom);
+    setIfPresent(params, "periodTo", state.discovery.statementPeriodTo);
+    if (state.accountId && isAccountId(state.accountId)) {
+      params.set("accountId", state.accountId);
+    }
+  }
+
   const query = params.toString();
   return query ? `?${query}` : "";
 }
@@ -653,7 +723,9 @@ export function draftInvoicesDiscovery(): ListDiscovery {
     caseHistoryOpen: false,
     caseHistoryType: "",
     caseHistorySearch: "",
-    caseHistoryExpanded: false
+    caseHistoryExpanded: false,
+    statementPeriodFrom: "",
+    statementPeriodTo: ""
   };
 }
 
@@ -682,7 +754,9 @@ export function issuedInvoicesDiscovery(): ListDiscovery {
     caseHistoryOpen: false,
     caseHistoryType: "",
     caseHistorySearch: "",
-    caseHistoryExpanded: false
+    caseHistoryExpanded: false,
+    statementPeriodFrom: "",
+    statementPeriodTo: ""
   };
 }
 
@@ -713,6 +787,8 @@ export function overdueIssuedInvoicesDiscovery(): ListDiscovery {
     caseHistoryOpen: false,
     caseHistoryType: "",
     caseHistorySearch: "",
-    caseHistoryExpanded: false
+    caseHistoryExpanded: false,
+    statementPeriodFrom: "",
+    statementPeriodTo: ""
   };
 }

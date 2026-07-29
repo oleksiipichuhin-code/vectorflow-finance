@@ -68,13 +68,13 @@ Local Development URL: `http://localhost:5173`
 
 `VITE_FINANCE_API_BASE_URL` points the browser shell at the real Finance API (`http://localhost:5080` by default in Development; see `.env.example`). Primary UI language is Ukrainian.
 
-The shell navigates Workspace → Dashboard → Invoices → Accruals → Journals → Trial balance against the running backend (not mocks). Invoices and Accruals support apply/clear filters and pagination (fixed page size 5). Invoice filters: exact `documentNumber`, exact `status` (`Draft` | `Issued`), inclusive `createdFromUtc` / `createdToUtc`. Accrual filters: `descriptionPrefix`, exact `status` (`Draft` | `Recognized` | `Reversed`), recognition date range. Draft invoices can be issued from the list (`Draft` → `Issued`); when a draft still needs a due date or a positive line, the shell collects those fields and calls the existing set-due-date / add-line / issue API endpoints before refreshing the list. Draft accruals can be recognized from the list (`Draft` → `Recognized`) via the existing recognize API, then the list refreshes. Recognized accruals can be reversed (`Recognized` → `Reversed`) with a required reason via the existing reverse API. Journals support create draft → add debit/credit lines against chart-of-accounts accounts → post balanced journal entry → post to immutable ledger, with list/detail URL state (`view=journals`, optional `status`, `journalEntryId`). Trial balance loads the workspace trial balance from ledger postings (`view=trial-balance`) with totals, `isBalanced`, and per-account debit/credit lines.
+The shell navigates Workspace → Dashboard → Invoices → Accruals → Journals → Trial balance → Account statement against the running backend (not mocks). Invoices and Accruals support apply/clear filters and pagination (fixed page size 5). Invoice filters: exact `documentNumber`, exact `status` (`Draft` | `Issued`), inclusive `createdFromUtc` / `createdToUtc`. Accrual filters: `descriptionPrefix`, exact `status` (`Draft` | `Recognized` | `Reversed`), recognition date range. Draft invoices can be issued from the list (`Draft` → `Issued`); when a draft still needs a due date or a positive line, the shell collects those fields and calls the existing set-due-date / add-line / issue API endpoints before refreshing the list. Draft accruals can be recognized from the list (`Draft` → `Recognized`) via the existing recognize API, then the list refreshes. Recognized accruals can be reversed (`Recognized` → `Reversed`) with a required reason via the existing reverse API. Journals support create draft → add debit/credit lines against chart-of-accounts accounts → post balanced journal entry → post to immutable ledger, with list/detail URL state (`view=journals`, optional `status`, `journalEntryId`). Trial balance loads the workspace trial balance from ledger postings (`view=trial-balance`) with totals, `isBalanced`, and per-account debit/credit lines. Account statement lists account balances, opens a per-account ledger statement, applies optional period filters, and can open the related journal entry (`view=account-statement`, optional `accountId`, `periodFrom`, `periodTo`).
 
 Shell state is shareable via the browser URL and **Скопіювати посилання**:
 
 | Query param | Meaning |
 | --- | --- |
-| `view` | `dashboard` (default), `workspace`, `invoices`, `accruals`, `journals`, `trial-balance` |
+| `view` | `dashboard` (default), `workspace`, `invoices`, `accruals`, `journals`, `trial-balance`, `account-statement` |
 | `workspaceId` | active finance workspace GUID |
 | `page` | list page (omitted when `1`) |
 | `documentNumber`, `status`, `createdFrom`, `createdTo` | invoice list filters when `view=invoices` (`status`: `Draft` \| `Issued`; `created*` are `YYYY-MM-DD` date inputs) |
@@ -82,6 +82,7 @@ Shell state is shareable via the browser URL and **Скопіювати поси
 | `descriptionPrefix`, `status`, `recognitionFrom`, `recognitionTo` | accrual list filters when `view=accruals` (`status`: `Draft` \| `Recognized` \| `Reversed`; recognition dates are `YYYY-MM-DD`) |
 | `status`, `journalEntryId` | journal list/detail when `view=journals` (`status`: `Draft` \| `Posted`; `journalEntryId` deep-links detail). Create accounts, draft lines, **Post journal entry**, then **Post to ledger** — persisted via Finance API |
 | `view=trial-balance` | trial balance report for the active workspace (no extra list filters) |
+| `accountId`, `periodFrom`, `periodTo` | account statement detail/period when `view=account-statement` (`period*` are `YYYY-MM-DD`) |
 
 **Чернетки** / **Чернетки рахунків** opens Invoices with `status=Draft`, page 1, and other invoice filters cleared. Refresh and shared links restore the same URL state.
 

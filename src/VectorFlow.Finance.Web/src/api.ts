@@ -847,3 +847,67 @@ export function getTrialBalance(workspaceId: string): Promise<TrialBalance> {
     `/api/finance-workspaces/${workspaceId}/trial-balance`
   );
 }
+
+export type AccountBalance = {
+  accountId: string;
+  accountCode: string;
+  accountName: string;
+  debitTotal: number;
+  creditTotal: number;
+  balance: number;
+  balanceSide: string;
+};
+
+export type AccountStatementLine = {
+  ledgerPostingId: string;
+  journalEntryId: string;
+  sourceJournalEntryLineId: string;
+  sequence: number;
+  postedAtUtc: string;
+  description: string | null;
+  debit: number;
+  credit: number;
+  runningDebit: number;
+  runningCredit: number;
+};
+
+export type AccountStatement = {
+  financeWorkspaceId: string;
+  accountId: string;
+  accountCode: string;
+  accountName: string;
+  periodFromUtc: string | null;
+  periodToUtc: string | null;
+  openingDebit: number;
+  openingCredit: number;
+  periodDebit: number;
+  periodCredit: number;
+  closingDebit: number;
+  closingCredit: number;
+  lines: AccountStatementLine[];
+};
+
+export function listAccountBalances(workspaceId: string): Promise<AccountBalance[]> {
+  return requestJson<AccountBalance[]>(
+    `/api/finance-workspaces/${workspaceId}/balances`
+  );
+}
+
+export function getAccountStatement(
+  workspaceId: string,
+  accountId: string,
+  options?: { periodFromUtc?: string; periodToUtc?: string }
+): Promise<AccountStatement> {
+  const params = new URLSearchParams();
+  if (options?.periodFromUtc) {
+    params.set("periodFromUtc", options.periodFromUtc);
+  }
+  if (options?.periodToUtc) {
+    params.set("periodToUtc", options.periodToUtc);
+  }
+  const query = params.toString();
+  const suffix = query ? `?${query}` : "";
+  return requestJson<AccountStatement>(
+    `/api/finance-workspaces/${workspaceId}/accounts/${accountId}/statement${suffix}`
+  );
+}

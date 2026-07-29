@@ -1035,6 +1035,7 @@ describe("journal entry deep-link URL policy", () => {
       accrualId: null,
       invoiceId: null,
       journalEntryId,
+      accountId: null,
       discovery: {
         ...EMPTY_DISCOVERY,
         page: 2,
@@ -1063,6 +1064,7 @@ describe("journal entry deep-link URL policy", () => {
       accrualId: null,
       invoiceId: null,
       journalEntryId,
+      accountId: null,
       discovery: {
         ...EMPTY_DISCOVERY,
         invoiceFilters: { ...EMPTY_INVOICE_FILTERS, status: "Draft" }
@@ -1089,6 +1091,7 @@ describe("trial balance URL policy", () => {
       accrualId: null,
       invoiceId: null,
       journalEntryId: null,
+      accountId: null,
       discovery: EMPTY_DISCOVERY
     });
 
@@ -1112,6 +1115,7 @@ describe("trial balance URL policy", () => {
       accrualId: "a1111111-1111-1111-1111-111111111111",
       invoiceId: "b1111111-1111-1111-1111-111111111111",
       journalEntryId: "c1111111-1111-1111-1111-111111111111",
+      accountId: "d1111111-1111-1111-1111-111111111111",
       discovery: {
         ...EMPTY_DISCOVERY,
         page: 3,
@@ -1125,5 +1129,59 @@ describe("trial balance URL policy", () => {
     assert.equal(search.includes("journalEntryId"), false);
     assert.equal(search.includes("accrualId"), false);
     assert.equal(search.includes("invoiceId"), false);
+    assert.equal(search.includes("accountId"), false);
+  });
+});
+
+describe("account statement URL policy", () => {
+  const workspaceId = "11111111-1111-1111-1111-111111111111";
+  const accountId = "41111111-1111-1111-1111-111111111111";
+
+  it("round-trips account-statement view with accountId and period", () => {
+    const search = buildUrlSearch({
+      view: "account-statement",
+      workspaceId,
+      accrualId: null,
+      invoiceId: null,
+      journalEntryId: null,
+      accountId,
+      discovery: {
+        ...EMPTY_DISCOVERY,
+        statementPeriodFrom: "2026-07-01",
+        statementPeriodTo: "2026-07-31"
+      }
+    });
+
+    assert.equal(
+      search,
+      `?view=account-statement&workspaceId=${workspaceId}&periodFrom=2026-07-01&periodTo=2026-07-31&accountId=${accountId}`
+    );
+
+    const parsed = parseUrlSearch(search);
+    assert.equal(parsed.view, "account-statement");
+    assert.equal(parsed.accountId, accountId);
+    assert.equal(parsed.discovery.statementPeriodFrom, "2026-07-01");
+    assert.equal(parsed.discovery.statementPeriodTo, "2026-07-31");
+    assert.equal(parsed.journalEntryId, null);
+  });
+
+  it("ignores accountId outside account-statement view", () => {
+    const search = buildUrlSearch({
+      view: "journals",
+      workspaceId,
+      accrualId: null,
+      invoiceId: null,
+      journalEntryId: null,
+      accountId,
+      discovery: EMPTY_DISCOVERY
+    });
+    assert.equal(search.includes("accountId"), false);
+  });
+
+  it("invalid accountId normalizes to null", () => {
+    const parsed = parseUrlSearch(
+      `?view=account-statement&workspaceId=${workspaceId}&accountId=not-a-guid`
+    );
+    assert.equal(parsed.accountId, null);
   });
 });

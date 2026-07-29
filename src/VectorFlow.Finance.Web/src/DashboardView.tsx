@@ -225,6 +225,19 @@ export function DashboardView({
                 : "Потрібен finance workspace"}
             </span>
           </button>
+          <button
+            type="button"
+            className="nav-card"
+            onClick={() => onNavigate("account-statement")}
+            disabled={!workspace}
+          >
+            <span className="nav-card-title">Account statement</span>
+            <span className="nav-card-copy">
+              {workspace
+                ? "Залишки рахунків і виписка за період"
+                : "Потрібен finance workspace"}
+            </span>
+          </button>
         </div>
         {workspace ? (
           <div className="list-shortcuts dashboard-list-shortcuts">
