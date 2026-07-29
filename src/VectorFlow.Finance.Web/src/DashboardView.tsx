@@ -259,11 +259,13 @@ export function DashboardView({
             onClick={() => onNavigate("account-statement")}
             disabled={!workspace}
           >
-            <span className="nav-card-title">Account statement</span>
+            <span className="nav-card-title">
+              {t("nav.accountStatement", { ns: "common" })}
+            </span>
             <span className="nav-card-copy">
               {workspace
-                ? "Залишки рахунків і виписка за період"
-                : "Потрібен finance workspace"}
+                ? t("dashboard.accountStatementCopy", { ns: "finance" })
+                : t("dashboard.needWorkspace", { ns: "finance" })}
             </span>
           </button>
           <button

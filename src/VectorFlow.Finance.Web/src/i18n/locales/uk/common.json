@@ -18,5 +18,6 @@
   "emDash": "—",
   "nav.accounts": "Рахунки",
   "nav.ledger": "Головна книга",
+  "nav.accountStatement": "Виписка рахунку",
   "nav.customerLedger": "Книга клієнта"
 }

@@ -18,5 +18,6 @@
   "emDash": "—",
   "nav.accounts": "Accounts",
   "nav.ledger": "Ledger",
+  "nav.accountStatement": "Account statement",
   "nav.customerLedger": "Customer ledger"
 }

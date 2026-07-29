@@ -1,4 +1,5 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   FinanceApiRequestError,
   getAccountStatement,
@@ -12,8 +13,7 @@ import {
   buildStatementPeriodQuery,
   type StatementPeriodFilters
 } from "./accountStatement";
-import { formatBalanceSide } from "./trialBalance";
-import { formatDate, formatMoney } from "./format";
+import { formatDate, formatMoney } from "./i18n/format.ts";
 import { ListLoadState } from "./components/ListLoadState";
 import { Panel, StatusMessage } from "./components/Panel";
 
@@ -34,6 +34,16 @@ type AccountStatementViewProps = {
   onOpenJournal?: (journalEntryId: string) => void;
 };
 
+function localizeBalanceSide(
+  side: string | null | undefined,
+  t: (key: string, options?: Record<string, unknown>) => string
+): string {
+  if (side === "Debit" || side === "Credit" || side === "Zero") {
+    return t(`accountStatement.balanceSide.${side}`);
+  }
+  return side?.trim() || t("emDash", { ns: "common" });
+}
+
 export function AccountStatementView({
   workspace,
   selectedAccountId = null,
@@ -43,6 +53,7 @@ export function AccountStatementView({
   onPeriodChange,
   onOpenJournal
 }: AccountStatementViewProps) {
+  const { t } = useTranslation(["finance", "common"]);
   const [balances, setBalances] = useState<AccountBalance[]>([]);
   const [listLoading, setListLoading] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
@@ -62,36 +73,39 @@ export function AccountStatementView({
   const listSeq = useRef(0);
   const detailSeq = useRef(0);
 
-  const loadBalances = useCallback(async (workspaceId: string) => {
-    const seq = ++listSeq.current;
-    setListLoading(true);
-    setListError(null);
-    try {
-      const next = await listAccountBalances(workspaceId);
-      if (seq !== listSeq.current) {
-        return;
+  const loadBalances = useCallback(
+    async (workspaceId: string) => {
+      const seq = ++listSeq.current;
+      setListLoading(true);
+      setListError(null);
+      try {
+        const next = await listAccountBalances(workspaceId);
+        if (seq !== listSeq.current) {
+          return;
+        }
+        setBalances(next);
+      } catch (error) {
+        if (seq !== listSeq.current) {
+          return;
+        }
+        setBalances([]);
+        setListError(
+          error instanceof Error ? error.message : t("accountStatement.listLoadFailed")
+        );
+      } finally {
+        if (seq === listSeq.current) {
+          setListLoading(false);
+        }
       }
-      setBalances(next);
-    } catch (error) {
-      if (seq !== listSeq.current) {
-        return;
-      }
-      setBalances([]);
-      setListError(
-        error instanceof Error ? error.message : "Не вдалося завантажити залишки рахунків."
-      );
-    } finally {
-      if (seq === listSeq.current) {
-        setListLoading(false);
-      }
-    }
-  }, []);
+    },
+    [t]
+  );
 
   const loadStatement = useCallback(
     async (workspaceId: string, accountId: string, period: StatementPeriodFilters) => {
       const built = buildStatementPeriodQuery(period);
       if (built.validationError) {
-        setPeriodValidationError(built.validationError);
+        setPeriodValidationError(t("accountStatement.periodRangeInvalid"));
         setDetailError(null);
         setStatement(null);
         return;
@@ -114,12 +128,12 @@ export function AccountStatementView({
         }
         setStatement(null);
         if (error instanceof FinanceApiRequestError && error.status === 404) {
-          setDetailError("Рахунок не знайдено в цьому workspace.");
+          setDetailError(t("accountStatement.detailNotFound"));
           onSelectedAccountIdChange?.(null, { replace: true });
           return;
         }
         setDetailError(
-          error instanceof Error ? error.message : "Не вдалося завантажити виписку рахунку."
+          error instanceof Error ? error.message : t("accountStatement.detailLoadFailed")
         );
       } finally {
         if (seq === detailSeq.current) {
@@ -127,7 +141,7 @@ export function AccountStatementView({
         }
       }
     },
-    [onSelectedAccountIdChange]
+    [onSelectedAccountIdChange, t]
   );
 
   useEffect(() => {
@@ -174,7 +188,7 @@ export function AccountStatementView({
     };
     const built = buildStatementPeriodQuery(next);
     if (built.validationError) {
-      setPeriodValidationError(built.validationError);
+      setPeriodValidationError(t("accountStatement.periodRangeInvalid"));
       return;
     }
     setPeriodValidationError(null);
@@ -192,8 +206,8 @@ export function AccountStatementView({
 
   if (!workspace) {
     return (
-      <Panel title="Account statement" headingId="account-statement-heading">
-        <StatusMessage>Спочатку відкрийте finance workspace.</StatusMessage>
+      <Panel title={t("accountStatement.title")} headingId="account-statement-heading">
+        <StatusMessage>{t("accountStatement.needWorkspace")}</StatusMessage>
       </Panel>
     );
   }
@@ -203,16 +217,13 @@ export function AccountStatementView({
   return (
     <>
       <header className="hero">
-        <p className="eyebrow">General ledger</p>
-        <h1>Account statement</h1>
-        <p className="lede">
-          Список залишків рахунків → виписка за ledger postings → фільтр періоду. Стан у
-          shareable URL.
-        </p>
+        <p className="eyebrow">{t("accountStatement.eyebrow")}</p>
+        <h1>{t("accountStatement.title")}</h1>
+        <p className="lede">{t("accountStatement.lede")}</p>
       </header>
 
       <Panel
-        title="Залишки рахунків"
+        title={t("accountStatement.balancesTitle")}
         headingId="account-balances-heading"
         actions={
           <button
@@ -221,18 +232,18 @@ export function AccountStatementView({
             disabled={listLoading}
             onClick={() => void loadBalances(workspace.id)}
           >
-            {listLoading ? "Завантаження…" : "Оновити"}
+            {listLoading ? t("loading", { ns: "common" }) : t("refresh", { ns: "common" })}
           </button>
         }
       >
         <ListLoadState
           loading={listLoading && balances.length === 0}
-          loadingMessage="Завантаження залишків…"
+          loadingMessage={t("accountStatement.listLoading")}
           error={listError}
           onRetry={() => void loadBalances(workspace.id)}
           retryDisabled={listLoading}
           empty={!listLoading && !listError && balances.length === 0}
-          emptyMessage="Немає рахунків у workspace. Створіть рахунки та проведіть journal entry у Journals."
+          emptyMessage={t("accountStatement.listEmpty")}
         />
 
         {!listError && balances.length > 0 ? (
@@ -240,12 +251,12 @@ export function AccountStatementView({
             <table>
               <thead>
                 <tr>
-                  <th>Code</th>
-                  <th>Name</th>
-                  <th>Debit</th>
-                  <th>Credit</th>
-                  <th>Balance</th>
-                  <th>Side</th>
+                  <th>{t("accountStatement.col.code")}</th>
+                  <th>{t("accountStatement.col.name")}</th>
+                  <th>{t("accountStatement.col.debit")}</th>
+                  <th>{t("accountStatement.col.credit")}</th>
+                  <th>{t("accountStatement.col.balance")}</th>
+                  <th>{t("accountStatement.col.side")}</th>
                   <th />
                 </tr>
               </thead>
@@ -263,7 +274,7 @@ export function AccountStatementView({
                       <td>{formatMoney(row.debitTotal, currency)}</td>
                       <td>{formatMoney(row.creditTotal, currency)}</td>
                       <td>{formatMoney(Math.abs(row.balance), currency)}</td>
-                      <td>{formatBalanceSide(row.balanceSide)}</td>
+                      <td>{localizeBalanceSide(row.balanceSide, t)}</td>
                       <td>
                         <button
                           type="button"
@@ -271,7 +282,7 @@ export function AccountStatementView({
                           disabled={detailLoading}
                           onClick={() => openAccount(row.accountId)}
                         >
-                          Виписка
+                          {t("accountStatement.openStatement")}
                         </button>
                       </td>
                     </tr>
@@ -285,17 +296,17 @@ export function AccountStatementView({
 
       {selectedAccountId ? (
         <Panel
-          title="Виписка рахунку"
+          title={t("accountStatement.detailTitle")}
           headingId="account-statement-detail-heading"
           actions={
             <button type="button" className="button-secondary" onClick={closeDetail}>
-              Закрити
+              {t("close", { ns: "common" })}
             </button>
           }
         >
           <form className="filter-form" onSubmit={applyPeriod}>
             <label>
-              Period from
+              {t("accountStatement.field.periodFrom")}
               <input
                 type="date"
                 value={periodFrom}
@@ -304,7 +315,7 @@ export function AccountStatementView({
               />
             </label>
             <label>
-              Period to
+              {t("accountStatement.field.periodTo")}
               <input
                 type="date"
                 value={periodTo}
@@ -314,7 +325,7 @@ export function AccountStatementView({
             </label>
             <div className="filter-actions">
               <button type="submit" disabled={detailLoading}>
-                Застосувати період
+                {t("accountStatement.applyPeriod")}
               </button>
               <button
                 type="button"
@@ -322,7 +333,7 @@ export function AccountStatementView({
                 disabled={detailLoading}
                 onClick={clearPeriod}
               >
-                Скинути період
+                {t("accountStatement.clearPeriod")}
               </button>
               <button
                 type="button"
@@ -332,7 +343,7 @@ export function AccountStatementView({
                   void loadStatement(workspace.id, selectedAccountId, appliedPeriod)
                 }
               >
-                Оновити виписку
+                {t("accountStatement.refreshStatement")}
               </button>
             </div>
           </form>
@@ -343,7 +354,7 @@ export function AccountStatementView({
 
           <ListLoadState
             loading={detailLoading && !statement}
-            loadingMessage="Завантаження виписки…"
+            loadingMessage={t("accountStatement.detailLoading")}
             error={detailError}
             onRetry={() =>
               void loadStatement(workspace.id, selectedAccountId, appliedPeriod)
@@ -361,28 +372,28 @@ export function AccountStatementView({
                 </p>
                 <dl className="facts">
                   <div>
-                    <dt>Opening</dt>
+                    <dt>{t("accountStatement.field.opening")}</dt>
                     <dd>
                       {formatMoney(statement.openingDebit, currency)} /{" "}
                       {formatMoney(statement.openingCredit, currency)}
                     </dd>
                   </div>
                   <div>
-                    <dt>Period</dt>
+                    <dt>{t("accountStatement.field.period")}</dt>
                     <dd>
                       {formatMoney(statement.periodDebit, currency)} /{" "}
                       {formatMoney(statement.periodCredit, currency)}
                     </dd>
                   </div>
                   <div>
-                    <dt>Closing</dt>
+                    <dt>{t("accountStatement.field.closing")}</dt>
                     <dd>
                       {formatMoney(statement.closingDebit, currency)} /{" "}
                       {formatMoney(statement.closingCredit, currency)}
                     </dd>
                   </div>
                   <div>
-                    <dt>Period bounds</dt>
+                    <dt>{t("accountStatement.field.periodBounds")}</dt>
                     <dd>
                       {formatDate(statement.periodFromUtc)} — {formatDate(statement.periodToUtc)}
                     </dd>
@@ -391,19 +402,17 @@ export function AccountStatementView({
               </div>
 
               {statement.lines.length === 0 ? (
-                <StatusMessage>
-                  Немає рухів за обраний період для цього рахунку.
-                </StatusMessage>
+                <StatusMessage>{t("accountStatement.linesEmpty")}</StatusMessage>
               ) : (
                 <div className="table-wrap">
                   <table>
                     <thead>
                       <tr>
-                        <th>Posted</th>
-                        <th>Description</th>
-                        <th>Debit</th>
-                        <th>Credit</th>
-                        <th>Running D/C</th>
+                        <th>{t("accountStatement.col.posted")}</th>
+                        <th>{t("accountStatement.col.description")}</th>
+                        <th>{t("accountStatement.col.debit")}</th>
+                        <th>{t("accountStatement.col.credit")}</th>
+                        <th>{t("accountStatement.col.runningDc")}</th>
                         <th />
                       </tr>
                     </thead>
@@ -414,7 +423,9 @@ export function AccountStatementView({
                           data-row-id={line.sourceJournalEntryLineId}
                         >
                           <td>{formatDate(line.postedAtUtc)}</td>
-                          <td className="cell-wrap">{line.description?.trim() || "—"}</td>
+                          <td className="cell-wrap">
+                            {line.description?.trim() || t("emDash", { ns: "common" })}
+                          </td>
                           <td>{formatMoney(line.debit, currency)}</td>
                           <td>{formatMoney(line.credit, currency)}</td>
                           <td>
@@ -428,7 +439,7 @@ export function AccountStatementView({
                                 className="button-secondary"
                                 onClick={() => onOpenJournal(line.journalEntryId)}
                               >
-                                Journal entry
+                                {t("accountStatement.openJournal")}
                               </button>
                             ) : null}
                           </td>
@@ -439,13 +450,18 @@ export function AccountStatementView({
                 </div>
               )}
 
-              {detailLoading ? <StatusMessage>Оновлення…</StatusMessage> : null}
+              {detailLoading ? (
+                <StatusMessage>{t("accountStatement.updating")}</StatusMessage>
+              ) : null}
             </>
           ) : null}
         </Panel>
       ) : (
-        <Panel title="Виписка рахунку" headingId="account-statement-empty-heading">
-          <StatusMessage>Оберіть рахунок у списку залишків, щоб відкрити виписку.</StatusMessage>
+        <Panel
+          title={t("accountStatement.detailTitle")}
+          headingId="account-statement-empty-heading"
+        >
+          <StatusMessage>{t("accountStatement.selectPrompt")}</StatusMessage>
         </Panel>
       )}
     </>

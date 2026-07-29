@@ -219,6 +219,54 @@ describe("customer ledger finance catalogs", () => {
   });
 });
 
+describe("account statement finance catalogs", () => {
+  beforeEach(async () => {
+    await i18n.changeLanguage("uk");
+  });
+
+  it("localizes account statement workflow chrome in Ukrainian and English", async () => {
+    assert.equal(i18n.t("accountStatement.title", { ns: "finance" }), "Виписка рахунку");
+    assert.equal(i18n.t("accountStatement.balancesTitle", { ns: "finance" }), "Залишки рахунків");
+    assert.equal(i18n.t("accountStatement.col.debit", { ns: "finance" }), "Дебет");
+    assert.equal(i18n.t("accountStatement.field.opening", { ns: "finance" }), "Вхідне");
+    assert.equal(i18n.t("nav.accountStatement", { ns: "common" }), "Виписка рахунку");
+
+    await i18n.changeLanguage("en");
+    assert.equal(i18n.t("accountStatement.title", { ns: "finance" }), "Account statement");
+    assert.equal(i18n.t("accountStatement.balancesTitle", { ns: "finance" }), "Account balances");
+    assert.equal(i18n.t("accountStatement.col.debit", { ns: "finance" }), "Debit");
+    assert.equal(i18n.t("accountStatement.field.opening", { ns: "finance" }), "Opening");
+    assert.equal(i18n.t("nav.accountStatement", { ns: "common" }), "Account statement");
+  });
+
+  it("preserves balance-side wire values while localizing labels", async () => {
+    assert.equal(i18n.t("accountStatement.balanceSide.Debit", { ns: "finance" }), "Дебет");
+    assert.equal(i18n.t("accountStatement.balanceSide.Credit", { ns: "finance" }), "Кредит");
+    assert.equal(i18n.t("accountStatement.balanceSide.Zero", { ns: "finance" }), "Нуль");
+    assert.equal("Debit", "Debit");
+    assert.equal("Credit", "Credit");
+    assert.equal("Zero", "Zero");
+
+    await i18n.changeLanguage("en");
+    assert.equal(i18n.t("accountStatement.balanceSide.Debit", { ns: "finance" }), "Debit");
+    assert.equal(i18n.t("accountStatement.balanceSide.Credit", { ns: "finance" }), "Credit");
+    assert.equal(i18n.t("accountStatement.balanceSide.Zero", { ns: "finance" }), "Zero");
+    assert.equal(i18n.t("accountStatement.openJournal", { ns: "finance" }), "Journal entry");
+  });
+
+  it("has matching accountStatement key structure in uk and en", async () => {
+    const ukKeys = Object.keys(financeUk).filter(
+      (key) =>
+        key.startsWith("accountStatement.") || key === "dashboard.accountStatementCopy"
+    );
+    const enKeys = Object.keys(financeEn).filter(
+      (key) =>
+        key.startsWith("accountStatement.") || key === "dashboard.accountStatementCopy"
+    );
+    assert.deepEqual(ukKeys.sort(), enKeys.sort());
+  });
+});
+
 describe("locale-aware formatting", () => {
   const sample = "2026-07-29T14:30:00.000Z";
 
