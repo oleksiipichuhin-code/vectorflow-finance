@@ -21,6 +21,7 @@ public static class DependencyInjection
         services.AddScoped<CreateAccountHandler>();
         services.AddScoped<GetAccountHandler>();
         services.AddScoped<GetAccountByCodeHandler>();
+        services.AddScoped<GetAccountsHandler>();
         services.AddScoped<RenameAccountHandler>();
         services.AddScoped<ChangeAccountCodeHandler>();
         services.AddScoped<ChangeAccountTypeHandler>();

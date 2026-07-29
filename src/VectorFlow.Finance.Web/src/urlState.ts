@@ -1,5 +1,11 @@
 import type { AccrualListFilters, AccrualStatusFilter } from "./accrualListQuery";
 import {
+  parseAccountStatusFilter,
+  parseAccountTypeFilter,
+  type AccountStatusFilter,
+  type AccountTypeFilter
+} from "./chartOfAccounts.ts";
+import {
   parseAgingBucketParam,
   type AgingBucketFilter
 } from "./invoiceCollections.ts";
@@ -36,11 +42,14 @@ const VIEW_IDS: ReadonlySet<string> = new Set([
   "invoices",
   "accruals",
   "journals",
+  "accounts",
   "ledger",
   "trial-balance",
   "account-statement",
   "customer-ledger"
 ]);
+
+export type { AccountStatusFilter, AccountTypeFilter };
 
 export type JournalStatusFilter = "" | "Draft" | "Posted";
 
@@ -130,6 +139,18 @@ export type ListDiscovery = {
    * Selected customer ledger counterparty (`counterpartyReference=`) when `view=customer-ledger`.
    */
   customerLedgerCounterparty: string;
+  /**
+   * Chart of accounts search (`accountQ=`) when `view=accounts`.
+   */
+  accountsQuery: string;
+  /**
+   * Chart of accounts status filter (`status=Active|Archived`) when `view=accounts`.
+   */
+  accountsStatus: AccountStatusFilter;
+  /**
+   * Chart of accounts type filter (`type=Asset|…`) when `view=accounts`.
+   */
+  accountsType: AccountTypeFilter;
 };
 
 export type AppUrlState = {
@@ -141,7 +162,7 @@ export type AppUrlState = {
   invoiceId: string | null;
   /** Journal entry detail deep-link; omitted outside journals view. */
   journalEntryId: string | null;
-  /** Account statement detail deep-link; omitted outside account-statement view. */
+  /** Account statement / accounts detail deep-link. */
   accountId: string | null;
   /** Ledger posting detail deep-link; omitted outside ledger view. */
   ledgerPostingId: string | null;
@@ -192,7 +213,10 @@ export const EMPTY_DISCOVERY: ListDiscovery = {
   ledgerSourceJournalEntryId: "",
   customerLedgerQuery: "",
   customerLedgerAging: "",
-  customerLedgerCounterparty: ""
+  customerLedgerCounterparty: "",
+  accountsQuery: "",
+  accountsStatus: "",
+  accountsType: ""
 };
 
 export function parseCollectionPanelParam(
@@ -501,7 +525,10 @@ export function createEmptyDiscovery(): ListDiscovery {
     ledgerSourceJournalEntryId: "",
     customerLedgerQuery: "",
     customerLedgerAging: "",
-    customerLedgerCounterparty: ""
+    customerLedgerCounterparty: "",
+    accountsQuery: "",
+    accountsStatus: "",
+    accountsType: ""
   };
 }
 
@@ -623,13 +650,21 @@ export function parseUrlSearch(search: string): AppUrlState {
       ? (params.get("counterpartyReference")?.trim() ?? "")
       : "";
 
+  const accountsQuery =
+    view === "accounts" ? (params.get("accountQ")?.trim() ?? "") : "";
+  const accountsStatus =
+    view === "accounts" ? parseAccountStatusFilter(params.get("status")) : "";
+  const accountsType =
+    view === "accounts" ? parseAccountTypeFilter(params.get("type")) : "";
+
   return {
     view,
     workspaceId,
     accrualId: view === "accruals" ? accrualId : null,
     invoiceId: view === "invoices" || view === "customer-ledger" ? invoiceId : null,
     journalEntryId: view === "journals" ? journalEntryId : null,
-    accountId: view === "account-statement" ? accountId : null,
+    accountId:
+      view === "account-statement" || view === "accounts" ? accountId : null,
     ledgerPostingId: view === "ledger" ? ledgerPostingId : null,
     discovery: {
       page,
@@ -656,7 +691,10 @@ export function parseUrlSearch(search: string): AppUrlState {
       ledgerSourceJournalEntryId,
       customerLedgerQuery,
       customerLedgerAging,
-      customerLedgerCounterparty
+      customerLedgerCounterparty,
+      accountsQuery,
+      accountsStatus,
+      accountsType
     }
   };
 }
@@ -830,6 +868,22 @@ export function buildUrlSearch(state: AppUrlState): string {
     }
   }
 
+  if (state.view === "accounts") {
+    setIfPresent(params, "accountQ", state.discovery.accountsQuery);
+    if (
+      state.discovery.accountsStatus === "Active" ||
+      state.discovery.accountsStatus === "Archived"
+    ) {
+      params.set("status", state.discovery.accountsStatus);
+    }
+    if (state.discovery.accountsType) {
+      params.set("type", state.discovery.accountsType);
+    }
+    if (state.accountId && isAccountId(state.accountId)) {
+      params.set("accountId", state.accountId);
+    }
+  }
+
   const query = params.toString();
   return query ? `?${query}` : "";
 }
@@ -868,7 +922,10 @@ export function draftInvoicesDiscovery(): ListDiscovery {
     ledgerSourceJournalEntryId: "",
     customerLedgerQuery: "",
     customerLedgerAging: "",
-    customerLedgerCounterparty: ""
+    customerLedgerCounterparty: "",
+    accountsQuery: "",
+    accountsStatus: "",
+    accountsType: ""
   };
 }
 
@@ -905,7 +962,10 @@ export function issuedInvoicesDiscovery(): ListDiscovery {
     ledgerSourceJournalEntryId: "",
     customerLedgerQuery: "",
     customerLedgerAging: "",
-    customerLedgerCounterparty: ""
+    customerLedgerCounterparty: "",
+    accountsQuery: "",
+    accountsStatus: "",
+    accountsType: ""
   };
 }
 
@@ -944,7 +1004,10 @@ export function overdueIssuedInvoicesDiscovery(): ListDiscovery {
     ledgerSourceJournalEntryId: "",
     customerLedgerQuery: "",
     customerLedgerAging: "",
-    customerLedgerCounterparty: ""
+    customerLedgerCounterparty: "",
+    accountsQuery: "",
+    accountsStatus: "",
+    accountsType: ""
   };
 }
 

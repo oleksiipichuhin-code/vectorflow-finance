@@ -697,6 +697,66 @@ export function getAccount(
   );
 }
 
+export function listAccounts(workspaceId: string): Promise<FinancialAccount[]> {
+  return requestJson<FinancialAccount[]>(
+    `/api/finance-workspaces/${workspaceId}/accounts`
+  );
+}
+
+export function renameAccount(
+  workspaceId: string,
+  accountId: string,
+  name: string
+): Promise<FinancialAccount> {
+  return requestJson<FinancialAccount>(
+    `/api/finance-workspaces/${workspaceId}/accounts/${accountId}/rename`,
+    {
+      method: "POST",
+      body: JSON.stringify({ name })
+    }
+  );
+}
+
+export function changeAccountCode(
+  workspaceId: string,
+  accountId: string,
+  code: string
+): Promise<FinancialAccount> {
+  return requestJson<FinancialAccount>(
+    `/api/finance-workspaces/${workspaceId}/accounts/${accountId}/change-code`,
+    {
+      method: "POST",
+      body: JSON.stringify({ code })
+    }
+  );
+}
+
+export function changeAccountType(
+  workspaceId: string,
+  accountId: string,
+  type: AccountType
+): Promise<FinancialAccount> {
+  return requestJson<FinancialAccount>(
+    `/api/finance-workspaces/${workspaceId}/accounts/${accountId}/change-type`,
+    {
+      method: "POST",
+      body: JSON.stringify({ type })
+    }
+  );
+}
+
+export function archiveAccount(
+  workspaceId: string,
+  accountId: string
+): Promise<FinancialAccount> {
+  return requestJson<FinancialAccount>(
+    `/api/finance-workspaces/${workspaceId}/accounts/${accountId}/archive`,
+    {
+      method: "POST"
+    }
+  );
+}
+
 export function listJournalEntries(workspaceId: string): Promise<JournalEntry[]> {
   return requestJson<JournalEntry[]>(
     `/api/finance-workspaces/${workspaceId}/journal-entries`

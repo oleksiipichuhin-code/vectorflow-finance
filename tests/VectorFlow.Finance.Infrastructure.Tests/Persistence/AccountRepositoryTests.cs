@@ -285,6 +285,25 @@ public sealed class AccountRepositoryTests : IAsyncLifetime
         Assert.Equal("IX_Accounts_FinanceWorkspaceId_CodeNormalized", uniqueIndex.GetDatabaseName());
     }
 
+    [Fact]
+    public async Task ListByWorkspace_returns_accounts_ordered_by_code()
+    {
+        await _repository.AddAsync(Account.Create(
+            AccountId.New(), _workspaceA, "3000", "Equity", AccountType.Equity, T0));
+        await _repository.AddAsync(Account.Create(
+            AccountId.New(), _workspaceA, "1000", "Cash", AccountType.Asset, T0));
+        await _repository.AddAsync(Account.Create(
+            AccountId.New(), _workspaceB, "2000", "Other", AccountType.Asset, T0));
+        await _repository.SaveChangesAsync();
+
+        await using var readContext = CreateContext();
+        var listed = await new AccountRepository(readContext).ListByWorkspaceAsync(_workspaceA);
+
+        Assert.Equal(2, listed.Count);
+        Assert.Equal("1000", listed[0].Code.Value);
+        Assert.Equal("3000", listed[1].Code.Value);
+    }
+
     private async Task<FinanceWorkspaceId> SeedWorkspaceAsync(
         Guid organizationId,
         Guid platformWorkspaceId,

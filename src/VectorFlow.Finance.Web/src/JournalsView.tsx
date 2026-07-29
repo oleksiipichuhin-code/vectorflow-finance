@@ -477,8 +477,9 @@ export function JournalsView({
       <Panel title="Рахунки (chart of accounts)" headingId="accounts-heading">
         <p className="meta">
           Для рядків journal entry потрібен <span className="mono">FinancialAccountId</span>.
-          Створіть або знайдіть рахунок за кодом (list API ще немає — оболонка кешує використані
-          рахунки в браузері).
+          Створіть або знайдіть рахунок за кодом тут, або керуйте планом рахунків у{" "}
+          <span className="mono">Accounts</span> (<span className="mono">view=accounts</span>).
+          Оболонка також кешує використані рахунки в браузері для швидкого вибору в рядках.
         </p>
         <form className="filter-form" onSubmit={(event) => void handleCreateAccount(event)}>
           <label>

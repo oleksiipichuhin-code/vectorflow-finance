@@ -19,6 +19,13 @@ public interface IAccountRepository
         AccountCode code,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Returns accounts for the workspace ordered by Code ascending, then Id ascending.
+    /// </summary>
+    Task<IReadOnlyList<Account>> ListByWorkspaceAsync(
+        FinanceWorkspaceId financeWorkspaceId,
+        CancellationToken cancellationToken = default);
+
     Task AddAsync(
         Account account,
         CancellationToken cancellationToken = default);

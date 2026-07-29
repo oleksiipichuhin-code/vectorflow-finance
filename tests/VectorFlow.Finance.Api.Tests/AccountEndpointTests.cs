@@ -281,6 +281,45 @@ public sealed class AccountEndpointTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.Created, second.StatusCode);
     }
 
+    [Fact]
+    public async Task List_returns_accounts_ordered_by_code()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("b2b2b2b2-b2b2-b2b2-b2b2-b2b2b2b2b2b2"),
+            Guid.Parse("c3c3c3c3-c3c3-c3c3-c3c3-c3c3c3c3c3c3"));
+
+        await _client.PostAsJsonAsync(
+            $"/api/finance-workspaces/{workspaceId}/accounts",
+            new { code = "4010", name = "Revenue", type = "Revenue" });
+        await _client.PostAsJsonAsync(
+            $"/api/finance-workspaces/{workspaceId}/accounts",
+            new { code = "1010", name = "Cash", type = "Asset" });
+
+        var response = await _client.GetAsync($"/api/finance-workspaces/{workspaceId}/accounts");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(JsonValueKind.Array, document.RootElement.ValueKind);
+        Assert.Equal(2, document.RootElement.GetArrayLength());
+        Assert.Equal("1010", document.RootElement[0].GetProperty("code").GetString());
+        Assert.Equal("4010", document.RootElement[1].GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task List_empty_workspace_returns_empty_array()
+    {
+        var workspaceId = await CreateWorkspaceAsync(
+            Guid.Parse("d4d4d4d4-d4d4-d4d4-d4d4-d4d4d4d4d4d4"),
+            Guid.Parse("e5e5e5e5-e5e5-e5e5-e5e5-e5e5e5e5e5e5"));
+
+        var response = await _client.GetAsync($"/api/finance-workspaces/{workspaceId}/accounts");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(JsonValueKind.Array, document.RootElement.ValueKind);
+        Assert.Equal(0, document.RootElement.GetArrayLength());
+    }
+
     private async Task<Guid> CreateWorkspaceAsync(Guid organizationId, Guid platformWorkspaceId)
     {
         var createResponse = await _client.PostAsJsonAsync("/api/finance-workspaces", new

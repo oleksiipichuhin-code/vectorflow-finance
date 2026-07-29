@@ -52,6 +52,19 @@ internal sealed class InMemoryAccountRepository : IAccountRepository
         return Task.FromResult<Account?>(null);
     }
 
+    public Task<IReadOnlyList<Account>> ListByWorkspaceAsync(
+        FinanceWorkspaceId financeWorkspaceId,
+        CancellationToken cancellationToken = default)
+    {
+        IReadOnlyList<Account> accounts = _byId.Values
+            .Where(account => account.FinanceWorkspaceId == financeWorkspaceId)
+            .OrderBy(account => account.Code.Value, StringComparer.Ordinal)
+            .ThenBy(account => account.Id.Value)
+            .ToList();
+
+        return Task.FromResult(accounts);
+    }
+
     public Task AddAsync(Account account, CancellationToken cancellationToken = default)
     {
         AddCallCount++;

@@ -1320,3 +1320,70 @@ describe("urlState customer-ledger", () => {
     assert.equal(parsed.discovery.customerLedgerCounterparty, "BETA");
   });
 });
+
+describe("urlState accounts", () => {
+  const workspaceId = "11111111-1111-1111-1111-111111111111";
+  const accountId = "a1111111-1111-1111-1111-111111111111";
+
+  it("round-trips accounts view with filters and accountId", () => {
+    const search = buildUrlSearch({
+      view: "accounts",
+      workspaceId,
+      accrualId: null,
+      invoiceId: null,
+      journalEntryId: null,
+      accountId,
+      ledgerPostingId: null,
+      discovery: {
+        ...EMPTY_DISCOVERY,
+        accountsQuery: "cash",
+        accountsStatus: "Active",
+        accountsType: "Asset"
+      }
+    });
+
+    assert.equal(
+      search,
+      `?view=accounts&workspaceId=${workspaceId}&accountQ=cash&status=Active&type=Asset&accountId=${accountId}`
+    );
+
+    const parsed = parseUrlSearch(search);
+    assert.equal(parsed.view, "accounts");
+    assert.equal(parsed.workspaceId, workspaceId);
+    assert.equal(parsed.accountId, accountId);
+    assert.equal(parsed.discovery.accountsQuery, "cash");
+    assert.equal(parsed.discovery.accountsStatus, "Active");
+    assert.equal(parsed.discovery.accountsType, "Asset");
+  });
+
+  it("ignores accounts params outside accounts view", () => {
+    const search = buildUrlSearch({
+      view: "dashboard",
+      workspaceId,
+      accrualId: null,
+      invoiceId: null,
+      journalEntryId: null,
+      accountId,
+      ledgerPostingId: null,
+      discovery: {
+        ...EMPTY_DISCOVERY,
+        accountsQuery: "cash",
+        accountsStatus: "Active",
+        accountsType: "Asset"
+      }
+    });
+    assert.equal(search.includes("accountQ"), false);
+    assert.equal(search.includes("type=Asset"), false);
+    assert.equal(search.includes("accountId"), false);
+  });
+
+  it("strips invalid status/type/accountId on accounts", () => {
+    const parsed = parseUrlSearch(
+      `?view=accounts&workspaceId=${workspaceId}&status=Draft&type=Cash&accountId=not-a-guid&accountQ=beta`
+    );
+    assert.equal(parsed.accountId, null);
+    assert.equal(parsed.discovery.accountsStatus, "");
+    assert.equal(parsed.discovery.accountsType, "");
+    assert.equal(parsed.discovery.accountsQuery, "beta");
+  });
+});

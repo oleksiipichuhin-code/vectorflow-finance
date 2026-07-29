@@ -33,8 +33,10 @@ import { JournalsView } from "./JournalsView";
 import { LedgerView } from "./LedgerView";
 import { TrialBalanceView } from "./TrialBalanceView";
 import { AccountStatementView } from "./AccountStatementView";
+import { AccountsView } from "./AccountsView";
 import { CustomerLedgerView } from "./CustomerLedgerView";
 import { APP_VIEWS, type AppView } from "./navigation";
+import type { AccountStatusFilter, AccountTypeFilter } from "./chartOfAccounts";
 import { WorkspaceContextBar } from "./WorkspaceContextBar";
 import { WorkspaceView } from "./WorkspaceView";
 import { normalizeCounterpartyReference } from "./customerLedger";
@@ -177,7 +179,8 @@ export default function App() {
       accrualId: view === "accruals" ? accrualId : null,
       invoiceId: view === "invoices" || view === "customer-ledger" ? invoiceId : null,
       journalEntryId: view === "journals" ? journalEntryId : null,
-      accountId: view === "account-statement" ? accountId : null,
+      accountId:
+        view === "account-statement" || view === "accounts" ? accountId : null,
       ledgerPostingId: view === "ledger" ? ledgerPostingId : null,
       discovery
     };
@@ -207,7 +210,11 @@ export default function App() {
           : null
       );
       setJournalEntryId(parsed.view === "journals" ? parsed.journalEntryId : null);
-      setAccountId(parsed.view === "account-statement" ? parsed.accountId : null);
+      setAccountId(
+        parsed.view === "account-statement" || parsed.view === "accounts"
+          ? parsed.accountId
+          : null
+      );
       setLedgerPostingId(parsed.view === "ledger" ? parsed.ledgerPostingId : null);
       setListEpoch((value) => value + 1);
 
@@ -228,6 +235,7 @@ export default function App() {
       (next === "invoices" ||
         next === "accruals" ||
         next === "journals" ||
+        next === "accounts" ||
         next === "ledger" ||
         next === "trial-balance" ||
         next === "account-statement" ||
@@ -248,18 +256,28 @@ export default function App() {
     if (next !== "accruals") {
       setAccrualId(null);
     }
-    if (next !== "invoices") {
+    if (next !== "invoices" && next !== "customer-ledger") {
       setInvoiceId(null);
     }
     if (next !== "journals") {
       setJournalEntryId(null);
     }
-    if (next !== "account-statement") {
+    if (next !== "account-statement" && next !== "accounts") {
       setAccountId(null);
+    }
+    if (next !== "account-statement") {
       setDiscovery((current) => ({
         ...current,
         statementPeriodFrom: "",
         statementPeriodTo: ""
+      }));
+    }
+    if (next !== "accounts") {
+      setDiscovery((current) => ({
+        ...current,
+        accountsQuery: "",
+        accountsStatus: "",
+        accountsType: ""
       }));
     }
     if (next !== "ledger") {
@@ -429,6 +447,18 @@ export default function App() {
     []
   );
 
+  const handleAccountsFilterChange = useCallback(
+    (query: string, status: AccountStatusFilter, type: AccountTypeFilter) => {
+      setDiscovery((current) => ({
+        ...current,
+        accountsQuery: query.trim(),
+        accountsStatus: status,
+        accountsType: type
+      }));
+    },
+    []
+  );
+
   const handleCustomerLedgerFilterChange = useCallback(
     (query: string, agingBucket: AgingBucketFilter) => {
       setDiscovery((current) => ({
@@ -577,6 +607,21 @@ export default function App() {
     [workspace]
   );
 
+  const openJournals = useCallback(() => {
+    if (!workspace) {
+      setView("workspace");
+      return;
+    }
+
+    setDiscovery(createEmptyDiscovery());
+    setAccrualId(null);
+    setInvoiceId(null);
+    setAccountId(null);
+    setLedgerPostingId(null);
+    setJournalEntryId(null);
+    setView("journals");
+  }, [workspace]);
+
   const openCollectionsForCounterparty = useCallback(
     (counterpartyReference: string) => {
       if (!workspace) {
@@ -604,7 +649,8 @@ export default function App() {
       accrualId: view === "accruals" ? accrualId : null,
       invoiceId: view === "invoices" || view === "customer-ledger" ? invoiceId : null,
       journalEntryId: view === "journals" ? journalEntryId : null,
-      accountId: view === "account-statement" ? accountId : null,
+      accountId:
+        view === "account-statement" || view === "accounts" ? accountId : null,
       ledgerPostingId: view === "ledger" ? ledgerPostingId : null,
       discovery
     });
@@ -777,6 +823,20 @@ export default function App() {
           selectedJournalEntryId={journalEntryId}
           onDiscoveryChange={handleJournalDiscoveryChange}
           onSelectedJournalEntryIdChange={handleJournalEntryIdChange}
+        />
+      ) : null}
+
+      {view === "accounts" ? (
+        <AccountsView
+          workspace={workspace}
+          selectedAccountId={accountId}
+          initialQuery={discovery.accountsQuery}
+          initialStatus={discovery.accountsStatus}
+          initialType={discovery.accountsType}
+          onSelectedAccountIdChange={handleAccountIdChange}
+          onFilterChange={handleAccountsFilterChange}
+          onOpenAccountStatement={openAccountStatement}
+          onOpenJournals={openJournals}
         />
       ) : null}
 

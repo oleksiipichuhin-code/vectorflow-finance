@@ -42,6 +42,20 @@ public sealed class AccountRepository : IAccountRepository
                 cancellationToken);
     }
 
+    public async Task<IReadOnlyList<Account>> ListByWorkspaceAsync(
+        FinanceWorkspaceId financeWorkspaceId,
+        CancellationToken cancellationToken = default)
+    {
+        var accounts = await _dbContext.Accounts
+            .Where(account => account.FinanceWorkspaceId == financeWorkspaceId)
+            .ToListAsync(cancellationToken);
+
+        return accounts
+            .OrderBy(account => account.Code.Value, StringComparer.Ordinal)
+            .ThenBy(account => account.Id.Value)
+            .ToList();
+    }
+
     public async Task AddAsync(
         Account account,
         CancellationToken cancellationToken = default)

@@ -526,6 +526,44 @@ public sealed class AccountApplicationTests
     }
 
     [Fact]
+    public async Task List_returns_accounts_ordered_by_code()
+    {
+        var (accounts, workspaces, clock) = CreateHarness();
+        var workspaceId = await SeedWorkspaceAsync(workspaces, clock);
+        await CreateAccountAsync(accounts, workspaces, clock, workspaceId, "3000", "Equity", "Equity");
+        await CreateAccountAsync(accounts, workspaces, clock, workspaceId, "1000", "Cash", "Asset");
+        await CreateAccountAsync(accounts, workspaces, clock, workspaceId, "2000", "Payables", "Liability");
+
+        var result = await new GetAccountsHandler(accounts).HandleAsync(
+            new GetAccountsQuery(workspaceId));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(new[] { "1000", "2000", "3000" }, result.Value!.Select(a => a.Code).ToArray());
+    }
+
+    [Fact]
+    public async Task List_is_workspace_scoped()
+    {
+        var (accounts, workspaces, clock) = CreateHarness();
+        var workspaceA = await SeedWorkspaceAsync(workspaces, clock);
+        var workspaceB = await SeedWorkspaceAsync(
+            workspaces,
+            clock,
+            Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+            Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
+            "Secondary");
+        await CreateAccountAsync(accounts, workspaces, clock, workspaceA, "1000", "Cash A", "Asset");
+        await CreateAccountAsync(accounts, workspaces, clock, workspaceB, "2000", "Cash B", "Asset");
+
+        var result = await new GetAccountsHandler(accounts).HandleAsync(
+            new GetAccountsQuery(workspaceA));
+
+        Assert.True(result.IsSuccess);
+        Assert.Single(result.Value!);
+        Assert.Equal("1000", result.Value![0].Code);
+    }
+
+    [Fact]
     public async Task Dto_mapping_exposes_primitives_not_domain_types()
     {
         var (accounts, workspaces, clock) = CreateHarness();

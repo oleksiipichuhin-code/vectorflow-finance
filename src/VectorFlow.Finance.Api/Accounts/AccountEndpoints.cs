@@ -20,6 +20,12 @@ internal static class AccountEndpoints
             .Produces(StatusCodes.Status404NotFound)
             .Produces(StatusCodes.Status409Conflict);
 
+        group.MapGet("/", ListAsync)
+            .WithName("ListAccounts")
+            .WithSummary("List chart-of-accounts accounts for a finance workspace (code ascending).")
+            .Produces(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status400BadRequest);
+
         group.MapGet("/by-code", GetByCodeAsync)
             .WithName("GetAccountByCode")
             .Produces(StatusCodes.Status200OK)
@@ -88,6 +94,18 @@ internal static class AccountEndpoints
     {
         var result = await handler.HandleAsync(
             new GetAccountQuery(financeWorkspaceId, accountId),
+            cancellationToken);
+
+        return ApplicationResultHttp.ToHttpResult(result);
+    }
+
+    private static async Task<IResult> ListAsync(
+        Guid financeWorkspaceId,
+        GetAccountsHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new GetAccountsQuery(financeWorkspaceId),
             cancellationToken);
 
         return ApplicationResultHttp.ToHttpResult(result);
