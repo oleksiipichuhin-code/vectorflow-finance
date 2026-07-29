@@ -151,6 +151,33 @@ describe("accounts finance catalogs", () => {
   });
 });
 
+describe("ledger finance catalogs", () => {
+  beforeEach(async () => {
+    await i18n.changeLanguage("uk");
+  });
+
+  it("localizes ledger workflow chrome in Ukrainian and English", async () => {
+    assert.equal(i18n.t("ledger.title", { ns: "finance" }), "Головна книга");
+    assert.equal(i18n.t("ledger.listTitle", { ns: "finance" }), "Проводки ledger");
+    assert.equal(i18n.t("nav.ledger", { ns: "common" }), "Головна книга");
+
+    await i18n.changeLanguage("en");
+    assert.equal(i18n.t("ledger.title", { ns: "finance" }), "Ledger");
+    assert.equal(i18n.t("ledger.listTitle", { ns: "finance" }), "Ledger postings");
+    assert.equal(i18n.t("nav.ledger", { ns: "common" }), "Ledger");
+  });
+
+  it("preserves API wire values while localizing ledger chrome only", async () => {
+    assert.equal(i18n.t("ledger.openJournal", { ns: "finance" }), "Journal entry");
+    assert.equal("Posted", "Posted");
+    assert.equal("Active", "Active");
+
+    await i18n.changeLanguage("en");
+    assert.equal(i18n.t("ledger.openJournal", { ns: "finance" }), "Journal entry");
+    assert.equal(i18n.t("ledger.detailLoaded", { ns: "finance" }), "Ledger posting loaded from the API.");
+  });
+});
+
 describe("locale-aware formatting", () => {
   const sample = "2026-07-29T14:30:00.000Z";
 

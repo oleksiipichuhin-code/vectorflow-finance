@@ -1,4 +1,5 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   FinanceApiRequestError,
   getLedgerPosting,
@@ -13,7 +14,7 @@ import {
   parseSourceJournalEntryIdFilter,
   type LedgerPostedPeriodFilters
 } from "./ledgerPostings";
-import { formatDate, formatMoney } from "./format";
+import { formatDate, formatMoney } from "./i18n/format.ts";
 import { ListLoadState } from "./components/ListLoadState";
 import { Panel, StatusMessage } from "./components/Panel";
 
@@ -51,6 +52,7 @@ export function LedgerView({
   onOpenJournal,
   onOpenAccountStatement
 }: LedgerViewProps) {
+  const { t } = useTranslation(["finance", "common"]);
   const [postings, setPostings] = useState<LedgerPosting[]>([]);
   const [listLoading, setListLoading] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
@@ -77,36 +79,39 @@ export function LedgerView({
   const listSeq = useRef(0);
   const detailSeq = useRef(0);
 
-  const loadPostings = useCallback(async (workspaceId: string) => {
-    const seq = ++listSeq.current;
-    setListLoading(true);
-    setListError(null);
-    try {
-      const next = await listLedgerPostings(workspaceId);
-      if (seq !== listSeq.current) {
-        return;
+  const loadPostings = useCallback(
+    async (workspaceId: string) => {
+      const seq = ++listSeq.current;
+      setListLoading(true);
+      setListError(null);
+      try {
+        const next = await listLedgerPostings(workspaceId);
+        if (seq !== listSeq.current) {
+          return;
+        }
+        setPostings(next);
+      } catch (error) {
+        if (seq !== listSeq.current) {
+          return;
+        }
+        setPostings([]);
+        setListError(
+          error instanceof Error ? error.message : t("ledger.listLoadFailed")
+        );
+      } finally {
+        if (seq === listSeq.current) {
+          setListLoading(false);
+        }
       }
-      setPostings(next);
-    } catch (error) {
-      if (seq !== listSeq.current) {
-        return;
-      }
-      setPostings([]);
-      setListError(
-        error instanceof Error ? error.message : "Не вдалося завантажити ledger postings."
-      );
-    } finally {
-      if (seq === listSeq.current) {
-        setListLoading(false);
-      }
-    }
-  }, []);
+    },
+    [t]
+  );
 
   const loadDetail = useCallback(
     async (workspaceId: string, ledgerPostingId: string) => {
       if (!isLedgerPostingId(ledgerPostingId)) {
         setDetail(null);
-        setDetailError("Некоректний ідентифікатор ledger posting.");
+        setDetailError(t("ledger.detailInvalidId"));
         setDetailSuccess(null);
         return;
       }
@@ -121,18 +126,18 @@ export function LedgerView({
           return;
         }
         setDetail(next);
-        setDetailSuccess("Ledger posting завантажено з API.");
+        setDetailSuccess(t("ledger.detailLoaded"));
       } catch (error) {
         if (seq !== detailSeq.current) {
           return;
         }
         setDetail(null);
         if (error instanceof FinanceApiRequestError && error.status === 404) {
-          setDetailError("Ledger posting не знайдено у цьому workspace.");
+          setDetailError(t("ledger.detailNotFound"));
           onSelectedLedgerPostingIdChange?.(null, { replace: true });
         } else {
           setDetailError(
-            error instanceof Error ? error.message : "Не вдалося завантажити ledger posting."
+            error instanceof Error ? error.message : t("ledger.detailLoadFailed")
           );
         }
       } finally {
@@ -141,7 +146,7 @@ export function LedgerView({
         }
       }
     },
-    [onSelectedLedgerPostingIdChange]
+    [onSelectedLedgerPostingIdChange, t]
   );
 
   useEffect(() => {
@@ -188,13 +193,13 @@ export function LedgerView({
     };
     const nextJournal = parseSourceJournalEntryIdFilter(sourceJournalEntryId);
     if (sourceJournalEntryId.trim() && !nextJournal) {
-      setFilterValidationError("Source journal entry id має бути валідним GUID.");
+      setFilterValidationError(t("ledger.journalIdInvalid"));
       return;
     }
 
     const result = filterLedgerPostings(postings, nextPeriod, nextJournal);
     if (result.validationError) {
-      setFilterValidationError(result.validationError);
+      setFilterValidationError(t("ledger.periodRangeInvalid"));
       return;
     }
 
@@ -228,8 +233,8 @@ export function LedgerView({
 
   if (!workspace) {
     return (
-      <Panel title="Ledger" headingId="ledger-heading">
-        <StatusMessage>Спочатку відкрийте finance workspace.</StatusMessage>
+      <Panel title={t("ledger.title")} headingId="ledger-heading">
+        <StatusMessage>{t("ledger.needWorkspace")}</StatusMessage>
       </Panel>
     );
   }
@@ -240,16 +245,13 @@ export function LedgerView({
   return (
     <>
       <header className="hero">
-        <p className="eyebrow">General ledger</p>
-        <h1>Ledger</h1>
-        <p className="lede">
-          Реєстр immutable ledger postings → фільтр за датою / journal entry → деталі та
-          handoff. Стан у shareable URL.
-        </p>
+        <p className="eyebrow">{t("ledger.eyebrow")}</p>
+        <h1>{t("ledger.title")}</h1>
+        <p className="lede">{t("ledger.lede")}</p>
       </header>
 
       <Panel
-        title="Ledger postings"
+        title={t("ledger.listTitle")}
         headingId="ledger-list-heading"
         actions={
           <button
@@ -258,13 +260,13 @@ export function LedgerView({
             disabled={listLoading}
             onClick={() => void loadPostings(workspace.id)}
           >
-            {listLoading ? "Завантаження…" : "Оновити"}
+            {listLoading ? t("loading", { ns: "common" }) : t("refresh", { ns: "common" })}
           </button>
         }
       >
         <form className="filter-form" onSubmit={applyFilters}>
           <label>
-            Posted from
+            {t("ledger.field.postedFrom")}
             <input
               type="date"
               value={postedFrom}
@@ -273,7 +275,7 @@ export function LedgerView({
             />
           </label>
           <label>
-            Posted to
+            {t("ledger.field.postedTo")}
             <input
               type="date"
               value={postedTo}
@@ -282,11 +284,11 @@ export function LedgerView({
             />
           </label>
           <label>
-            Source journal entry
+            {t("ledger.field.sourceJournal")}
             <input
               type="text"
               className="mono"
-              placeholder="GUID journal entry"
+              placeholder={t("ledger.journalPlaceholder")}
               value={sourceJournalEntryId}
               onChange={(event) => setSourceJournalEntryId(event.target.value)}
               disabled={listLoading}
@@ -294,7 +296,7 @@ export function LedgerView({
           </label>
           <div className="filter-actions">
             <button type="submit" disabled={listLoading}>
-              Застосувати фільтр
+              {t("applyFilter", { ns: "common" })}
             </button>
             <button
               type="button"
@@ -302,7 +304,7 @@ export function LedgerView({
               disabled={listLoading}
               onClick={clearFilters}
             >
-              Скинути фільтр
+              {t("clearFilter", { ns: "common" })}
             </button>
           </div>
         </form>
@@ -313,16 +315,16 @@ export function LedgerView({
 
         <ListLoadState
           loading={listLoading && postings.length === 0}
-          loadingMessage="Завантаження ledger postings…"
+          loadingMessage={t("ledger.listLoading")}
           error={listError}
           onRetry={() => void loadPostings(workspace.id)}
           retryDisabled={listLoading}
           empty={!listLoading && !listError && postings.length === 0}
-          emptyMessage="Немає ledger postings. Проведіть journal entry та Post to ledger у Journals."
+          emptyMessage={t("ledger.listEmpty")}
         />
 
         {!listError && postings.length > 0 && visible.length === 0 && !filterValidationError ? (
-          <StatusMessage>Немає postings за обраним фільтром.</StatusMessage>
+          <StatusMessage>{t("ledger.listFilteredEmpty")}</StatusMessage>
         ) : null}
 
         {!listError && visible.length > 0 ? (
@@ -330,12 +332,12 @@ export function LedgerView({
             <table>
               <thead>
                 <tr>
-                  <th>Posted</th>
-                  <th>Ledger posting</th>
-                  <th>Journal entry</th>
-                  <th>Debit</th>
-                  <th>Credit</th>
-                  <th>Lines</th>
+                  <th>{t("ledger.col.posted")}</th>
+                  <th>{t("ledger.col.ledgerPosting")}</th>
+                  <th>{t("ledger.col.journalEntry")}</th>
+                  <th>{t("ledger.col.debit")}</th>
+                  <th>{t("ledger.col.credit")}</th>
+                  <th>{t("ledger.col.lines")}</th>
                   <th />
                 </tr>
               </thead>
@@ -361,7 +363,7 @@ export function LedgerView({
                           disabled={detailLoading}
                           onClick={() => openPosting(row.id)}
                         >
-                          Відкрити
+                          {t("open", { ns: "common" })}
                         </button>
                       </td>
                     </tr>
@@ -375,17 +377,17 @@ export function LedgerView({
 
       {selectedLedgerPostingId ? (
         <Panel
-          title="Деталі ledger posting"
+          title={t("ledger.detailTitle")}
           headingId="ledger-detail-heading"
           actions={
             <button type="button" className="button-secondary" onClick={closeDetail}>
-              Закрити
+              {t("close", { ns: "common" })}
             </button>
           }
         >
           <ListLoadState
             loading={detailLoading && !detail}
-            loadingMessage="Завантаження деталей…"
+            loadingMessage={t("ledger.detailLoading")}
             error={detailError}
             onRetry={() => void loadDetail(workspace.id, selectedLedgerPostingId)}
             retryDisabled={detailLoading}
@@ -399,19 +401,19 @@ export function LedgerView({
             <>
               <dl className="facts">
                 <div>
-                  <dt>Ledger posting</dt>
+                  <dt>{t("ledger.col.ledgerPosting")}</dt>
                   <dd className="mono">{detail.id}</dd>
                 </div>
                 <div>
-                  <dt>Journal entry</dt>
+                  <dt>{t("ledger.col.journalEntry")}</dt>
                   <dd className="mono">{detail.journalEntryId}</dd>
                 </div>
                 <div>
-                  <dt>Posted</dt>
+                  <dt>{t("ledger.col.posted")}</dt>
                   <dd>{formatDate(detail.postedAtUtc)}</dd>
                 </div>
                 <div>
-                  <dt>Totals</dt>
+                  <dt>{t("ledger.field.totals")}</dt>
                   <dd>
                     {formatMoney(detail.totalDebit, currency)} /{" "}
                     {formatMoney(detail.totalCredit, currency)}
@@ -425,7 +427,7 @@ export function LedgerView({
                     type="button"
                     onClick={() => onOpenJournal(detail.journalEntryId)}
                   >
-                    Journal entry
+                    {t("ledger.openJournal")}
                   </button>
                 ) : null}
                 <button
@@ -434,7 +436,7 @@ export function LedgerView({
                   disabled={detailLoading}
                   onClick={() => void loadDetail(workspace.id, detail.id)}
                 >
-                  Оновити з API
+                  {t("refreshFromApi")}
                 </button>
               </div>
 
@@ -442,11 +444,11 @@ export function LedgerView({
                 <table>
                   <thead>
                     <tr>
-                      <th>#</th>
-                      <th>Account</th>
-                      <th>Description</th>
-                      <th>Debit</th>
-                      <th>Credit</th>
+                      <th>{t("ledger.col.sequence")}</th>
+                      <th>{t("ledger.col.account")}</th>
+                      <th>{t("ledger.col.description")}</th>
+                      <th>{t("ledger.col.debit")}</th>
+                      <th>{t("ledger.col.credit")}</th>
                       <th />
                     </tr>
                   </thead>
@@ -455,7 +457,9 @@ export function LedgerView({
                       <tr key={line.id} data-row-id={line.id}>
                         <td>{line.sequence}</td>
                         <td className="mono cell-wrap">{line.financialAccountId}</td>
-                        <td className="cell-wrap">{line.description?.trim() || "—"}</td>
+                        <td className="cell-wrap">
+                          {line.description?.trim() || t("emDash", { ns: "common" })}
+                        </td>
                         <td>{formatMoney(line.debit, currency)}</td>
                         <td>{formatMoney(line.credit, currency)}</td>
                         <td>
@@ -467,7 +471,7 @@ export function LedgerView({
                                 onOpenAccountStatement(line.financialAccountId)
                               }
                             >
-                              Account statement
+                              {t("openAccountStatement")}
                             </button>
                           ) : null}
                         </td>
@@ -477,13 +481,13 @@ export function LedgerView({
                 </table>
               </div>
 
-              {detailLoading ? <StatusMessage>Оновлення…</StatusMessage> : null}
+              {detailLoading ? <StatusMessage>{t("ledger.updating")}</StatusMessage> : null}
             </>
           ) : null}
         </Panel>
       ) : (
-        <Panel title="Деталі ledger posting" headingId="ledger-detail-empty-heading">
-          <StatusMessage>Оберіть posting у списку, щоб відкрити деталі.</StatusMessage>
+        <Panel title={t("ledger.detailTitle")} headingId="ledger-detail-empty-heading">
+          <StatusMessage>{t("ledger.selectPrompt")}</StatusMessage>
         </Panel>
       )}
     </>

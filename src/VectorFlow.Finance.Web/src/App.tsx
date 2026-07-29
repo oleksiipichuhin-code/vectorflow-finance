@@ -727,7 +727,11 @@ export default function App() {
             className={view === item.id ? "app-nav-item is-active" : "app-nav-item"}
             onClick={() => navigate(item.id)}
           >
-            {item.id === "accounts" ? t("nav.accounts") : item.label}
+            {item.id === "accounts"
+              ? t("nav.accounts")
+              : item.id === "ledger"
+                ? t("nav.ledger")
+                : item.label}
           </button>
         ))}
       </nav>
