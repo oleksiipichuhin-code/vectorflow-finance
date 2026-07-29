@@ -315,6 +315,57 @@ describe("trial balance finance catalogs", () => {
   });
 });
 
+describe("journals finance catalogs", () => {
+  beforeEach(async () => {
+    await i18n.changeLanguage("uk");
+  });
+
+  it("localizes journals workflow chrome in Ukrainian and English", async () => {
+    assert.equal(i18n.t("journals.title", { ns: "finance" }), "Журнальні проводки");
+    assert.equal(i18n.t("journals.createTitle", { ns: "finance" }), "Нова журнальна проводка");
+    assert.equal(i18n.t("journals.postJournal", { ns: "finance" }), "Провести journal entry");
+    assert.equal(i18n.t("nav.journals", { ns: "common" }), "Журнали");
+    assert.equal(i18n.t("openJournals", { ns: "finance" }), "Журнали");
+
+    await i18n.changeLanguage("en");
+    assert.equal(i18n.t("journals.title", { ns: "finance" }), "Journal entries");
+    assert.equal(i18n.t("journals.createTitle", { ns: "finance" }), "New journal entry");
+    assert.equal(i18n.t("journals.postJournal", { ns: "finance" }), "Post journal entry");
+    assert.equal(i18n.t("nav.journals", { ns: "common" }), "Journals");
+    assert.equal(i18n.t("openJournals", { ns: "finance" }), "Journals");
+  });
+
+  it("preserves journal status wire values while localizing labels", async () => {
+    assert.equal(i18n.t("journalStatus.Draft", { ns: "finance" }), "Чернетка");
+    assert.equal(i18n.t("journalStatus.Posted", { ns: "finance" }), "Проведено");
+    assert.equal("Draft", "Draft");
+    assert.equal("Posted", "Posted");
+
+    await i18n.changeLanguage("en");
+    assert.equal(i18n.t("journalStatus.Draft", { ns: "finance" }), "Draft");
+    assert.equal(i18n.t("journalStatus.Posted", { ns: "finance" }), "Posted");
+    assert.equal(i18n.t("journals.postToLedger", { ns: "finance" }), "Post to ledger");
+  });
+
+  it("has matching journals key structure in uk and en", async () => {
+    const ukKeys = Object.keys(financeUk).filter(
+      (key) =>
+        key.startsWith("journals.") ||
+        key.startsWith("journalStatus.") ||
+        key === "dashboard.journalsCopy" ||
+        key === "openJournals"
+    );
+    const enKeys = Object.keys(financeEn).filter(
+      (key) =>
+        key.startsWith("journals.") ||
+        key.startsWith("journalStatus.") ||
+        key === "dashboard.journalsCopy" ||
+        key === "openJournals"
+    );
+    assert.deepEqual(ukKeys.sort(), enKeys.sort());
+  });
+});
+
 describe("locale-aware formatting", () => {
   const sample = "2026-07-29T14:30:00.000Z";
 

@@ -207,11 +207,11 @@ export function DashboardView({
             onClick={() => onNavigate("journals")}
             disabled={!workspace}
           >
-            <span className="nav-card-title">Journals</span>
+            <span className="nav-card-title">{t("nav.journals", { ns: "common" })}</span>
             <span className="nav-card-copy">
               {workspace
-                ? "Journal entries та post to ledger"
-                : "Потрібен finance workspace"}
+                ? t("dashboard.journalsCopy", { ns: "finance" })
+                : t("dashboard.needWorkspace", { ns: "finance" })}
             </span>
           </button>
           <button

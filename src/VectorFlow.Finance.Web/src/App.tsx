@@ -737,7 +737,9 @@ export default function App() {
                     ? t("nav.accountStatement")
                     : item.id === "customer-ledger"
                       ? t("nav.customerLedger")
-                      : item.label}
+                      : item.id === "journals"
+                        ? t("nav.journals")
+                        : item.label}
           </button>
         ))}
       </nav>

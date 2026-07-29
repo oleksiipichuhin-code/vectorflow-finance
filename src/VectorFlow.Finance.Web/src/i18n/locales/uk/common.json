@@ -3,14 +3,18 @@
   "cancel": "Скасувати",
   "close": "Закрити",
   "back": "Назад",
+  "next": "Далі",
   "loading": "Завантаження…",
   "saving": "Збереження…",
+  "creating": "Створення…",
   "retry": "Спробувати знову",
   "refresh": "Оновити",
   "search": "Пошук",
   "applyFilter": "Застосувати фільтр",
   "clearFilter": "Скинути",
   "open": "Відкрити",
+  "details": "Деталі",
+  "remove": "Видалити",
   "all": "Усі",
   "languageSwitcher": "Перемикач мови",
   "language.uk": "Українська",
@@ -20,5 +24,6 @@
   "nav.ledger": "Головна книга",
   "nav.trialBalance": "Оборотно-сальдова відомість",
   "nav.accountStatement": "Виписка рахунку",
-  "nav.customerLedger": "Книга клієнта"
+  "nav.customerLedger": "Книга клієнта",
+  "nav.journals": "Журнали"
 }

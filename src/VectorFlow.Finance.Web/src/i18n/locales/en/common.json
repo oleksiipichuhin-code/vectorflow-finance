@@ -3,14 +3,18 @@
   "cancel": "Cancel",
   "close": "Close",
   "back": "Back",
+  "next": "Next",
   "loading": "Loading…",
   "saving": "Saving…",
+  "creating": "Creating…",
   "retry": "Try again",
   "refresh": "Refresh",
   "search": "Search",
   "applyFilter": "Apply filter",
   "clearFilter": "Clear",
   "open": "Open",
+  "details": "Details",
+  "remove": "Remove",
   "all": "All",
   "languageSwitcher": "Language switcher",
   "language.uk": "Ukrainian",
@@ -20,5 +24,6 @@
   "nav.ledger": "Ledger",
   "nav.trialBalance": "Trial balance",
   "nav.accountStatement": "Account statement",
-  "nav.customerLedger": "Customer ledger"
+  "nav.customerLedger": "Customer ledger",
+  "nav.journals": "Journals"
 }

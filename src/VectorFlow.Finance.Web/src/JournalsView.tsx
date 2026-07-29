@@ -1,4 +1,5 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   addJournalEntryLine,
   createAccount,
@@ -18,9 +19,9 @@ import {
   type LedgerPosting
 } from "./api";
 import { formatDate, formatMoney } from "./format";
+import i18n from "./i18n";
 import {
   ACCOUNT_TYPE_OPTIONS,
-  formatAccountOption,
   loadAccountCache,
   rememberAccount,
   type CachedAccount
@@ -60,6 +61,10 @@ function parseAmount(raw: string): number | null {
   return value;
 }
 
+function isAccountType(value: string): value is AccountType {
+  return ACCOUNT_TYPE_OPTIONS.some((option) => option.id === value);
+}
+
 export function JournalsView({
   workspace,
   initialPage = 1,
@@ -68,6 +73,8 @@ export function JournalsView({
   onDiscoveryChange,
   onSelectedJournalEntryIdChange
 }: JournalsViewProps) {
+  const { t } = useTranslation(["finance", "common"]);
+
   const [statusFilter, setStatusFilter] = useState<JournalStatusFilter>(initialStatus);
   const [appliedStatus, setAppliedStatus] = useState<JournalStatusFilter>(initialStatus);
   const [page, setPage] = useState(() => (initialPage < 1 ? 1 : Math.floor(initialPage)));
@@ -77,13 +84,17 @@ export function JournalsView({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [createName, setCreateName] = useState("Проводка");
+  const [createName, setCreateName] = useState(() =>
+    i18n.t("journals.defaultEntryName", { ns: "finance" })
+  );
   const [createBusy, setCreateBusy] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [createSuccess, setCreateSuccess] = useState<string | null>(null);
 
   const [accountCode, setAccountCode] = useState("1000");
-  const [accountName, setAccountName] = useState("Каса");
+  const [accountName, setAccountName] = useState(() =>
+    i18n.t("journals.defaultAccountName", { ns: "finance" })
+  );
   const [accountType, setAccountType] = useState<AccountType>("Asset");
   const [accountBusy, setAccountBusy] = useState(false);
   const [accountError, setAccountError] = useState<string | null>(null);
@@ -107,6 +118,28 @@ export function JournalsView({
 
   const workspaceId = workspace?.id ?? null;
 
+  const typeLabel = useCallback(
+    (accountTypeValue: string) =>
+      isAccountType(accountTypeValue) ? t(`type.${accountTypeValue}`) : accountTypeValue,
+    [t]
+  );
+
+  const formatCachedAccount = useCallback(
+    (account: CachedAccount) =>
+      `${account.code} · ${account.name} (${typeLabel(account.type)})`,
+    [typeLabel]
+  );
+
+  const statusLabel = useCallback(
+    (status: string) => {
+      if (status === "Draft" || status === "Posted") {
+        return t(`journalStatus.${status}`);
+      }
+      return status;
+    },
+    [t]
+  );
+
   const refreshAccountCache = useCallback(() => {
     if (!workspaceId) {
       setAccountCache([]);
@@ -129,11 +162,11 @@ export function JournalsView({
       setEntries(list);
     } catch (err) {
       setEntries([]);
-      setError(err instanceof Error ? err.message : "Не вдалося завантажити journal entries.");
+      setError(err instanceof Error ? err.message : t("journals.listLoadFailed"));
     } finally {
       setLoading(false);
     }
-  }, [workspaceId]);
+  }, [workspaceId, t]);
 
   const loadDetail = useCallback(
     async (journalEntryId: string, options?: { replace?: boolean }) => {
@@ -161,7 +194,7 @@ export function JournalsView({
               setLedgerError(null);
             } else {
               setLedgerError(
-                err instanceof Error ? err.message : "Не вдалося завантажити ledger posting."
+                err instanceof Error ? err.message : t("journals.ledgerLoadFailed")
               );
             }
           }
@@ -172,7 +205,7 @@ export function JournalsView({
         setDetail(null);
         setLedger(null);
         setDetailError(
-          err instanceof Error ? err.message : "Не вдалося завантажити journal entry."
+          err instanceof Error ? err.message : t("journals.detailLoadFailed")
         );
         if (err instanceof FinanceApiRequestError && err.status === 404) {
           onSelectedJournalEntryIdChange?.(null, { replace: true });
@@ -181,7 +214,7 @@ export function JournalsView({
         setDetailLoading(false);
       }
     },
-    [workspaceId, onSelectedJournalEntryIdChange]
+    [workspaceId, onSelectedJournalEntryIdChange, t]
   );
 
   useEffect(() => {
@@ -275,9 +308,9 @@ export function JournalsView({
       const next = rememberAccount(workspaceId, created);
       setAccountCache(next);
       setLineAccountId(created.id);
-      setAccountSuccess(`Рахунок ${created.code} створено.`);
+      setAccountSuccess(t("journals.accountCreateSuccess", { code: created.code }));
     } catch (err) {
-      setAccountError(err instanceof Error ? err.message : "Не вдалося створити рахунок.");
+      setAccountError(err instanceof Error ? err.message : t("journals.accountCreateFailed"));
     } finally {
       setAccountBusy(false);
     }
@@ -297,9 +330,9 @@ export function JournalsView({
       setLineAccountId(found.id);
       setAccountName(found.name);
       setAccountType((found.type as AccountType) || "Asset");
-      setAccountSuccess(`Рахунок ${found.code} знайдено.`);
+      setAccountSuccess(t("journals.accountLookupSuccess", { code: found.code }));
     } catch (err) {
-      setAccountError(err instanceof Error ? err.message : "Не вдалося знайти рахунок.");
+      setAccountError(err instanceof Error ? err.message : t("journals.accountLookupFailed"));
     } finally {
       setAccountBusy(false);
     }
@@ -315,11 +348,11 @@ export function JournalsView({
     setCreateSuccess(null);
     try {
       const created = await createJournalEntry(workspaceId, createName);
-      setCreateSuccess(`Чернетку «${created.name}» створено.`);
+      setCreateSuccess(t("journals.createSuccess", { name: created.name }));
       await loadList();
       await loadDetail(created.id);
     } catch (err) {
-      setCreateError(err instanceof Error ? err.message : "Не вдалося створити journal entry.");
+      setCreateError(err instanceof Error ? err.message : t("journals.createFailed"));
     } finally {
       setCreateBusy(false);
     }
@@ -336,10 +369,10 @@ export function JournalsView({
     try {
       const updated = await renameJournalEntry(workspaceId, detail.id, renameName);
       setDetail(updated);
-      setDetailSuccess("Назву оновлено.");
+      setDetailSuccess(t("journals.renameSuccess"));
       await loadList();
     } catch (err) {
-      setDetailError(err instanceof Error ? err.message : "Не вдалося перейменувати.");
+      setDetailError(err instanceof Error ? err.message : t("journals.renameFailed"));
     } finally {
       setActionBusy(false);
     }
@@ -352,11 +385,11 @@ export function JournalsView({
     }
     const amount = parseAmount(lineAmount);
     if (amount == null) {
-      setDetailError("Сума рядка має бути невід’ємним числом.");
+      setDetailError(t("journals.lineAmountInvalid"));
       return;
     }
     if (!lineAccountId) {
-      setDetailError("Оберіть financial account для рядка.");
+      setDetailError(t("journals.lineAccountRequired"));
       return;
     }
 
@@ -371,11 +404,11 @@ export function JournalsView({
         description: lineDescription.trim() || null
       });
       setDetail(updated);
-      setDetailSuccess("Рядок додано.");
+      setDetailSuccess(t("journals.lineAddSuccess"));
       setLineDescription("");
       await loadList();
     } catch (err) {
-      setDetailError(err instanceof Error ? err.message : "Не вдалося додати рядок.");
+      setDetailError(err instanceof Error ? err.message : t("journals.lineAddFailed"));
     } finally {
       setActionBusy(false);
     }
@@ -391,10 +424,10 @@ export function JournalsView({
     try {
       const updated = await removeJournalEntryLine(workspaceId, detail.id, lineId);
       setDetail(updated);
-      setDetailSuccess("Рядок видалено.");
+      setDetailSuccess(t("journals.lineRemoveSuccess"));
       await loadList();
     } catch (err) {
-      setDetailError(err instanceof Error ? err.message : "Не вдалося видалити рядок.");
+      setDetailError(err instanceof Error ? err.message : t("journals.lineRemoveFailed"));
     } finally {
       setActionBusy(false);
     }
@@ -410,10 +443,10 @@ export function JournalsView({
     try {
       const posted = await postJournalEntry(workspaceId, detail.id);
       setDetail(posted);
-      setDetailSuccess("Journal entry проведено (Posted). Далі — Post to ledger.");
+      setDetailSuccess(t("journals.postSuccess"));
       await loadList();
     } catch (err) {
-      setDetailError(err instanceof Error ? err.message : "Не вдалося провести journal entry.");
+      setDetailError(err instanceof Error ? err.message : t("journals.postFailed"));
     } finally {
       setActionBusy(false);
     }
@@ -430,21 +463,21 @@ export function JournalsView({
     try {
       const posting = await postJournalEntryToLedger(workspaceId, detail.id);
       setLedger(posting);
-      setDetailSuccess("Ledger posting створено. Стан збережено на сервері.");
+      setDetailSuccess(t("journals.postToLedgerSuccess"));
       await loadList();
     } catch (err) {
       if (err instanceof FinanceApiRequestError && err.status === 409) {
         try {
           const existing = await getLedgerPostingByJournalEntry(workspaceId, detail.id);
           setLedger(existing);
-          setDetailSuccess("Ledger posting уже існує (ідемпотентно).");
+          setDetailSuccess(t("journals.postToLedgerExists"));
         } catch (inner) {
           setDetailError(
-            inner instanceof Error ? inner.message : "Ledger posting conflict без деталей."
+            inner instanceof Error ? inner.message : t("journals.postToLedgerConflict")
           );
         }
       } else {
-        setDetailError(err instanceof Error ? err.message : "Не вдалося створити ledger posting.");
+        setDetailError(err instanceof Error ? err.message : t("journals.postToLedgerFailed"));
       }
     } finally {
       setActionBusy(false);
@@ -461,29 +494,24 @@ export function JournalsView({
 
   function accountLabel(accountId: string): string {
     const cached = accountCache.find((item) => item.id === accountId);
-    return cached ? formatAccountOption(cached) : accountId;
+    return cached ? formatCachedAccount(cached) : accountId;
   }
 
   if (!workspace) {
     return (
-      <Panel title="Journal entries" headingId="journals-heading">
-        <StatusMessage>Спочатку відкрийте finance workspace.</StatusMessage>
+      <Panel title={t("journals.title")} headingId="journals-heading">
+        <StatusMessage>{t("journals.needWorkspace")}</StatusMessage>
       </Panel>
     );
   }
 
   return (
     <>
-      <Panel title="Рахунки (chart of accounts)" headingId="accounts-heading">
-        <p className="meta">
-          Для рядків journal entry потрібен <span className="mono">FinancialAccountId</span>.
-          Створіть або знайдіть рахунок за кодом тут, або керуйте планом рахунків у{" "}
-          <span className="mono">Accounts</span> (<span className="mono">view=accounts</span>).
-          Оболонка також кешує використані рахунки в браузері для швидкого вибору в рядках.
-        </p>
+      <Panel title={t("journals.accountsTitle")} headingId="accounts-heading">
+        <p className="meta">{t("journals.accountsHelp")}</p>
         <form className="filter-form" onSubmit={(event) => void handleCreateAccount(event)}>
           <label>
-            Code
+            {t("field.code")}
             <input
               value={accountCode}
               onChange={(event) => setAccountCode(event.target.value)}
@@ -493,7 +521,7 @@ export function JournalsView({
             />
           </label>
           <label>
-            Name
+            {t("field.name")}
             <input
               value={accountName}
               onChange={(event) => setAccountName(event.target.value)}
@@ -503,7 +531,7 @@ export function JournalsView({
             />
           </label>
           <label>
-            Type
+            {t("field.type")}
             <select
               value={accountType}
               onChange={(event) => setAccountType(event.target.value as AccountType)}
@@ -511,14 +539,14 @@ export function JournalsView({
             >
               {ACCOUNT_TYPE_OPTIONS.map((option) => (
                 <option key={option.id} value={option.id}>
-                  {option.label}
+                  {typeLabel(option.id)}
                 </option>
               ))}
             </select>
           </label>
           <div className="filter-actions">
             <button type="submit" disabled={accountBusy}>
-              {accountBusy ? "Збереження…" : "Створити рахунок"}
+              {accountBusy ? t("saving", { ns: "common" }) : t("createAction")}
             </button>
             <button
               type="button"
@@ -526,7 +554,7 @@ export function JournalsView({
               disabled={accountBusy}
               onClick={() => void handleLookupAccount()}
             >
-              Знайти за кодом
+              {t("journals.lookupByCode")}
             </button>
           </div>
         </form>
@@ -541,20 +569,20 @@ export function JournalsView({
                   className="button-secondary"
                   onClick={() => setLineAccountId(account.id)}
                 >
-                  {formatAccountOption(account)}
+                  {formatCachedAccount(account)}
                 </button>
               </li>
             ))}
           </ul>
         ) : (
-          <StatusMessage>Кеш рахунків порожній — створіть Asset і Revenue для першої проводки.</StatusMessage>
+          <StatusMessage>{t("journals.accountCacheEmpty")}</StatusMessage>
         )}
       </Panel>
 
-      <Panel title="Новий journal entry" headingId="journal-create-heading">
+      <Panel title={t("journals.createTitle")} headingId="journal-create-heading">
         <form className="filter-form" onSubmit={(event) => void handleCreateEntry(event)}>
           <label>
-            Name
+            {t("field.name")}
             <input
               value={createName}
               onChange={(event) => setCreateName(event.target.value)}
@@ -565,7 +593,7 @@ export function JournalsView({
           </label>
           <div className="filter-actions">
             <button type="submit" disabled={createBusy}>
-              {createBusy ? "Створення…" : "Створити чернетку"}
+              {createBusy ? t("creating", { ns: "common" }) : t("journals.createDraft")}
             </button>
           </div>
         </form>
@@ -573,23 +601,23 @@ export function JournalsView({
         {createSuccess ? <StatusMessage tone="success">{createSuccess}</StatusMessage> : null}
       </Panel>
 
-      <Panel title="Journal entries" headingId="journals-heading">
+      <Panel title={t("journals.title")} headingId="journals-heading">
         <form className="filter-form" onSubmit={applyFilters}>
           <label>
-            Status
+            {t("field.status")}
             <select
               value={statusFilter}
               onChange={(event) => setStatusFilter(event.target.value as JournalStatusFilter)}
               disabled={loading}
             >
-              <option value="">Усі</option>
-              <option value="Draft">Draft</option>
-              <option value="Posted">Posted</option>
+              <option value="">{t("all", { ns: "common" })}</option>
+              <option value="Draft">{t("journalStatus.Draft")}</option>
+              <option value="Posted">{t("journalStatus.Posted")}</option>
             </select>
           </label>
           <div className="filter-actions">
             <button type="submit" disabled={loading}>
-              Застосувати
+              {t("applyFilter", { ns: "common" })}
             </button>
             <button
               type="button"
@@ -597,7 +625,7 @@ export function JournalsView({
               disabled={loading}
               onClick={clearFilters}
             >
-              Скинути
+              {t("clearFilter", { ns: "common" })}
             </button>
             <button
               type="button"
@@ -605,18 +633,18 @@ export function JournalsView({
               disabled={loading}
               onClick={() => void loadList()}
             >
-              Оновити
+              {t("refresh", { ns: "common" })}
             </button>
           </div>
         </form>
 
         <ListLoadState
           loading={loading}
-          loadingMessage="Завантаження journal entries…"
+          loadingMessage={t("journals.listLoading")}
           error={error}
           onRetry={() => void loadList()}
           empty={!loading && !error && filtered.length === 0}
-          emptyMessage="Немає journal entries у цьому workspace."
+          emptyMessage={t("journals.listEmpty")}
         />
 
         {!loading && !error && pageItems.length > 0 ? (
@@ -625,11 +653,11 @@ export function JournalsView({
               <table>
                 <thead>
                   <tr>
-                    <th>Name</th>
-                    <th>Status</th>
-                    <th>Debit</th>
-                    <th>Credit</th>
-                    <th>Updated</th>
+                    <th>{t("journals.col.name")}</th>
+                    <th>{t("journals.col.status")}</th>
+                    <th>{t("journals.col.debit")}</th>
+                    <th>{t("journals.col.credit")}</th>
+                    <th>{t("journals.col.updated")}</th>
                     <th />
                   </tr>
                 </thead>
@@ -643,7 +671,7 @@ export function JournalsView({
                         className={selected ? "row-highlight row-selected" : undefined}
                       >
                         <td className="cell-wrap">{entry.name}</td>
-                        <td>{entry.status}</td>
+                        <td>{statusLabel(entry.status)}</td>
                         <td>{formatMoney(entry.totalDebit, workspace.defaultCurrency)}</td>
                         <td>{formatMoney(entry.totalCredit, workspace.defaultCurrency)}</td>
                         <td>{formatDate(entry.updatedAtUtc)}</td>
@@ -654,7 +682,7 @@ export function JournalsView({
                             disabled={detailLoading}
                             onClick={() => void loadDetail(entry.id)}
                           >
-                            Деталі
+                            {t("details", { ns: "common" })}
                           </button>
                         </td>
                       </tr>
@@ -674,10 +702,14 @@ export function JournalsView({
                   onDiscoveryChange?.(next, appliedStatus);
                 }}
               >
-                Назад
+                {t("back", { ns: "common" })}
               </button>
               <span className="meta">
-                Сторінка {safePage} з {totalPages} · {filtered.length} записів
+                {t("journals.pageMeta", {
+                  page: safePage,
+                  totalPages,
+                  count: filtered.length
+                })}
               </span>
               <button
                 type="button"
@@ -689,7 +721,7 @@ export function JournalsView({
                   onDiscoveryChange?.(next, appliedStatus);
                 }}
               >
-                Далі
+                {t("next", { ns: "common" })}
               </button>
             </div>
           </>
@@ -697,13 +729,13 @@ export function JournalsView({
       </Panel>
 
       {selectedJournalEntryId || detail || detailLoading || detailError ? (
-        <Panel title="Journal entry detail" headingId="journal-detail-heading">
+        <Panel title={t("journals.detailTitle")} headingId="journal-detail-heading">
           <div className="filter-actions">
             <button type="button" className="button-secondary" onClick={closeDetail}>
-              Закрити
+              {t("close", { ns: "common" })}
             </button>
           </div>
-          {detailLoading ? <StatusMessage>Завантаження деталі…</StatusMessage> : null}
+          {detailLoading ? <StatusMessage>{t("journals.detailLoading")}</StatusMessage> : null}
           {detailError ? <StatusMessage tone="error">{detailError}</StatusMessage> : null}
           {detailSuccess ? <StatusMessage tone="success">{detailSuccess}</StatusMessage> : null}
 
@@ -711,27 +743,27 @@ export function JournalsView({
             <>
               <dl className="facts">
                 <div>
-                  <dt>Id</dt>
+                  <dt>{t("field.id")}</dt>
                   <dd className="mono">{detail.id}</dd>
                 </div>
                 <div>
-                  <dt>Name</dt>
+                  <dt>{t("field.name")}</dt>
                   <dd>{detail.name}</dd>
                 </div>
                 <div>
-                  <dt>Status</dt>
-                  <dd>{detail.status}</dd>
+                  <dt>{t("field.status")}</dt>
+                  <dd>{statusLabel(detail.status)}</dd>
                 </div>
                 <div>
-                  <dt>Total debit</dt>
+                  <dt>{t("journals.field.totalDebit")}</dt>
                   <dd>{formatMoney(detail.totalDebit, workspace.defaultCurrency)}</dd>
                 </div>
                 <div>
-                  <dt>Total credit</dt>
+                  <dt>{t("journals.field.totalCredit")}</dt>
                   <dd>{formatMoney(detail.totalCredit, workspace.defaultCurrency)}</dd>
                 </div>
                 <div>
-                  <dt>Posted at</dt>
+                  <dt>{t("journals.field.postedAt")}</dt>
                   <dd>{formatDate(detail.postedAtUtc)}</dd>
                 </div>
               </dl>
@@ -740,7 +772,7 @@ export function JournalsView({
                 <>
                   <form className="filter-form" onSubmit={(event) => void handleRename(event)}>
                     <label>
-                      Rename
+                      {t("journals.field.rename")}
                       <input
                         value={renameName}
                         onChange={(event) => setRenameName(event.target.value)}
@@ -750,64 +782,68 @@ export function JournalsView({
                     </label>
                     <div className="filter-actions">
                       <button type="submit" disabled={actionBusy}>
-                        Зберегти назву
+                        {t("journals.saveName")}
                       </button>
                     </div>
                   </form>
 
                   <form className="filter-form" onSubmit={(event) => void handleAddLine(event)}>
-                    <h3>Додати рядок</h3>
+                    <h3>{t("journals.addLine")}</h3>
                     <label>
-                      Account
+                      {t("journals.col.account")}
                       <select
                         value={lineAccountId}
                         onChange={(event) => setLineAccountId(event.target.value)}
                         disabled={actionBusy || accountCache.length === 0}
                         required
+                        aria-label={t("journals.col.account")}
                       >
-                        <option value="">Оберіть рахунок…</option>
+                        <option value="">{t("journals.selectAccount")}</option>
                         {accountCache.map((account) => (
                           <option key={account.id} value={account.id}>
-                            {formatAccountOption(account)}
+                            {formatCachedAccount(account)}
                           </option>
                         ))}
                       </select>
                     </label>
                     <label>
-                      Side
+                      {t("journals.field.side")}
                       <select
                         value={lineSide}
                         onChange={(event) =>
                           setLineSide(event.target.value as "debit" | "credit")
                         }
                         disabled={actionBusy}
+                        aria-label={t("journals.field.side")}
                       >
-                        <option value="debit">Debit</option>
-                        <option value="credit">Credit</option>
+                        <option value="debit">{t("journals.side.debit")}</option>
+                        <option value="credit">{t("journals.side.credit")}</option>
                       </select>
                     </label>
                     <label>
-                      Amount
+                      {t("journals.field.amount")}
                       <input
                         value={lineAmount}
                         onChange={(event) => setLineAmount(event.target.value)}
                         disabled={actionBusy}
                         inputMode="decimal"
                         required
+                        aria-label={t("journals.field.amount")}
                       />
                     </label>
                     <label>
-                      Description
+                      {t("journals.col.description")}
                       <input
                         value={lineDescription}
                         onChange={(event) => setLineDescription(event.target.value)}
                         disabled={actionBusy}
                         autoComplete="off"
+                        aria-label={t("journals.col.description")}
                       />
                     </label>
                     <div className="filter-actions">
                       <button type="submit" disabled={actionBusy || !lineAccountId}>
-                        Додати рядок
+                        {t("journals.addLine")}
                       </button>
                     </div>
                   </form>
@@ -818,18 +854,18 @@ export function JournalsView({
                 <table>
                   <thead>
                     <tr>
-                      <th>#</th>
-                      <th>Account</th>
-                      <th>Debit</th>
-                      <th>Credit</th>
-                      <th>Description</th>
+                      <th>{t("journals.col.sequence")}</th>
+                      <th>{t("journals.col.account")}</th>
+                      <th>{t("journals.col.debit")}</th>
+                      <th>{t("journals.col.credit")}</th>
+                      <th>{t("journals.col.description")}</th>
                       <th />
                     </tr>
                   </thead>
                   <tbody>
                     {detail.lines.length === 0 ? (
                       <tr>
-                        <td colSpan={6}>Рядків ще немає.</td>
+                        <td colSpan={6}>{t("journals.linesEmpty")}</td>
                       </tr>
                     ) : (
                       detail.lines.map((line) => (
@@ -838,7 +874,9 @@ export function JournalsView({
                           <td className="cell-wrap">{accountLabel(line.financialAccountId)}</td>
                           <td>{formatMoney(line.debit, workspace.defaultCurrency)}</td>
                           <td>{formatMoney(line.credit, workspace.defaultCurrency)}</td>
-                          <td className="cell-wrap">{line.description ?? "—"}</td>
+                          <td className="cell-wrap">
+                            {line.description ?? t("emDash", { ns: "common" })}
+                          </td>
                           <td>
                             {detail.status === "Draft" ? (
                               <button
@@ -847,7 +885,7 @@ export function JournalsView({
                                 disabled={actionBusy}
                                 onClick={() => void handleRemoveLine(line.id)}
                               >
-                                Видалити
+                                {t("remove", { ns: "common" })}
                               </button>
                             ) : null}
                           </td>
@@ -869,12 +907,12 @@ export function JournalsView({
                     }
                     title={
                       detail.totalDebit !== detail.totalCredit
-                        ? "Проводка має балансувати (debit = credit)"
+                        ? t("journals.postUnbalancedTitle")
                         : undefined
                     }
                     onClick={() => void handlePostJournal()}
                   >
-                    Post journal entry
+                    {t("journals.postJournal")}
                   </button>
                 ) : null}
                 {detail.status === "Posted" && !ledger ? (
@@ -883,29 +921,29 @@ export function JournalsView({
                     disabled={actionBusy}
                     onClick={() => void handlePostToLedger()}
                   >
-                    Post to ledger
+                    {t("journals.postToLedger")}
                   </button>
                 ) : null}
               </div>
 
               {ledger ? (
                 <div className="queue-banner" role="status">
-                  <p className="queue-banner-title">Ledger posting</p>
+                  <p className="queue-banner-title">{t("journals.ledgerBannerTitle")}</p>
                   <dl className="facts">
                     <div>
-                      <dt>Ledger posting id</dt>
+                      <dt>{t("journals.field.ledgerPostingId")}</dt>
                       <dd className="mono">{ledger.id}</dd>
                     </div>
                     <div>
-                      <dt>Journal entry id</dt>
+                      <dt>{t("journals.field.journalEntryId")}</dt>
                       <dd className="mono">{ledger.journalEntryId}</dd>
                     </div>
                     <div>
-                      <dt>Posted at</dt>
+                      <dt>{t("journals.field.postedAt")}</dt>
                       <dd>{formatDate(ledger.postedAtUtc)}</dd>
                     </div>
                     <div>
-                      <dt>Totals</dt>
+                      <dt>{t("journals.field.totals")}</dt>
                       <dd>
                         {formatMoney(ledger.totalDebit, workspace.defaultCurrency)} /{" "}
                         {formatMoney(ledger.totalCredit, workspace.defaultCurrency)}
@@ -916,11 +954,11 @@ export function JournalsView({
                     <table>
                       <thead>
                         <tr>
-                          <th>#</th>
-                          <th>Account</th>
-                          <th>Debit</th>
-                          <th>Credit</th>
-                          <th>Description</th>
+                          <th>{t("journals.col.sequence")}</th>
+                          <th>{t("journals.col.account")}</th>
+                          <th>{t("journals.col.debit")}</th>
+                          <th>{t("journals.col.credit")}</th>
+                          <th>{t("journals.col.description")}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -932,7 +970,9 @@ export function JournalsView({
                             </td>
                             <td>{formatMoney(line.debit, workspace.defaultCurrency)}</td>
                             <td>{formatMoney(line.credit, workspace.defaultCurrency)}</td>
-                            <td className="cell-wrap">{line.description ?? "—"}</td>
+                            <td className="cell-wrap">
+                              {line.description ?? t("emDash", { ns: "common" })}
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -940,9 +980,7 @@ export function JournalsView({
                   </div>
                 </div>
               ) : detail.status === "Posted" ? (
-                <StatusMessage>
-                  Journal entry Posted. Ledger posting ще не створено — натисніть Post to ledger.
-                </StatusMessage>
+                <StatusMessage>{t("journals.ledgerPending")}</StatusMessage>
               ) : null}
               {ledgerError ? <StatusMessage tone="error">{ledgerError}</StatusMessage> : null}
             </>
