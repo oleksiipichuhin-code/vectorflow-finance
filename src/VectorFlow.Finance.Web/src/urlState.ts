@@ -3,6 +3,7 @@ import {
   parseAgingBucketParam,
   type AgingBucketFilter
 } from "./invoiceCollections.ts";
+import { parseQueueShowSettledParam } from "./collectionQueueSettlement.ts";
 import type {
   InvoiceListFilters,
   InvoiceQueueMode,
@@ -74,6 +75,11 @@ export type ListDiscovery = {
   /** Hide completed workbench cases (`wbHideCompleted=1`). */
   workbenchHideCompleted: boolean;
   /**
+   * Hide settled (paid/completed) invoices from the overdue queue table.
+   * Default true. When false, URL includes `queueShowSettled=1`.
+   */
+  queueHideSettled: boolean;
+  /**
    * Case history panel open (`caseHistory=1`). Meaningful with queue=overdue + invoiceId.
    */
   caseHistoryOpen: boolean;
@@ -126,6 +132,7 @@ export const EMPTY_DISCOVERY: ListDiscovery = {
   workbenchSection: "",
   workbenchSort: "priority",
   workbenchHideCompleted: false,
+  queueHideSettled: true,
   caseHistoryOpen: false,
   caseHistoryType: "",
   caseHistorySearch: "",
@@ -291,6 +298,7 @@ export function createEmptyDiscovery(): ListDiscovery {
     workbenchSection: "",
     workbenchSort: "priority",
     workbenchHideCompleted: false,
+    queueHideSettled: true,
     caseHistoryOpen: false,
     caseHistoryType: "",
     caseHistorySearch: "",
@@ -344,6 +352,10 @@ export function parseUrlSearch(search: string): AppUrlState {
   const workbenchHideCompleted = workbenchActive
     ? parseWorkbenchHideCompletedParam(params.get("wbHideCompleted"))
     : false;
+  const queueHideSettled =
+    view === "invoices" && invoiceQueue === "overdue"
+      ? !parseQueueShowSettledParam(params.get("queueShowSettled"))
+      : true;
   const historyContext =
     view === "invoices" && invoiceQueue === "overdue" && invoiceId != null;
   const caseHistoryOpen = historyContext
@@ -401,6 +413,7 @@ export function parseUrlSearch(search: string): AppUrlState {
       workbenchSection,
       workbenchSort,
       workbenchHideCompleted,
+      queueHideSettled,
       caseHistoryOpen,
       caseHistoryType,
       caseHistorySearch,
@@ -458,6 +471,9 @@ export function buildUrlSearch(state: AppUrlState): string {
       params.set("queue", "overdue");
       if (state.discovery.agingBucket) {
         params.set("aging", state.discovery.agingBucket);
+      }
+      if (state.discovery.queueHideSettled === false) {
+        params.set("queueShowSettled", "1");
       }
       if (state.discovery.collectionPanel === "followups") {
         params.set("panel", "followups");
@@ -549,6 +565,7 @@ export function draftInvoicesDiscovery(): ListDiscovery {
     workbenchSection: "",
     workbenchSort: "priority",
     workbenchHideCompleted: false,
+    queueHideSettled: true,
     caseHistoryOpen: false,
     caseHistoryType: "",
     caseHistorySearch: "",
@@ -576,6 +593,7 @@ export function issuedInvoicesDiscovery(): ListDiscovery {
     workbenchSection: "",
     workbenchSort: "priority",
     workbenchHideCompleted: false,
+    queueHideSettled: true,
     caseHistoryOpen: false,
     caseHistoryType: "",
     caseHistorySearch: "",
@@ -587,6 +605,7 @@ export function issuedInvoicesDiscovery(): ListDiscovery {
  * Payment collection workspace: status=Issued + queue=overdue.
  * Server dueToUtc is computed at query time as end of local today (overdue + due today).
  * Aging bucket defaults to all attention.
+ * Settled (paid/completed) cases are hidden from the overdue queue by default.
  */
 export function overdueIssuedInvoicesDiscovery(): ListDiscovery {
   return {
@@ -604,6 +623,7 @@ export function overdueIssuedInvoicesDiscovery(): ListDiscovery {
     workbenchSection: "",
     workbenchSort: "priority",
     workbenchHideCompleted: false,
+    queueHideSettled: true,
     caseHistoryOpen: false,
     caseHistoryType: "",
     caseHistorySearch: "",

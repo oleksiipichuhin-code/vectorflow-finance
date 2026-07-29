@@ -532,6 +532,41 @@ describe("urlState", () => {
     assert.equal(parsed.discovery.promiseGroup, "");
   });
 
+  it("hides settled overdue-queue invoices by default and round-trips show settled", () => {
+    const workspaceId = "11111111-1111-1111-1111-111111111111";
+    const hidden = parseUrlSearch(
+      "?view=invoices&status=Issued&queue=overdue"
+    );
+    assert.equal(hidden.discovery.queueHideSettled, true);
+    assert.equal(
+      buildUrlSearch({
+        view: "invoices",
+        workspaceId,
+        accrualId: null,
+        invoiceId: null,
+        discovery: overdueIssuedInvoicesDiscovery()
+      }).includes("queueShowSettled"),
+      false
+    );
+
+    const shown = parseUrlSearch(
+      "?view=invoices&status=Issued&queue=overdue&queueShowSettled=1"
+    );
+    assert.equal(shown.discovery.queueHideSettled, false);
+    const search = buildUrlSearch({
+      view: "invoices",
+      workspaceId,
+      accrualId: null,
+      invoiceId: null,
+      discovery: {
+        ...overdueIssuedInvoicesDiscovery(),
+        queueHideSettled: false
+      }
+    });
+    assert.match(search, /queueShowSettled=1/);
+    assert.equal(parseUrlSearch(search).discovery.queueHideSettled, false);
+  });
+
   it("serializes collection workbench panel, section, sort, search, and hide completed", () => {
     const workspaceId = "11111111-1111-1111-1111-111111111111";
     const search = buildUrlSearch({

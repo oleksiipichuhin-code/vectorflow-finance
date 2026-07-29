@@ -216,6 +216,10 @@ body {
   background: rgba(196, 149, 40, 0.1);
 }
 
+.row-attention--settled {
+  background: rgba(31, 107, 69, 0.08);
+}
+
 .collections-context-block {
   display: grid;
   gap: 0.45rem;
@@ -373,6 +377,18 @@ body {
   border-color: rgba(31, 107, 69, 0.4);
   background: rgba(31, 107, 69, 0.1);
   color: #1f6b45;
+}
+
+.aging-badge--settled {
+  border-color: rgba(31, 107, 69, 0.4);
+  background: rgba(31, 107, 69, 0.1);
+  color: #1f6b45;
+}
+
+.aging-badge--settlement-open {
+  border-color: rgba(84, 110, 122, 0.35);
+  background: rgba(84, 110, 122, 0.08);
+  color: #455a64;
 }
 
 .aging-badge--resolution-partially_paid,

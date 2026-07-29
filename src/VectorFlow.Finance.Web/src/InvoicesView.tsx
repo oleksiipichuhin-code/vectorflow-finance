@@ -47,11 +47,16 @@ import {
   agingBucketForInvoice,
   agingBucketLabel,
   buildCollectionsQueue,
-  buildCollectionsSummary,
   collectionsQueuePosition,
   overdueDaysForInvoice,
   type AgingBucketFilter
 } from "./invoiceCollections";
+import {
+  buildSettlementAwareCollectionsSummary,
+  filterCollectionsQueueBySettlement,
+  recordsByInvoiceId,
+  resolveCollectionQueueSettlement
+} from "./collectionQueueSettlement";
 import {
   PROMISE_GROUP_OPTIONS,
   applyCollectionResolution,
@@ -213,6 +218,7 @@ type InvoicesViewProps = {
   initialWorkbenchSection?: WorkbenchSectionFilter;
   initialWorkbenchSort?: WorkbenchSortMode;
   initialWorkbenchHideCompleted?: boolean;
+  initialQueueHideSettled?: boolean;
   initialCaseHistoryOpen?: boolean;
   initialCaseHistoryType?: CollectionActivityEventTypeFilter;
   initialCaseHistorySearch?: string;
@@ -232,7 +238,8 @@ type InvoicesViewProps = {
     caseHistoryOpen?: boolean,
     caseHistoryType?: CollectionActivityEventTypeFilter,
     caseHistorySearch?: string,
-    caseHistoryExpanded?: boolean
+    caseHistoryExpanded?: boolean,
+    queueHideSettled?: boolean
   ) => void;
   onSelectedInvoiceIdChange?: (
     invoiceId: string | null,
@@ -264,6 +271,7 @@ export function InvoicesView({
   initialWorkbenchSection = "",
   initialWorkbenchSort = "priority",
   initialWorkbenchHideCompleted = false,
+  initialQueueHideSettled = true,
   initialCaseHistoryOpen = false,
   initialCaseHistoryType = "",
   initialCaseHistorySearch = "",
@@ -324,6 +332,9 @@ export function InvoicesView({
     initialInvoiceQueue === "overdue" && initialCollectionPanel === "workbench"
       ? initialWorkbenchHideCompleted
       : false
+  );
+  const [queueHideSettled, setQueueHideSettled] = useState(() =>
+    initialInvoiceQueue === "overdue" ? initialQueueHideSettled : true
   );
   const [workbenchSelectedIds, setWorkbenchSelectedIds] = useState<string[]>([]);
   const [workbenchMassMessage, setWorkbenchMassMessage] = useState<string | null>(null);
@@ -778,7 +789,8 @@ export function InvoicesView({
       type?: CollectionActivityEventTypeFilter;
       search?: string;
       expanded?: boolean;
-    }
+    },
+    nextQueueHideSettled?: boolean
   ) {
     const panel: CollectionPanelMode =
       nextQueue === "overdue" && isPromisePanel(nextPanel) ? nextPanel : "";
@@ -787,6 +799,10 @@ export function InvoicesView({
     const historyType = historyOverride?.type ?? caseHistoryType;
     const historySearch = historyOverride?.search ?? caseHistorySearch;
     const historyExpanded = historyOverride?.expanded ?? caseHistoryExpanded;
+    const hideSettled =
+      nextQueue === "overdue"
+        ? (nextQueueHideSettled ?? queueHideSettled)
+        : true;
     onDiscoveryChange?.(
       nextPage,
       filters,
@@ -801,7 +817,8 @@ export function InvoicesView({
       historyOpen,
       historyOpen ? historyType : "",
       historyOpen ? historySearch : "",
-      historyOpen ? historyExpanded : false
+      historyOpen ? historyExpanded : false,
+      hideSettled
     );
   }
 
@@ -862,6 +879,7 @@ export function InvoicesView({
     setAgingBucket(nextAging);
     if (nextQueue !== "overdue") {
       clearPromisePanelState();
+      setQueueHideSettled(true);
     }
     publishDiscovery(
       1,
@@ -2341,18 +2359,30 @@ export function InvoicesView({
   const queueTableActive = overdueQueueActive && !promisePanelActive;
 
   const collectionsNow = new Date();
-  const collectionsQueue = overdueQueueActive
+  // promiseRevision forces re-read after localStorage mutations.
+  void promiseRevision;
+  const promiseRecords = listPromiseRecordsFromStorage();
+  const promiseRecordsById = recordsByInvoiceId(promiseRecords);
+  const collectionsQueueAll = overdueQueueActive
     ? buildCollectionsQueue(invoices, agingBucket, collectionsNow)
     : invoices;
+  const collectionsQueue = overdueQueueActive
+    ? filterCollectionsQueueBySettlement(collectionsQueueAll, promiseRecordsById, {
+        hideSettled: queueHideSettled
+      })
+    : collectionsQueueAll;
   const collectionsSummary = overdueQueueActive
-    ? buildCollectionsSummary(invoices, agingBucket, collectionsNow)
+    ? buildSettlementAwareCollectionsSummary(
+        invoices,
+        promiseRecordsById,
+        agingBucket,
+        collectionsNow,
+        { hideSettled: queueHideSettled }
+      )
     : null;
   const collectionsIds = collectionsQueue.map((invoice) => invoice.id);
   const collectionsPosition = collectionsQueuePosition(collectionsIds, detailTargetId);
 
-  // promiseRevision forces re-read after localStorage mutations.
-  void promiseRevision;
-  const promiseRecords = listPromiseRecordsFromStorage();
   const promiseFollowUpItems = followUpsPanelActive
     ? filterPromiseFollowUps(
         buildPromiseFollowUpItems(invoices, promiseRecords, collectionsNow),
@@ -2479,6 +2509,7 @@ export function InvoicesView({
     setAppliedFilters(discovery.invoiceFilters);
     setInvoiceQueue("overdue");
     setAgingBucket("");
+    setQueueHideSettled(true);
     clearPromisePanelState();
     setFilterValidationError(null);
     setPage(1);
@@ -2503,6 +2534,28 @@ export function InvoicesView({
       workbenchSort,
       workbenchHideCompleted,
       workbenchSection
+    );
+  }
+
+  function applyQueueHideSettled(nextHideSettled: boolean) {
+    if (!isOverdueInvoiceQueue(invoiceQueue) || collectionPanel !== "") {
+      return;
+    }
+
+    setQueueHideSettled(nextHideSettled);
+    publishDiscovery(
+      page,
+      appliedFilters,
+      "overdue",
+      agingBucket,
+      "",
+      "",
+      "",
+      "priority",
+      false,
+      "",
+      undefined,
+      nextHideSettled
     );
   }
 
@@ -3879,7 +3932,8 @@ export function InvoicesView({
                   Серверний фільтр: <span className="mono">status=Issued</span>, строк оплати по{" "}
                   <span className="mono">{effectiveDueToForSummary}</span> (включно: прострочені та
                   строк сьогодні). Сортування: прострочені спочатку → більше днів → більша сума.
-                  Це не статус оплати.
+                  Settled (Paid / Completed) cases are hidden from the open queue by default —
+                  collection attention, not ledger payment status.
                 </p>
                 <div
                   className="aging-bucket-row"
@@ -3927,41 +3981,100 @@ export function InvoicesView({
                   </button>
                 </div>
                 {queueTableActive && collectionsSummary ? (
-                  <dl className="collections-summary facts collections-kpi">
-                    <div>
-                      <dt>Total Overdue</dt>
-                      <dd>
-                        {collectionsSummary.overdueCount}
-                        <span className="collections-kpi-amount">
-                          {formatTotals(collectionsSummary.overdueTotalsByCurrency)}
-                        </span>
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>Total Due Today</dt>
-                      <dd>
-                        {collectionsSummary.dueTodayCount}
-                        <span className="collections-kpi-amount">
-                          {formatTotals(collectionsSummary.dueTodayTotalsByCurrency)}
-                        </span>
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>Total Outstanding Amount</dt>
-                      <dd>
-                        {formatTotals(collectionsSummary.outstandingTotalsByCurrency)}
-                        {agingBucket ? (
+                  <>
+                    <dl className="collections-summary facts collections-kpi">
+                      <div>
+                        <dt>Open Attention</dt>
+                        <dd>
+                          {collectionsSummary.openCount}
                           <span className="collections-kpi-amount">
-                            {collectionsSummary.bucketLabel} · {collectionsSummary.bucketCount}
+                            {formatTotals(collectionsSummary.openTotalsByCurrency)}
                           </span>
-                        ) : (
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Settled In Queue</dt>
+                        <dd>
+                          {collectionsSummary.settledCount}
                           <span className="collections-kpi-amount">
-                            {collectionsSummary.attentionCount} рах.
+                            {formatTotals(collectionsSummary.settledTotalsByCurrency)}
                           </span>
-                        )}
-                      </dd>
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Total Overdue</dt>
+                        <dd>
+                          {collectionsSummary.overdueCount}
+                          <span className="collections-kpi-amount">
+                            {formatTotals(collectionsSummary.overdueTotalsByCurrency)}
+                          </span>
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Total Due Today</dt>
+                        <dd>
+                          {collectionsSummary.dueTodayCount}
+                          <span className="collections-kpi-amount">
+                            {formatTotals(collectionsSummary.dueTodayTotalsByCurrency)}
+                          </span>
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Open Outstanding</dt>
+                        <dd>
+                          {formatTotals(collectionsSummary.outstandingTotalsByCurrency)}
+                          {agingBucket ? (
+                            <span className="collections-kpi-amount">
+                              {collectionsSummary.bucketLabel} · {collectionsSummary.bucketCount}
+                            </span>
+                          ) : (
+                            <span className="collections-kpi-amount">
+                              {queueHideSettled
+                                ? `${collectionsSummary.openCount} open`
+                                : `${collectionsSummary.attentionCount} calendar`}
+                            </span>
+                          )}
+                        </dd>
+                      </div>
+                    </dl>
+                    <div
+                      className="aging-bucket-row"
+                      role="group"
+                      aria-label="Settlement visibility"
+                    >
+                      <button
+                        type="button"
+                        className={
+                          queueHideSettled
+                            ? "list-shortcut list-shortcut--active"
+                            : "list-shortcut"
+                        }
+                        aria-pressed={queueHideSettled}
+                        disabled={loading}
+                        onClick={() => applyQueueHideSettled(true)}
+                      >
+                        Hide settled
+                      </button>
+                      <button
+                        type="button"
+                        className={
+                          !queueHideSettled
+                            ? "list-shortcut list-shortcut--active"
+                            : "list-shortcut"
+                        }
+                        aria-pressed={!queueHideSettled}
+                        disabled={loading}
+                        onClick={() => applyQueueHideSettled(false)}
+                      >
+                        Show settled
+                      </button>
+                      <span className="meta">
+                        {queueHideSettled
+                          ? `Showing open attention (${collectionsSummary.openCount})`
+                          : `Showing open + settled (${collectionsSummary.bucketCount})`}
+                      </span>
                     </div>
-                  </dl>
+                  </>
                 ) : null}
                 {workbenchPanelActive && workbenchKpi ? (
                   <dl className="collections-summary facts collections-kpi">
@@ -5134,8 +5247,14 @@ export function InvoicesView({
                     : "Немає збережених promise-to-pay follow-ups для завантажених рахунків."
                   : overdueQueueActive
                     ? agingBucket
-                      ? `У bucket «${agingBucketLabel(agingBucket)}» немає прострочених рахунків у завантаженому наборі.`
-                      : "Немає рахунків до збору оплат (прострочені або строк сьогодні)."
+                      ? `У bucket «${agingBucketLabel(agingBucket)}» немає ${
+                          queueHideSettled ? "відкритих " : ""
+                        }прострочених рахунків у завантаженому наборі.`
+                      : queueHideSettled &&
+                          collectionsSummary &&
+                          collectionsSummary.settledCount > 0
+                        ? `Немає відкритих рахунків до збору (${collectionsSummary.settledCount} settled hidden). Увімкніть Show settled, щоб переглянути.`
+                        : "Немає рахунків до збору оплат (прострочені або строк сьогодні)."
                     : filtersActive
                       ? "За поточними фільтрами рахунків немає."
                       : "Рахунків ще немає. Створіть чернетку через форму вище."
@@ -5517,7 +5636,11 @@ export function InvoicesView({
           <>
             <p className="meta">
               {overdueQueueActive
-                ? `Payment collection · показано ${displayInvoices.length} · у запиті ${totalCount}`
+                ? `Payment collection · показано ${displayInvoices.length}${
+                    queueHideSettled && collectionsSummary
+                      ? ` open · ${collectionsSummary.settledCount} settled hidden`
+                      : ""
+                  } · у запиті ${totalCount}`
                 : `Сторінка ${page} · показано ${displayInvoices.length} · усього ${totalCount}`}
             </p>
             <div className="table-wrap">
@@ -5533,6 +5656,7 @@ export function InvoicesView({
                         <th>Due Date</th>
                         <th>Days Overdue</th>
                         <th>Status</th>
+                        <th>Settlement</th>
                         <th>Дія</th>
                       </>
                     ) : (
@@ -5558,12 +5682,24 @@ export function InvoicesView({
                     const daysOverdue = overdueDaysForInvoice(invoice);
                     const selected =
                       invoice.id === detailTargetId || invoice.id === highlightedId;
+                    const settlement = overdueQueueActive
+                      ? resolveCollectionQueueSettlement(
+                          invoice,
+                          promiseRecordsById.get(invoice.id)
+                        )
+                      : null;
+                    const displayAmount =
+                      overdueQueueActive && settlement && settlement.state === "open"
+                        ? settlement.openAmount
+                        : invoice.totalAmount;
                     const attentionClass = overdueQueueActive
-                      ? aging.kind === "overdue"
-                        ? "row-attention row-attention--overdue"
-                        : aging.kind === "due_today"
-                          ? "row-attention row-attention--due-today"
-                          : ""
+                      ? settlement?.state === "settled"
+                        ? "row-attention row-attention--settled"
+                        : aging.kind === "overdue"
+                          ? "row-attention row-attention--overdue"
+                          : aging.kind === "due_today"
+                            ? "row-attention row-attention--due-today"
+                            : ""
                       : "";
                     const rowClass = [attentionClass, selected ? "row-highlight row-selected" : ""]
                       .filter(Boolean)
@@ -5578,7 +5714,7 @@ export function InvoicesView({
                         <>
                           <td className="cell-wrap">{invoice.documentNumber}</td>
                           <td className="cell-wrap">{invoice.counterpartyReference}</td>
-                          <td>{formatMoney(invoice.totalAmount, invoice.currency)}</td>
+                          <td>{formatMoney(displayAmount, invoice.currency)}</td>
                           <td>{invoice.currency}</td>
                           <td>{formatDate(invoice.dueDateUtc)}</td>
                           <td>
@@ -5598,6 +5734,25 @@ export function InvoicesView({
                             <span className={`aging-badge aging-badge--${aging.kind}`}>
                               {invoice.status}
                             </span>
+                          </td>
+                          <td>
+                            {settlement?.label ? (
+                              <span
+                                className={`aging-badge ${
+                                  settlement.state === "settled"
+                                    ? "aging-badge--settled"
+                                    : settlement.isPartial
+                                      ? "aging-badge--resolution-partially_paid"
+                                      : "aging-badge--settlement-open"
+                                }`}
+                              >
+                                {settlement.label}
+                              </span>
+                            ) : (
+                              <span className="aging-badge aging-badge--settlement-open">
+                                Open
+                              </span>
+                            )}
                           </td>
                         </>
                       ) : (

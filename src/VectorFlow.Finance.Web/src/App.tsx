@@ -234,7 +234,8 @@ export default function App() {
       caseHistoryOpen: boolean = false,
       caseHistoryType: CollectionActivityEventTypeFilter = "",
       caseHistorySearch: string = "",
-      caseHistoryExpanded: boolean = false
+      caseHistoryExpanded: boolean = false,
+      queueHideSettled: boolean = true
     ) => {
       const overdue = invoiceQueue === "overdue";
       const panel: CollectionPanelMode =
@@ -251,6 +252,7 @@ export default function App() {
         workbenchSection: panel === "workbench" ? workbenchSection : "",
         workbenchSort: panel === "workbench" ? workbenchSort : "priority",
         workbenchHideCompleted: panel === "workbench" ? workbenchHideCompleted : false,
+        queueHideSettled: overdue ? queueHideSettled : true,
         caseHistoryOpen: overdue ? caseHistoryOpen : false,
         caseHistoryType: overdue && caseHistoryOpen ? caseHistoryType : "",
         caseHistorySearch: overdue && caseHistoryOpen ? caseHistorySearch.trim() : "",
@@ -493,6 +495,7 @@ export default function App() {
           initialWorkbenchSection={discovery.workbenchSection}
           initialWorkbenchSort={discovery.workbenchSort}
           initialWorkbenchHideCompleted={discovery.workbenchHideCompleted}
+          initialQueueHideSettled={discovery.queueHideSettled}
           initialCaseHistoryOpen={discovery.caseHistoryOpen}
           initialCaseHistoryType={discovery.caseHistoryType}
           initialCaseHistorySearch={discovery.caseHistorySearch}

@@ -78,6 +78,7 @@ Shell state is shareable via the browser URL and **Скопіювати поси
 | `workspaceId` | active finance workspace GUID |
 | `page` | list page (omitted when `1`) |
 | `documentNumber`, `status`, `createdFrom`, `createdTo` | invoice list filters when `view=invoices` (`status`: `Draft` \| `Issued`; `created*` are `YYYY-MM-DD` date inputs) |
+| `queue`, `aging`, `panel`, `queueShowSettled` | payment collection workspace when `view=invoices` (`queue=overdue`; optional aging bucket; `panel=followups\|workbench`; `queueShowSettled=1` includes locally settled Paid/Completed cases in the overdue queue table — hidden by default) |
 | `descriptionPrefix`, `status`, `recognitionFrom`, `recognitionTo` | accrual list filters when `view=accruals` (`status`: `Draft` \| `Recognized` \| `Reversed`; recognition dates are `YYYY-MM-DD`) |
 
 **Чернетки** / **Чернетки рахунків** opens Invoices with `status=Draft`, page 1, and other invoice filters cleared. Refresh and shared links restore the same URL state.
