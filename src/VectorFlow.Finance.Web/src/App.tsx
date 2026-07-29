@@ -11,6 +11,7 @@ import {
 import { DashboardView } from "./DashboardView";
 import {
   buildUrlSearch,
+  collectionsForCounterpartyDiscovery,
   createEmptyDiscovery,
   draftInvoicesDiscovery,
   issuedInvoicesDiscovery,
@@ -32,9 +33,11 @@ import { JournalsView } from "./JournalsView";
 import { LedgerView } from "./LedgerView";
 import { TrialBalanceView } from "./TrialBalanceView";
 import { AccountStatementView } from "./AccountStatementView";
+import { CustomerLedgerView } from "./CustomerLedgerView";
 import { APP_VIEWS, type AppView } from "./navigation";
 import { WorkspaceContextBar } from "./WorkspaceContextBar";
 import { WorkspaceView } from "./WorkspaceView";
+import { normalizeCounterpartyReference } from "./customerLedger";
 
 const WORKSPACE_STORAGE_KEY = "vectorflow.finance.demo.workspaceId";
 
@@ -172,7 +175,7 @@ export default function App() {
       view,
       workspaceId: workspace?.id ?? null,
       accrualId: view === "accruals" ? accrualId : null,
-      invoiceId: view === "invoices" ? invoiceId : null,
+      invoiceId: view === "invoices" || view === "customer-ledger" ? invoiceId : null,
       journalEntryId: view === "journals" ? journalEntryId : null,
       accountId: view === "account-statement" ? accountId : null,
       ledgerPostingId: view === "ledger" ? ledgerPostingId : null,
@@ -198,7 +201,11 @@ export default function App() {
       setView(parsed.view);
       setDiscovery(parsed.discovery);
       setAccrualId(parsed.view === "accruals" ? parsed.accrualId : null);
-      setInvoiceId(parsed.view === "invoices" ? parsed.invoiceId : null);
+      setInvoiceId(
+        parsed.view === "invoices" || parsed.view === "customer-ledger"
+          ? parsed.invoiceId
+          : null
+      );
       setJournalEntryId(parsed.view === "journals" ? parsed.journalEntryId : null);
       setAccountId(parsed.view === "account-statement" ? parsed.accountId : null);
       setLedgerPostingId(parsed.view === "ledger" ? parsed.ledgerPostingId : null);
@@ -223,7 +230,8 @@ export default function App() {
         next === "journals" ||
         next === "ledger" ||
         next === "trial-balance" ||
-        next === "account-statement") &&
+        next === "account-statement" ||
+        next === "customer-ledger") &&
       !workspace
     ) {
       setView("workspace");
@@ -261,6 +269,14 @@ export default function App() {
         ledgerPostedFrom: "",
         ledgerPostedTo: "",
         ledgerSourceJournalEntryId: ""
+      }));
+    }
+    if (next !== "customer-ledger") {
+      setDiscovery((current) => ({
+        ...current,
+        customerLedgerQuery: "",
+        customerLedgerAging: "",
+        customerLedgerCounterparty: ""
       }));
     }
     if (
@@ -413,6 +429,31 @@ export default function App() {
     []
   );
 
+  const handleCustomerLedgerFilterChange = useCallback(
+    (query: string, agingBucket: AgingBucketFilter) => {
+      setDiscovery((current) => ({
+        ...current,
+        customerLedgerQuery: query.trim(),
+        customerLedgerAging: agingBucket
+      }));
+    },
+    []
+  );
+
+  const handleCustomerLedgerCounterpartyChange = useCallback(
+    (counterpartyReference: string | null, options?: DetailIdChangeOptions) => {
+      if (options?.replace) {
+        urlWriteModeRef.current = "replace";
+      }
+      const next = normalizeCounterpartyReference(counterpartyReference);
+      setDiscovery((current) => ({
+        ...current,
+        customerLedgerCounterparty: next
+      }));
+    },
+    []
+  );
+
   const showDraftInvoices = useCallback(() => {
     if (!workspace) {
       setView("workspace");
@@ -536,12 +577,32 @@ export default function App() {
     [workspace]
   );
 
+  const openCollectionsForCounterparty = useCallback(
+    (counterpartyReference: string) => {
+      if (!workspace) {
+        setView("workspace");
+        return;
+      }
+
+      const key = normalizeCounterpartyReference(counterpartyReference);
+      setDiscovery(collectionsForCounterpartyDiscovery(key));
+      setAccrualId(null);
+      setJournalEntryId(null);
+      setAccountId(null);
+      setLedgerPostingId(null);
+      setInvoiceId(null);
+      setListEpoch((value) => value + 1);
+      setView("invoices");
+    },
+    [workspace]
+  );
+
   const handleCopyLink = useCallback(async () => {
     const search = buildUrlSearch({
       view,
       workspaceId: workspace?.id ?? null,
       accrualId: view === "accruals" ? accrualId : null,
-      invoiceId: view === "invoices" ? invoiceId : null,
+      invoiceId: view === "invoices" || view === "customer-ledger" ? invoiceId : null,
       journalEntryId: view === "journals" ? journalEntryId : null,
       accountId: view === "account-statement" ? accountId : null,
       ledgerPostingId: view === "ledger" ? ledgerPostingId : null,
@@ -746,6 +807,23 @@ export default function App() {
           onSelectedAccountIdChange={handleAccountIdChange}
           onPeriodChange={handleStatementPeriodChange}
           onOpenJournal={openJournalDetail}
+        />
+      ) : null}
+
+      {view === "customer-ledger" ? (
+        <CustomerLedgerView
+          key={`customer-ledger-${listEpoch}`}
+          workspace={workspace}
+          selectedCounterpartyReference={discovery.customerLedgerCounterparty}
+          selectedInvoiceId={invoiceId}
+          initialQuery={discovery.customerLedgerQuery}
+          initialAgingBucket={discovery.customerLedgerAging}
+          onFilterChange={handleCustomerLedgerFilterChange}
+          onSelectedCounterpartyChange={handleCustomerLedgerCounterpartyChange}
+          onSelectedInvoiceIdChange={handleInvoiceIdChange}
+          onOpenInvoice={openInvoiceDetail}
+          onOpenAccrual={openAccrualDetail}
+          onOpenCollections={openCollectionsForCounterparty}
         />
       ) : null}
     </main>

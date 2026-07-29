@@ -38,7 +38,8 @@ const VIEW_IDS: ReadonlySet<string> = new Set([
   "journals",
   "ledger",
   "trial-balance",
-  "account-statement"
+  "account-statement",
+  "customer-ledger"
 ]);
 
 export type JournalStatusFilter = "" | "Draft" | "Posted";
@@ -117,6 +118,18 @@ export type ListDiscovery = {
    * Ledger source journal filter (`sourceJournalEntryId=`) when `view=ledger`.
    */
   ledgerSourceJournalEntryId: string;
+  /**
+   * Customer ledger search (`customerQ=`) when `view=customer-ledger`.
+   */
+  customerLedgerQuery: string;
+  /**
+   * Customer ledger overdue aging bucket (`aging=`) when `view=customer-ledger`.
+   */
+  customerLedgerAging: AgingBucketFilter;
+  /**
+   * Selected customer ledger counterparty (`counterpartyReference=`) when `view=customer-ledger`.
+   */
+  customerLedgerCounterparty: string;
 };
 
 export type AppUrlState = {
@@ -124,7 +137,7 @@ export type AppUrlState = {
   workspaceId: string | null;
   /** Accruals detail deep-link; omitted outside accruals view. */
   accrualId: string | null;
-  /** Invoices detail deep-link; omitted outside invoices view. */
+  /** Invoices / customer-ledger detail deep-link; omitted outside those views. */
   invoiceId: string | null;
   /** Journal entry detail deep-link; omitted outside journals view. */
   journalEntryId: string | null;
@@ -176,7 +189,10 @@ export const EMPTY_DISCOVERY: ListDiscovery = {
   statementPeriodTo: "",
   ledgerPostedFrom: "",
   ledgerPostedTo: "",
-  ledgerSourceJournalEntryId: ""
+  ledgerSourceJournalEntryId: "",
+  customerLedgerQuery: "",
+  customerLedgerAging: "",
+  customerLedgerCounterparty: ""
 };
 
 export function parseCollectionPanelParam(
@@ -482,7 +498,10 @@ export function createEmptyDiscovery(): ListDiscovery {
     statementPeriodTo: "",
     ledgerPostedFrom: "",
     ledgerPostedTo: "",
-    ledgerSourceJournalEntryId: ""
+    ledgerSourceJournalEntryId: "",
+    customerLedgerQuery: "",
+    customerLedgerAging: "",
+    customerLedgerCounterparty: ""
   };
 }
 
@@ -595,11 +614,20 @@ export function parseUrlSearch(search: string): AppUrlState {
       ? parseJournalEntryIdParam(params.get("sourceJournalEntryId")) ?? ""
       : "";
 
+  const customerLedgerQuery =
+    view === "customer-ledger" ? (params.get("customerQ")?.trim() ?? "") : "";
+  const customerLedgerAging =
+    view === "customer-ledger" ? parseAgingBucketParam(params.get("aging")) : "";
+  const customerLedgerCounterparty =
+    view === "customer-ledger"
+      ? (params.get("counterpartyReference")?.trim() ?? "")
+      : "";
+
   return {
     view,
     workspaceId,
     accrualId: view === "accruals" ? accrualId : null,
-    invoiceId: view === "invoices" ? invoiceId : null,
+    invoiceId: view === "invoices" || view === "customer-ledger" ? invoiceId : null,
     journalEntryId: view === "journals" ? journalEntryId : null,
     accountId: view === "account-statement" ? accountId : null,
     ledgerPostingId: view === "ledger" ? ledgerPostingId : null,
@@ -625,7 +653,10 @@ export function parseUrlSearch(search: string): AppUrlState {
       statementPeriodTo,
       ledgerPostedFrom,
       ledgerPostedTo,
-      ledgerSourceJournalEntryId
+      ledgerSourceJournalEntryId,
+      customerLedgerQuery,
+      customerLedgerAging,
+      customerLedgerCounterparty
     }
   };
 }
@@ -784,6 +815,21 @@ export function buildUrlSearch(state: AppUrlState): string {
     }
   }
 
+  if (state.view === "customer-ledger") {
+    setIfPresent(params, "customerQ", state.discovery.customerLedgerQuery);
+    if (state.discovery.customerLedgerAging) {
+      params.set("aging", state.discovery.customerLedgerAging);
+    }
+    setIfPresent(
+      params,
+      "counterpartyReference",
+      state.discovery.customerLedgerCounterparty
+    );
+    if (state.invoiceId && isInvoiceId(state.invoiceId)) {
+      params.set("invoiceId", state.invoiceId);
+    }
+  }
+
   const query = params.toString();
   return query ? `?${query}` : "";
 }
@@ -819,7 +865,10 @@ export function draftInvoicesDiscovery(): ListDiscovery {
     statementPeriodTo: "",
     ledgerPostedFrom: "",
     ledgerPostedTo: "",
-    ledgerSourceJournalEntryId: ""
+    ledgerSourceJournalEntryId: "",
+    customerLedgerQuery: "",
+    customerLedgerAging: "",
+    customerLedgerCounterparty: ""
   };
 }
 
@@ -853,7 +902,10 @@ export function issuedInvoicesDiscovery(): ListDiscovery {
     statementPeriodTo: "",
     ledgerPostedFrom: "",
     ledgerPostedTo: "",
-    ledgerSourceJournalEntryId: ""
+    ledgerSourceJournalEntryId: "",
+    customerLedgerQuery: "",
+    customerLedgerAging: "",
+    customerLedgerCounterparty: ""
   };
 }
 
@@ -889,6 +941,26 @@ export function overdueIssuedInvoicesDiscovery(): ListDiscovery {
     statementPeriodTo: "",
     ledgerPostedFrom: "",
     ledgerPostedTo: "",
-    ledgerSourceJournalEntryId: ""
+    ledgerSourceJournalEntryId: "",
+    customerLedgerQuery: "",
+    customerLedgerAging: "",
+    customerLedgerCounterparty: ""
+  };
+}
+
+/**
+ * Payment collections focused on one counterparty (exact reference).
+ */
+export function collectionsForCounterpartyDiscovery(
+  counterpartyReference: string
+): ListDiscovery {
+  const trimmed = counterpartyReference.trim();
+  return {
+    ...overdueIssuedInvoicesDiscovery(),
+    invoiceFilters: {
+      ...EMPTY_INVOICE_FILTERS,
+      status: "Issued",
+      counterpartyReference: trimmed
+    }
   };
 }

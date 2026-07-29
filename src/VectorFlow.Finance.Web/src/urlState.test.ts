@@ -1253,3 +1253,70 @@ describe("ledger URL policy", () => {
     assert.equal(parsed.discovery.ledgerPostedFrom, "2026-07-15");
   });
 });
+
+describe("urlState customer-ledger", () => {
+  const workspaceId = "11111111-1111-1111-1111-111111111111";
+  const invoiceId = "a1111111-1111-1111-1111-111111111111";
+
+  it("round-trips customer-ledger view with filters, counterparty, and invoiceId", () => {
+    const search = buildUrlSearch({
+      view: "customer-ledger",
+      workspaceId,
+      accrualId: null,
+      invoiceId,
+      journalEntryId: null,
+      accountId: null,
+      ledgerPostingId: null,
+      discovery: {
+        ...EMPTY_DISCOVERY,
+        customerLedgerQuery: "acme",
+        customerLedgerAging: "8-30",
+        customerLedgerCounterparty: "ACME"
+      }
+    });
+
+    assert.equal(
+      search,
+      `?view=customer-ledger&workspaceId=${workspaceId}&customerQ=acme&aging=8-30&counterpartyReference=ACME&invoiceId=${invoiceId}`
+    );
+
+    const parsed = parseUrlSearch(search);
+    assert.equal(parsed.view, "customer-ledger");
+    assert.equal(parsed.workspaceId, workspaceId);
+    assert.equal(parsed.invoiceId, invoiceId);
+    assert.equal(parsed.discovery.customerLedgerQuery, "acme");
+    assert.equal(parsed.discovery.customerLedgerAging, "8-30");
+    assert.equal(parsed.discovery.customerLedgerCounterparty, "ACME");
+  });
+
+  it("ignores customer-ledger params outside customer-ledger view", () => {
+    const search = buildUrlSearch({
+      view: "dashboard",
+      workspaceId,
+      accrualId: null,
+      invoiceId,
+      journalEntryId: null,
+      accountId: null,
+      ledgerPostingId: null,
+      discovery: {
+        ...EMPTY_DISCOVERY,
+        customerLedgerQuery: "acme",
+        customerLedgerAging: "1-7",
+        customerLedgerCounterparty: "ACME"
+      }
+    });
+    assert.equal(search.includes("customerQ"), false);
+    assert.equal(search.includes("counterpartyReference"), false);
+    assert.equal(search.includes("invoiceId"), false);
+  });
+
+  it("strips invalid aging and invoiceId on customer-ledger", () => {
+    const parsed = parseUrlSearch(
+      `?view=customer-ledger&workspaceId=${workspaceId}&aging=nope&invoiceId=not-a-guid&customerQ=beta&counterpartyReference=BETA`
+    );
+    assert.equal(parsed.invoiceId, null);
+    assert.equal(parsed.discovery.customerLedgerAging, "");
+    assert.equal(parsed.discovery.customerLedgerQuery, "beta");
+    assert.equal(parsed.discovery.customerLedgerCounterparty, "BETA");
+  });
+});

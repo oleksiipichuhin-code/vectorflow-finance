@@ -251,6 +251,19 @@ export function DashboardView({
                 : "Потрібен finance workspace"}
             </span>
           </button>
+          <button
+            type="button"
+            className="nav-card"
+            onClick={() => onNavigate("customer-ledger")}
+            disabled={!workspace}
+          >
+            <span className="nav-card-title">Customer ledger</span>
+            <span className="nav-card-copy">
+              {workspace
+                ? "Відкриті Issued рахунки за контрагентом"
+                : "Потрібен finance workspace"}
+            </span>
+          </button>
         </div>
         {workspace ? (
           <div className="list-shortcuts dashboard-list-shortcuts">
