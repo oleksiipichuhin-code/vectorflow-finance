@@ -1,0 +1,20 @@
+{
+  "save": "Save",
+  "cancel": "Cancel",
+  "close": "Close",
+  "back": "Back",
+  "loading": "Loading…",
+  "saving": "Saving…",
+  "retry": "Try again",
+  "refresh": "Refresh",
+  "search": "Search",
+  "applyFilter": "Apply filter",
+  "clearFilter": "Clear",
+  "open": "Open",
+  "all": "All",
+  "languageSwitcher": "Language switcher",
+  "language.uk": "Ukrainian",
+  "language.en": "English",
+  "emDash": "—",
+  "nav.accounts": "Accounts"
+}

@@ -1,4 +1,5 @@
 import { useCallback, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { ListLoadState } from "./components/ListLoadState";
 import { Panel, StatusMessage } from "./components/Panel";
 import type { FinanceWorkspace, HealthStatus } from "./api";
@@ -72,6 +73,7 @@ export function DashboardView({
   onShowIssuedInvoices,
   onShowOverdueIssuedInvoices
 }: DashboardViewProps) {
+  const { t } = useTranslation(["common", "finance"]);
   const [totals, setTotals] = useState<WorkspaceTotals | null>(null);
   const handleTotalsChange = useCallback((next: WorkspaceTotals | null) => {
     setTotals(next);
@@ -218,11 +220,11 @@ export function DashboardView({
             onClick={() => onNavigate("accounts")}
             disabled={!workspace}
           >
-            <span className="nav-card-title">Accounts</span>
+            <span className="nav-card-title">{t("nav.accounts", { ns: "common" })}</span>
             <span className="nav-card-copy">
               {workspace
-                ? "План рахунків: list, create, archive"
-                : "Потрібен finance workspace"}
+                ? t("dashboard.accountsCopy", { ns: "finance" })
+                : t("dashboard.needWorkspace", { ns: "finance" })}
             </span>
           </button>
           <button

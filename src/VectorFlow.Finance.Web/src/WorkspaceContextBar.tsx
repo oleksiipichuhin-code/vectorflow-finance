@@ -1,4 +1,5 @@
 import type { FinanceWorkspace } from "./api";
+import { LanguageSwitcher } from "./i18n/LanguageSwitcher.tsx";
 
 type WorkspaceContextBarProps = {
   workspace: FinanceWorkspace | null;
@@ -33,6 +34,7 @@ export function WorkspaceContextBar({
             </span>
           </div>
           <div className="workspace-context-actions">
+            <LanguageSwitcher />
             <button type="button" className="button-secondary" onClick={onShowDraftInvoices}>
               Чернетки
             </button>
@@ -56,13 +58,19 @@ export function WorkspaceContextBar({
           {copyFeedback ? <p className="workspace-context-feedback">{copyFeedback}</p> : null}
         </>
       ) : workspaceBusy ? (
-        <p className="workspace-context-pending">Завантаження workspace…</p>
+        <>
+          <p className="workspace-context-pending">Завантаження workspace…</p>
+          <LanguageSwitcher />
+        </>
       ) : (
         <>
           <p className="workspace-context-pending">Workspace не обрано</p>
-          <button type="button" onClick={onOpenWorkspace}>
-            Відкрити
-          </button>
+          <div className="workspace-context-actions">
+            <LanguageSwitcher />
+            <button type="button" onClick={onOpenWorkspace}>
+              Відкрити
+            </button>
+          </div>
         </>
       )}
     </div>

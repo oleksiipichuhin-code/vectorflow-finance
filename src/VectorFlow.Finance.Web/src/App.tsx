@@ -1,4 +1,5 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { AccrualsView } from "./AccrualsView";
 import {
   createFinanceWorkspace,
@@ -57,6 +58,7 @@ export type DetailIdChangeOptions = {
 };
 
 export default function App() {
+  const { t } = useTranslation("common");
   const initialUrl = useRef(readInitialUrlState()).current;
 
   const [view, setView] = useState<AppView>(initialUrl.view);
@@ -725,7 +727,7 @@ export default function App() {
             className={view === item.id ? "app-nav-item is-active" : "app-nav-item"}
             onClick={() => navigate(item.id)}
           >
-            {item.label}
+            {item.id === "accounts" ? t("nav.accounts") : item.label}
           </button>
         ))}
       </nav>

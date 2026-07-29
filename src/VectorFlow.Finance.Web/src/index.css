@@ -102,6 +102,34 @@ body {
   font-size: 0.9rem;
 }
 
+.language-switcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.15rem;
+  border: 1px solid rgba(27, 36, 48, 0.16);
+  border-radius: 0.55rem;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.language-switcher__button {
+  min-width: 2.4rem;
+  padding: 0.35rem 0.55rem;
+  border: 0;
+  border-radius: 0.4rem;
+  background: transparent;
+  color: #1b2430;
+  font-size: 0.8rem;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+
+.language-switcher__button--active {
+  background: #1b2430;
+  color: #f4f7fb;
+}
+
 .list-shortcuts {
   display: grid;
   gap: 0.45rem;

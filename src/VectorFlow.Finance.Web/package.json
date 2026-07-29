@@ -6,17 +6,20 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "test": "node --experimental-strip-types --test src/urlState.test.ts src/invoiceIssue.test.ts src/invoiceDetail.test.ts src/invoiceDueDateAging.test.ts src/invoiceCollections.test.ts src/collectionQueueSettlement.test.ts src/promiseToPay.test.ts src/paymentPlan.test.ts src/collectionNotes.test.ts src/collectionReminders.test.ts src/collectionAttachments.test.ts src/collectionWorkbench.test.ts src/collectionCaseHistory.test.ts src/draftInvoiceDueDateEditor.test.ts src/draftInvoiceLineAddEditor.test.ts src/draftInvoiceLineUpdateEditor.test.ts src/draftInvoiceLineRemoveEditor.test.ts src/draftInvoiceHeaderEditor.test.ts src/changeInvoiceHeader.test.ts src/invoiceAccrualBridge.test.ts src/listAccrualsByInvoice.test.ts src/accrualRecognize.test.ts src/accrualReverse.test.ts src/accrualListQuery.test.ts src/accrualEditAmount.test.ts src/changeAccrualAmount.test.ts src/accrualSourceInvoice.test.ts src/changeAccrualSourceInvoice.test.ts src/draftAccrualEditor.test.ts src/changeAccrualDraftDetails.test.ts src/accrualCreate.test.ts src/createAccrual.test.ts src/invoiceListQuery.test.ts src/buildInvoicePagedSearchParams.test.ts src/accrualDetail.test.ts src/getAccrual.test.ts src/journalAccounts.test.ts src/trialBalance.test.ts src/accountStatement.test.ts src/ledgerPostings.test.ts src/listLedgerPostings.test.ts src/customerLedger.test.ts src/chartOfAccounts.test.ts",
+    "test": "node --experimental-strip-types --test src/urlState.test.ts src/invoiceIssue.test.ts src/invoiceDetail.test.ts src/invoiceDueDateAging.test.ts src/invoiceCollections.test.ts src/collectionQueueSettlement.test.ts src/promiseToPay.test.ts src/paymentPlan.test.ts src/collectionNotes.test.ts src/collectionReminders.test.ts src/collectionAttachments.test.ts src/collectionWorkbench.test.ts src/collectionCaseHistory.test.ts src/draftInvoiceDueDateEditor.test.ts src/draftInvoiceLineAddEditor.test.ts src/draftInvoiceLineUpdateEditor.test.ts src/draftInvoiceLineRemoveEditor.test.ts src/draftInvoiceHeaderEditor.test.ts src/changeInvoiceHeader.test.ts src/invoiceAccrualBridge.test.ts src/listAccrualsByInvoice.test.ts src/accrualRecognize.test.ts src/accrualReverse.test.ts src/accrualListQuery.test.ts src/accrualEditAmount.test.ts src/changeAccrualAmount.test.ts src/accrualSourceInvoice.test.ts src/changeAccrualSourceInvoice.test.ts src/draftAccrualEditor.test.ts src/changeAccrualDraftDetails.test.ts src/accrualCreate.test.ts src/createAccrual.test.ts src/invoiceListQuery.test.ts src/buildInvoicePagedSearchParams.test.ts src/accrualDetail.test.ts src/getAccrual.test.ts src/journalAccounts.test.ts src/trialBalance.test.ts src/accountStatement.test.ts src/ledgerPostings.test.ts src/listLedgerPostings.test.ts src/customerLedger.test.ts src/chartOfAccounts.test.ts src/i18n/i18n.test.ts",
     "preview": "vite preview"
   },
   "dependencies": {
+    "i18next": "^26.3.6",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "react-i18next": "^17.0.11"
   },
   "devDependencies": {
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",
+    "playwright": "^1.62.0",
     "typescript": "~5.8.3",
     "vite": "^7.0.4"
   }

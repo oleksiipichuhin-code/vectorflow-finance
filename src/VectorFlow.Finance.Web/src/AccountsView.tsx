@@ -1,4 +1,5 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   FinanceApiRequestError,
   archiveAccount,
@@ -23,7 +24,7 @@ import {
   type AccountTypeFilter,
   type ChartOfAccountsFilters
 } from "./chartOfAccounts";
-import { formatDate } from "./format";
+import { formatDate } from "./i18n/format.ts";
 import { ListLoadState } from "./components/ListLoadState";
 import { Panel, StatusMessage } from "./components/Panel";
 
@@ -50,6 +51,10 @@ type AccountsViewProps = {
   onOpenJournals?: () => void;
 };
 
+function isAccountType(value: string): value is AccountType {
+  return ACCOUNT_TYPE_OPTIONS.some((option) => option.id === value);
+}
+
 export function AccountsView({
   workspace,
   selectedAccountId = null,
@@ -61,6 +66,7 @@ export function AccountsView({
   onOpenAccountStatement,
   onOpenJournals
 }: AccountsViewProps) {
+  const { t } = useTranslation(["finance", "common"]);
   const [accounts, setAccounts] = useState<FinancialAccount[]>([]);
   const [listLoading, setListLoading] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
@@ -94,36 +100,55 @@ export function AccountsView({
   const listSeq = useRef(0);
   const detailSeq = useRef(0);
 
-  const loadAccounts = useCallback(async (workspaceId: string) => {
-    const seq = ++listSeq.current;
-    setListLoading(true);
-    setListError(null);
-    try {
-      const next = await listAccounts(workspaceId);
-      if (seq !== listSeq.current) {
-        return;
+  const typeLabel = useCallback(
+    (accountType: string) =>
+      isAccountType(accountType) ? t(`type.${accountType}`) : accountType,
+    [t]
+  );
+
+  const statusLabel = useCallback(
+    (accountStatus: string) => {
+      if (accountStatus === "Active" || accountStatus === "Archived") {
+        return t(`status.${accountStatus}`);
       }
-      setAccounts(next);
-    } catch (error) {
-      if (seq !== listSeq.current) {
-        return;
+      return accountStatus;
+    },
+    [t]
+  );
+
+  const loadAccounts = useCallback(
+    async (workspaceId: string) => {
+      const seq = ++listSeq.current;
+      setListLoading(true);
+      setListError(null);
+      try {
+        const next = await listAccounts(workspaceId);
+        if (seq !== listSeq.current) {
+          return;
+        }
+        setAccounts(next);
+      } catch (error) {
+        if (seq !== listSeq.current) {
+          return;
+        }
+        setAccounts([]);
+        setListError(
+          error instanceof Error ? error.message : t("listLoadFailed")
+        );
+      } finally {
+        if (seq === listSeq.current) {
+          setListLoading(false);
+        }
       }
-      setAccounts([]);
-      setListError(
-        error instanceof Error ? error.message : "Не вдалося завантажити план рахунків."
-      );
-    } finally {
-      if (seq === listSeq.current) {
-        setListLoading(false);
-      }
-    }
-  }, []);
+    },
+    [t]
+  );
 
   const loadDetail = useCallback(
     async (workspaceId: string, accountId: string) => {
       if (!isAccountId(accountId)) {
         setDetail(null);
-        setDetailError("Некоректний ідентифікатор рахунку.");
+        setDetailError(t("detailInvalidId"));
         setDetailSuccess(null);
         return;
       }
@@ -140,23 +165,19 @@ export function AccountsView({
         setDetail(next);
         setEditName(next.name);
         setEditCode(next.code);
-        setEditType(
-          ACCOUNT_TYPE_OPTIONS.some((option) => option.id === next.type)
-            ? (next.type as AccountType)
-            : "Asset"
-        );
-        setDetailSuccess("Рахунок завантажено з API.");
+        setEditType(isAccountType(next.type) ? next.type : "Asset");
+        setDetailSuccess(t("detailLoaded"));
       } catch (error) {
         if (seq !== detailSeq.current) {
           return;
         }
         setDetail(null);
         if (error instanceof FinanceApiRequestError && error.status === 404) {
-          setDetailError("Рахунок не знайдено у цьому workspace.");
+          setDetailError(t("detailNotFound"));
           onSelectedAccountIdChange?.(null, { replace: true });
         } else {
           setDetailError(
-            error instanceof Error ? error.message : "Не вдалося завантажити рахунок."
+            error instanceof Error ? error.message : t("detailLoadFailed")
           );
         }
       } finally {
@@ -165,7 +186,7 @@ export function AccountsView({
         }
       }
     },
-    [onSelectedAccountIdChange]
+    [onSelectedAccountIdChange, t]
   );
 
   useEffect(() => {
@@ -242,12 +263,14 @@ export function AccountsView({
       setCreateCode("");
       setCreateName("");
       setCreateType("Asset");
-      setCreateSuccess(`Рахунок ${formatAccountLabel(created)} створено.`);
+      setCreateSuccess(
+        t("createSuccess", { label: formatAccountLabel(created) })
+      );
       await loadAccounts(workspace.id);
       onSelectedAccountIdChange?.(created.id);
     } catch (error) {
       setCreateError(
-        error instanceof Error ? error.message : "Не вдалося створити рахунок."
+        error instanceof Error ? error.message : t("createFailed")
       );
     } finally {
       setCreateBusy(false);
@@ -270,16 +293,12 @@ export function AccountsView({
       setDetail(next);
       setEditName(next.name);
       setEditCode(next.code);
-      setEditType(
-        ACCOUNT_TYPE_OPTIONS.some((option) => option.id === next.type)
-          ? (next.type as AccountType)
-          : "Asset"
-      );
+      setEditType(isAccountType(next.type) ? next.type : "Asset");
       setDetailSuccess(successMessage);
       await loadAccounts(workspace.id);
     } catch (error) {
       setDetailError(
-        error instanceof Error ? error.message : "Не вдалося змінити рахунок."
+        error instanceof Error ? error.message : t("detailMutateFailed")
       );
     } finally {
       setActionBusy(false);
@@ -299,8 +318,8 @@ export function AccountsView({
 
   if (!workspace) {
     return (
-      <Panel title="Accounts" headingId="accounts-heading">
-        <StatusMessage>Спочатку відкрийте finance workspace.</StatusMessage>
+      <Panel title={t("title")} headingId="accounts-heading">
+        <StatusMessage>{t("needWorkspace")}</StatusMessage>
       </Panel>
     );
   }
@@ -311,18 +330,15 @@ export function AccountsView({
   return (
     <>
       <header className="hero">
-        <p className="eyebrow">Chart of accounts</p>
-        <h1>Accounts</h1>
-        <p className="lede">
-          План рахунків workspace → пошук / тип / статус → деталі → rename / code / type /
-          archive. Стан у shareable URL.
-        </p>
+        <p className="eyebrow">{t("eyebrow")}</p>
+        <h1>{t("title")}</h1>
+        <p className="lede">{t("lede")}</p>
       </header>
 
-      <Panel title="Створити рахунок" headingId="accounts-create-heading">
+      <Panel title={t("createTitle")} headingId="accounts-create-heading">
         <form className="filter-form" onSubmit={(event) => void handleCreate(event)}>
           <label>
-            Code
+            {t("field.code")}
             <input
               value={createCode}
               onChange={(event) => setCreateCode(event.target.value)}
@@ -332,7 +348,7 @@ export function AccountsView({
             />
           </label>
           <label>
-            Name
+            {t("field.name")}
             <input
               value={createName}
               onChange={(event) => setCreateName(event.target.value)}
@@ -342,7 +358,7 @@ export function AccountsView({
             />
           </label>
           <label>
-            Type
+            {t("field.type")}
             <select
               value={createType}
               onChange={(event) => setCreateType(event.target.value as AccountType)}
@@ -350,14 +366,14 @@ export function AccountsView({
             >
               {ACCOUNT_TYPE_OPTIONS.map((option) => (
                 <option key={option.id} value={option.id}>
-                  {option.label}
+                  {typeLabel(option.id)}
                 </option>
               ))}
             </select>
           </label>
           <div className="filter-actions">
             <button type="submit" disabled={createBusy}>
-              {createBusy ? "Збереження…" : "Створити рахунок"}
+              {createBusy ? t("saving", { ns: "common" }) : t("createAction")}
             </button>
           </div>
         </form>
@@ -366,7 +382,7 @@ export function AccountsView({
       </Panel>
 
       <Panel
-        title="План рахунків"
+        title={t("listTitle")}
         headingId="accounts-list-heading"
         actions={
           <button
@@ -375,52 +391,52 @@ export function AccountsView({
             disabled={listLoading}
             onClick={() => void loadAccounts(workspace.id)}
           >
-            {listLoading ? "Завантаження…" : "Оновити"}
+            {listLoading ? t("loading", { ns: "common" }) : t("refresh", { ns: "common" })}
           </button>
         }
       >
         <form className="filter-form" onSubmit={applyFilters}>
           <label>
-            Пошук
+            {t("search", { ns: "common" })}
             <input
               type="search"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Код або назва"
+              placeholder={t("searchPlaceholder")}
               disabled={listLoading}
               autoComplete="off"
             />
           </label>
           <label>
-            Status
+            {t("field.status")}
             <select
               value={status}
               onChange={(event) => setStatus(event.target.value as AccountStatusFilter)}
               disabled={listLoading}
             >
-              <option value="">Усі</option>
-              <option value="Active">Active</option>
-              <option value="Archived">Archived</option>
+              <option value="">{t("all", { ns: "common" })}</option>
+              <option value="Active">{statusLabel("Active")}</option>
+              <option value="Archived">{statusLabel("Archived")}</option>
             </select>
           </label>
           <label>
-            Type
+            {t("field.type")}
             <select
               value={type}
               onChange={(event) => setType(event.target.value as AccountTypeFilter)}
               disabled={listLoading}
             >
-              <option value="">Усі</option>
+              <option value="">{t("all", { ns: "common" })}</option>
               {ACCOUNT_TYPE_OPTIONS.map((option) => (
                 <option key={option.id} value={option.id}>
-                  {option.label}
+                  {typeLabel(option.id)}
                 </option>
               ))}
             </select>
           </label>
           <div className="filter-actions">
             <button type="submit" disabled={listLoading}>
-              Застосувати фільтр
+              {t("applyFilter", { ns: "common" })}
             </button>
             <button
               type="button"
@@ -428,23 +444,23 @@ export function AccountsView({
               disabled={listLoading || !filtersActive}
               onClick={clearFilters}
             >
-              Скинути
+              {t("clearFilter", { ns: "common" })}
             </button>
           </div>
         </form>
 
         <ListLoadState
           loading={listLoading && accounts.length === 0}
-          loadingMessage="Завантаження плану рахунків…"
+          loadingMessage={t("listLoading")}
           error={listError}
           onRetry={() => void loadAccounts(workspace.id)}
           retryDisabled={listLoading}
           empty={!listLoading && !listError && accounts.length === 0}
-          emptyMessage="Немає рахунків у цьому workspace. Створіть перший рахунок вище."
+          emptyMessage={t("listEmpty")}
         />
 
         {!listError && accounts.length > 0 && filtered.length === 0 ? (
-          <StatusMessage>Немає рахунків за обраним фільтром.</StatusMessage>
+          <StatusMessage>{t("listFilteredEmpty")}</StatusMessage>
         ) : null}
 
         {!listError && filtered.length > 0 ? (
@@ -453,10 +469,10 @@ export function AccountsView({
               <table>
                 <thead>
                   <tr>
-                    <th>Code</th>
-                    <th>Name</th>
-                    <th>Type</th>
-                    <th>Status</th>
+                    <th>{t("field.code")}</th>
+                    <th>{t("field.name")}</th>
+                    <th>{t("field.type")}</th>
+                    <th>{t("field.status")}</th>
                     <th />
                   </tr>
                 </thead>
@@ -465,15 +481,15 @@ export function AccountsView({
                     <tr key={account.id} data-row-id={account.id}>
                       <td className="mono">{account.code}</td>
                       <td>{account.name}</td>
-                      <td>{account.type}</td>
-                      <td>{account.status}</td>
+                      <td>{typeLabel(account.type)}</td>
+                      <td>{statusLabel(account.status)}</td>
                       <td>
                         <button
                           type="button"
                           className="button-secondary"
                           onClick={() => openAccount(account.id)}
                         >
-                          Відкрити
+                          {t("open", { ns: "common" })}
                         </button>
                       </td>
                     </tr>
@@ -482,9 +498,7 @@ export function AccountsView({
               </table>
             </div>
             <p className="meta">
-              Показано {filtered.length} з {accounts.length}. Фільтри в URL:{" "}
-              <span className="mono">accountQ</span>, <span className="mono">status</span>,{" "}
-              <span className="mono">type</span>.
+              {t("listMeta", { shown: filtered.length, total: accounts.length })}
             </p>
           </>
         ) : null}
@@ -492,17 +506,17 @@ export function AccountsView({
 
       {selectedAccountId ? (
         <Panel
-          title="Деталі рахунку"
+          title={t("detailTitle")}
           headingId="accounts-detail-heading"
           actions={
             <button type="button" className="button-secondary" onClick={closeDetail}>
-              Закрити
+              {t("close", { ns: "common" })}
             </button>
           }
         >
           <ListLoadState
             loading={detailLoading && !detail}
-            loadingMessage="Завантаження деталей…"
+            loadingMessage={t("detailLoading")}
             error={detailError}
             onRetry={() => void loadDetail(workspace.id, selectedAccountId)}
             retryDisabled={detailLoading}
@@ -516,36 +530,36 @@ export function AccountsView({
             <>
               <dl className="facts">
                 <div>
-                  <dt>Id</dt>
+                  <dt>{t("field.id")}</dt>
                   <dd className="mono">{detail.id}</dd>
                 </div>
                 <div>
-                  <dt>Code</dt>
+                  <dt>{t("field.code")}</dt>
                   <dd className="mono">{detail.code}</dd>
                 </div>
                 <div>
-                  <dt>Name</dt>
+                  <dt>{t("field.name")}</dt>
                   <dd>{detail.name}</dd>
                 </div>
                 <div>
-                  <dt>Type</dt>
-                  <dd>{detail.type}</dd>
+                  <dt>{t("field.type")}</dt>
+                  <dd>{typeLabel(detail.type)}</dd>
                 </div>
                 <div>
-                  <dt>Status</dt>
-                  <dd>{detail.status}</dd>
+                  <dt>{t("field.status")}</dt>
+                  <dd>{statusLabel(detail.status)}</dd>
                 </div>
                 <div>
-                  <dt>Created</dt>
+                  <dt>{t("field.created")}</dt>
                   <dd>{formatDate(detail.createdAt)}</dd>
                 </div>
                 <div>
-                  <dt>Updated</dt>
+                  <dt>{t("field.updated")}</dt>
                   <dd>{formatDate(detail.updatedAt)}</dd>
                 </div>
                 {detail.archivedAt ? (
                   <div>
-                    <dt>Archived</dt>
+                    <dt>{t("field.archived")}</dt>
                     <dd>{formatDate(detail.archivedAt)}</dd>
                   </div>
                 ) : null}
@@ -559,12 +573,12 @@ export function AccountsView({
                       event.preventDefault();
                       void applyMutation(
                         () => renameAccount(workspace.id, detail.id, editName.trim()),
-                        "Назву рахунку оновлено."
+                        t("renameSuccess")
                       );
                     }}
                   >
                     <label>
-                      Rename
+                      {t("field.rename")}
                       <input
                         value={editName}
                         onChange={(event) => setEditName(event.target.value)}
@@ -574,7 +588,7 @@ export function AccountsView({
                     </label>
                     <div className="filter-actions">
                       <button type="submit" disabled={actionBusy}>
-                        Зберегти назву
+                        {t("saveName")}
                       </button>
                     </div>
                   </form>
@@ -585,12 +599,12 @@ export function AccountsView({
                       event.preventDefault();
                       void applyMutation(
                         () => changeAccountCode(workspace.id, detail.id, editCode.trim()),
-                        "Код рахунку оновлено."
+                        t("codeSuccess")
                       );
                     }}
                   >
                     <label>
-                      Change code
+                      {t("field.changeCode")}
                       <input
                         className="mono"
                         value={editCode}
@@ -601,7 +615,7 @@ export function AccountsView({
                     </label>
                     <div className="filter-actions">
                       <button type="submit" disabled={actionBusy}>
-                        Зберегти код
+                        {t("saveCode")}
                       </button>
                     </div>
                   </form>
@@ -612,12 +626,12 @@ export function AccountsView({
                       event.preventDefault();
                       void applyMutation(
                         () => changeAccountType(workspace.id, detail.id, editType),
-                        "Тип рахунку оновлено."
+                        t("typeSuccess")
                       );
                     }}
                   >
                     <label>
-                      Change type
+                      {t("field.changeType")}
                       <select
                         value={editType}
                         onChange={(event) => setEditType(event.target.value as AccountType)}
@@ -625,14 +639,14 @@ export function AccountsView({
                       >
                         {ACCOUNT_TYPE_OPTIONS.map((option) => (
                           <option key={option.id} value={option.id}>
-                            {option.label}
+                            {typeLabel(option.id)}
                           </option>
                         ))}
                       </select>
                     </label>
                     <div className="filter-actions">
                       <button type="submit" disabled={actionBusy}>
-                        Зберегти тип
+                        {t("saveType")}
                       </button>
                     </div>
                   </form>
@@ -644,18 +658,16 @@ export function AccountsView({
                       onClick={() =>
                         void applyMutation(
                           () => archiveAccount(workspace.id, detail.id),
-                          "Рахунок заархівовано."
+                          t("archiveSuccess")
                         )
                       }
                     >
-                      Archive account
+                      {t("archiveAction")}
                     </button>
                   </div>
                 </div>
               ) : (
-                <StatusMessage>
-                  Archived рахунок лише для аудиту — зміни API відхиляє.
-                </StatusMessage>
+                <StatusMessage>{t("archivedReadOnly")}</StatusMessage>
               )}
 
               <div className="filter-actions">
@@ -665,7 +677,7 @@ export function AccountsView({
                   disabled={detailLoading || actionBusy}
                   onClick={() => void loadDetail(workspace.id, detail.id)}
                 >
-                  Оновити з API
+                  {t("refreshFromApi")}
                 </button>
                 {onOpenAccountStatement ? (
                   <button
@@ -673,7 +685,7 @@ export function AccountsView({
                     className="button-secondary"
                     onClick={() => onOpenAccountStatement(detail.id)}
                   >
-                    Account statement
+                    {t("openAccountStatement")}
                   </button>
                 ) : null}
                 {onOpenJournals ? (
@@ -682,7 +694,7 @@ export function AccountsView({
                     className="button-secondary"
                     onClick={() => onOpenJournals()}
                   >
-                    Journals
+                    {t("openJournals")}
                   </button>
                 ) : null}
               </div>

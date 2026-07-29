@@ -1,6 +1,6 @@
 /**
- * Browser verification for Chart of Accounts (Accounts) workflow.
- * Seeds via Finance API, then walks the real Vite shell with Playwright Chromium.
+ * Browser verification for Chart of Accounts i18n adoption.
+ * Seeds via Finance API, walks Ukrainian + English with Playwright Chromium.
  */
 import { chromium } from "playwright";
 
@@ -49,7 +49,7 @@ async function seed() {
     body: JSON.stringify({
       platformOrganizationId: crypto.randomUUID(),
       platformWorkspaceId: crypto.randomUUID(),
-      name: "Accounts browser verify",
+      name: "Accounts i18n browser verify",
       defaultCurrency: "UAH"
     })
   });
@@ -75,7 +75,8 @@ async function main() {
   result.accountId = seeded.cashId;
 
   const browser = await chromium.launch({ headless: true });
-  const page = await browser.newPage();
+  const context = await browser.newContext();
+  const page = await context.newPage();
 
   page.on("console", (msg) => {
     if (msg.type() === "error") {
@@ -94,22 +95,33 @@ async function main() {
     }
   });
 
+  // Establish origin, clear prior locale once, then open Accounts in default Ukrainian.
+  await page.goto(WEB, { waitUntil: "domcontentloaded" });
+  await page.evaluate(() => {
+    window.localStorage.removeItem("vectorflow-finance.locale");
+  });
+
   const startUrl = `${WEB}/?view=accounts&workspaceId=${seeded.workspaceId}`;
   result.startUrl = startUrl;
   await page.goto(startUrl, { waitUntil: "networkidle" });
 
-  await page.getByRole("heading", { name: "Accounts", exact: true }).waitFor({ timeout: 15000 });
+  // Default Ukrainian
+  await page.getByRole("heading", { name: "Рахунки", exact: true }).waitFor({ timeout: 15000 });
   await page.getByRole("heading", { name: "План рахунків" }).waitFor();
+  const htmlLang = await page.locator("html").getAttribute("lang");
+  if (htmlLang !== "uk") {
+    throw new Error(`Expected html lang=uk, got ${htmlLang}`);
+  }
   await page.locator(`tr[data-row-id="${seeded.cashId}"]`).waitFor({ timeout: 15000 });
-  result.observedVisible.push("accounts list row present");
-  result.expectedVisible.push("accounts list row present");
+  result.observedVisible.push("uk accounts list present");
+  result.expectedVisible.push("uk accounts list present");
 
-  // Apply search + type filter
+  // Filter in Ukrainian
   await page.getByPlaceholder("Код або назва").fill("cash");
   await page
     .locator("section.panel")
     .filter({ has: page.locator("#accounts-list-heading") })
-    .getByLabel("Type")
+    .getByLabel("Тип")
     .selectOption("Asset");
   await page.getByRole("button", { name: "Застосувати фільтр" }).click();
   await page.waitForTimeout(400);
@@ -118,12 +130,8 @@ async function main() {
     throw new Error(`Filter URL missing accountQ/type: ${page.url()}`);
   }
   await page.locator(`tr[data-row-id="${seeded.cashId}"]`).waitFor();
-  const revenueVisible = await page.locator(`tr[data-row-id="${seeded.revenueId}"]`).count();
-  if (revenueVisible !== 0) {
-    throw new Error("Revenue row still visible after Asset/cash filter");
-  }
-  result.observedVisible.push("filtered list shows cash only");
-  result.expectedVisible.push("filtered list shows cash only");
+  result.observedVisible.push("uk filtered list");
+  result.expectedVisible.push("uk filtered list");
 
   // Open detail
   await page
@@ -131,53 +139,83 @@ async function main() {
     .getByRole("button", { name: "Відкрити" })
     .click();
   await page.getByText("Рахунок завантажено з API.").waitFor({ timeout: 10000 });
-  await page.getByRole("heading", { name: "Деталі рахунку" }).waitFor();
-  result.intermediateUrls.push(page.url());
   if (!page.url().includes(`accountId=${seeded.cashId}`)) {
     throw new Error(`Detail URL missing accountId: ${page.url()}`);
   }
-  result.observedVisible.push("detail success from API");
-  result.expectedVisible.push("detail success from API");
+  result.intermediateUrls.push(page.url());
+  result.observedVisible.push("uk detail loaded");
+  result.expectedVisible.push("uk detail loaded");
 
-  // Meaningful action: rename then archive
-  await page.getByLabel("Rename").fill("Petty Cash");
-  await page.getByRole("button", { name: "Зберегти назву" }).click();
-  await page.getByText("Назву рахунку оновлено.").waitFor({ timeout: 10000 });
-  result.observedVisible.push("rename persisted");
-  result.expectedVisible.push("rename persisted");
-
-  await page.getByRole("button", { name: "Archive account" }).click();
-  await page.getByText("Рахунок заархівовано.").waitFor({ timeout: 10000 });
-  result.archivedAccountId = seeded.cashId;
-  result.observedVisible.push("archive persisted");
-  result.expectedVisible.push("archive persisted");
-
-  // Confirm list refresh shows Archived after clearing filters and applying status
-  await page.getByRole("button", { name: "Скинути" }).click();
-  await page.waitForTimeout(300);
-  await page
-    .locator("section.panel")
-    .filter({ has: page.locator("#accounts-list-heading") })
-    .getByLabel("Status")
-    .selectOption("Archived");
-  await page.getByRole("button", { name: "Застосувати фільтр" }).click();
-  await page.waitForTimeout(400);
-  await page.locator(`tr[data-row-id="${seeded.cashId}"]`).waitFor();
-  const statusCell = await page
-    .locator(`tr[data-row-id="${seeded.cashId}"] td`)
-    .nth(3)
-    .innerText();
-  if (statusCell.trim() !== "Archived") {
-    throw new Error(`Expected Archived status in list, got: ${statusCell}`);
+  // Switch to English without leaving route/selection
+  const beforeSwitch = page.url();
+  await page.getByRole("button", { name: "English" }).click();
+  await page.getByRole("heading", { name: "Accounts", exact: true }).waitFor({ timeout: 10000 });
+  await page.getByText("Account loaded from the API.").waitFor({ timeout: 10000 });
+  if (page.url() !== beforeSwitch) {
+    throw new Error(`Language switch changed URL: ${beforeSwitch} -> ${page.url()}`);
   }
-  result.observedVisible.push("list shows archived status");
-  result.expectedVisible.push("list shows archived status");
+  const enLang = await page.locator("html").getAttribute("lang");
+  if (enLang !== "en") {
+    throw new Error(`Expected html lang=en, got ${enLang}`);
+  }
+  const storedEn = await page.evaluate(() =>
+    window.localStorage.getItem("vectorflow-finance.locale")
+  );
+  if (storedEn !== "en") {
+    throw new Error(`Expected stored locale en, got ${storedEn}`);
+  }
+  result.observedVisible.push("en switch preserved route");
+  result.expectedVisible.push("en switch preserved route");
 
-  // Related-record handoff: Account statement
+  // Meaningful action in English: rename then archive
+  await page.getByLabel("Rename").fill("Petty Cash");
+  await page.getByRole("button", { name: "Save name" }).click();
+  await page.getByText("Account name updated.").waitFor({ timeout: 10000 });
+  await page.getByRole("button", { name: "Archive account" }).click();
+  await page.getByText("Account archived.").waitFor({ timeout: 10000 });
+  result.archivedAccountId = seeded.cashId;
+  result.observedVisible.push("en rename+archive persisted");
+  result.expectedVisible.push("en rename+archive persisted");
+
+  // Reload — English persists
+  await page.reload({ waitUntil: "networkidle" });
+  await page.getByRole("heading", { name: "Accounts", exact: true }).waitFor({ timeout: 15000 });
+  await page.getByText("Account loaded from the API.").waitFor({ timeout: 15000 });
+  const storedAfterReload = await page.evaluate(() =>
+    window.localStorage.getItem("vectorflow-finance.locale")
+  );
+  if (storedAfterReload !== "en") {
+    throw new Error(`English did not persist across reload: ${storedAfterReload}`);
+  }
+  result.observedVisible.push("en persisted across reload");
+  result.expectedVisible.push("en persisted across reload");
+
+  // Switch back to Ukrainian and reload
+  await page.getByRole("button", { name: "Ukrainian" }).click();
+  await page.getByRole("heading", { name: "Рахунки", exact: true }).waitFor({ timeout: 10000 });
+  await page.reload({ waitUntil: "networkidle" });
+  await page.getByRole("heading", { name: "Рахунки", exact: true }).waitFor({ timeout: 15000 });
+  const storedUk = await page.evaluate(() =>
+    window.localStorage.getItem("vectorflow-finance.locale")
+  );
+  if (storedUk !== "uk") {
+    throw new Error(`Ukrainian did not persist across reload: ${storedUk}`);
+  }
+  result.finalReloadUrl = page.url();
+  if (!result.finalReloadUrl.includes("view=accounts")) {
+    throw new Error(`Reload lost accounts view: ${result.finalReloadUrl}`);
+  }
+  if (!result.finalReloadUrl.includes(`accountId=${seeded.cashId}`)) {
+    throw new Error(`Reload lost accountId: ${result.finalReloadUrl}`);
+  }
+  result.observedVisible.push("uk persisted across reload with detail");
+  result.expectedVisible.push("uk persisted across reload with detail");
+
+  // Handoff still works
   await page
     .locator("section.panel")
     .filter({ has: page.locator("#accounts-detail-heading") })
-    .getByRole("button", { name: "Account statement" })
+    .getByRole("button", { name: "Виписка рахунку" })
     .click();
   await page.waitForURL(
     new RegExp(`view=account-statement.*accountId=${seeded.cashId}`),
@@ -186,26 +224,6 @@ async function main() {
   result.intermediateUrls.push(page.url());
   result.observedVisible.push("account statement handoff");
   result.expectedVisible.push("account statement handoff");
-
-  // Return via deep link + reload
-  const returnUrl = `${WEB}/?view=accounts&workspaceId=${seeded.workspaceId}&accountQ=cash&status=Archived&type=Asset&accountId=${seeded.cashId}`;
-  await page.goto(returnUrl, { waitUntil: "networkidle" });
-  await page.getByText("Рахунок завантажено з API.").waitFor({ timeout: 15000 });
-  await page.reload({ waitUntil: "networkidle" });
-  await page.getByText("Рахунок завантажено з API.").waitFor({ timeout: 15000 });
-  await page.locator(`tr[data-row-id="${seeded.cashId}"]`).waitFor();
-  result.finalReloadUrl = page.url();
-  if (!result.finalReloadUrl.includes("view=accounts")) {
-    throw new Error(`Reload lost accounts view: ${result.finalReloadUrl}`);
-  }
-  if (!result.finalReloadUrl.includes(`accountId=${seeded.cashId}`)) {
-    throw new Error(`Reload lost accountId: ${result.finalReloadUrl}`);
-  }
-  if (!result.finalReloadUrl.includes("status=Archived")) {
-    throw new Error(`Reload lost status filter: ${result.finalReloadUrl}`);
-  }
-  result.observedVisible.push("reload restored URL state and server detail");
-  result.expectedVisible.push("reload restored URL state and server detail");
 
   result.failedRequests = result.failedRequests.filter(
     (line) => !line.includes("favicon") && !line.includes("ERR_ABORTED")

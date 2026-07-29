@@ -1,0 +1,20 @@
+{
+  "save": "Зберегти",
+  "cancel": "Скасувати",
+  "close": "Закрити",
+  "back": "Назад",
+  "loading": "Завантаження…",
+  "saving": "Збереження…",
+  "retry": "Спробувати знову",
+  "refresh": "Оновити",
+  "search": "Пошук",
+  "applyFilter": "Застосувати фільтр",
+  "clearFilter": "Скинути",
+  "open": "Відкрити",
+  "all": "Усі",
+  "languageSwitcher": "Перемикач мови",
+  "language.uk": "Українська",
+  "language.en": "English",
+  "emDash": "—",
+  "nav.accounts": "Рахунки"
+}

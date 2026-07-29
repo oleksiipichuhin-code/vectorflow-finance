@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { StatusMessage } from "./Panel";
 
 type ListLoadStateProps = {
@@ -19,6 +20,8 @@ export function ListLoadState({
   empty,
   emptyMessage
 }: ListLoadStateProps) {
+  const { t } = useTranslation("common");
+
   if (loading) {
     return <StatusMessage>{loadingMessage}</StatusMessage>;
   }
@@ -28,7 +31,7 @@ export function ListLoadState({
       <div className="state-actions" role="alert">
         <StatusMessage tone="error">{error}</StatusMessage>
         <button type="button" onClick={onRetry} disabled={retryDisabled}>
-          Спробувати знову
+          {t("retry")}
         </button>
       </div>
     );
