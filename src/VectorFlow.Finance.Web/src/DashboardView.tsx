@@ -199,6 +199,32 @@ export function DashboardView({
             ) : null}
             <span className="nav-card-copy">{accrualCardCopy(workspace, workspace ? totals : null)}</span>
           </button>
+          <button
+            type="button"
+            className="nav-card"
+            onClick={() => onNavigate("journals")}
+            disabled={!workspace}
+          >
+            <span className="nav-card-title">Journals</span>
+            <span className="nav-card-copy">
+              {workspace
+                ? "Journal entries та post to ledger"
+                : "Потрібен finance workspace"}
+            </span>
+          </button>
+          <button
+            type="button"
+            className="nav-card"
+            onClick={() => onNavigate("trial-balance")}
+            disabled={!workspace}
+          >
+            <span className="nav-card-title">Trial balance</span>
+            <span className="nav-card-copy">
+              {workspace
+                ? "Оборотно-сальдова відомість за ledger postings"
+                : "Потрібен finance workspace"}
+            </span>
+          </button>
         </div>
         {workspace ? (
           <div className="list-shortcuts dashboard-list-shortcuts">

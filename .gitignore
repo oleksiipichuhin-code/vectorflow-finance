@@ -1,6 +1,7 @@
 ## .NET
 bin/
 obj/
+.nuget-packages/
 [Bb]uild/
 [Ll]og/
 [Ll]ogs/

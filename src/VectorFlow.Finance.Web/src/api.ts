@@ -820,3 +820,30 @@ export function getLedgerPostingByJournalEntry(
     `/api/finance-workspaces/${workspaceId}/ledger/by-journal/${journalEntryId}`
   );
 }
+
+export type TrialBalanceSide = "Debit" | "Credit" | "Zero";
+
+export type TrialBalanceLine = {
+  accountId: string;
+  accountCode: string;
+  accountName: string;
+  debitTotal: number;
+  creditTotal: number;
+  balance: number;
+  balanceSide: string;
+};
+
+export type TrialBalance = {
+  financeWorkspaceId: string;
+  generatedAtUtc: string;
+  totalDebit: number;
+  totalCredit: number;
+  isBalanced: boolean;
+  lines: TrialBalanceLine[];
+};
+
+export function getTrialBalance(workspaceId: string): Promise<TrialBalance> {
+  return requestJson<TrialBalance>(
+    `/api/finance-workspaces/${workspaceId}/trial-balance`
+  );
+}

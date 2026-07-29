@@ -29,6 +29,7 @@ import type { CollectionPanelMode } from "./urlState";
 import { isPromisePanel } from "./urlState";
 import { InvoicesView } from "./InvoicesView";
 import { JournalsView } from "./JournalsView";
+import { TrialBalanceView } from "./TrialBalanceView";
 import { APP_VIEWS, type AppView } from "./navigation";
 import { WorkspaceContextBar } from "./WorkspaceContextBar";
 import { WorkspaceView } from "./WorkspaceView";
@@ -204,7 +205,13 @@ export default function App() {
   }, [loadWorkspace, workspace?.id]);
 
   function navigate(next: AppView) {
-    if ((next === "invoices" || next === "accruals" || next === "journals") && !workspace) {
+    if (
+      (next === "invoices" ||
+        next === "accruals" ||
+        next === "journals" ||
+        next === "trial-balance") &&
+      !workspace
+    ) {
       setView("workspace");
       setDiscovery(createEmptyDiscovery());
       setAccrualId(null);
@@ -223,7 +230,11 @@ export default function App() {
     if (next !== "journals") {
       setJournalEntryId(null);
     }
-    if (next !== "invoices" && next !== "accruals" && next !== "journals") {
+    if (
+      next !== "invoices" &&
+      next !== "accruals" &&
+      next !== "journals"
+    ) {
       setDiscovery((current) => ({
         ...current,
         page: 1
@@ -573,6 +584,8 @@ export default function App() {
           onSelectedJournalEntryIdChange={handleJournalEntryIdChange}
         />
       ) : null}
+
+      {view === "trial-balance" ? <TrialBalanceView workspace={workspace} /> : null}
     </main>
   );
 }

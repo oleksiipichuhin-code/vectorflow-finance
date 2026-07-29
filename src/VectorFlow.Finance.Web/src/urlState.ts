@@ -35,7 +35,8 @@ const VIEW_IDS: ReadonlySet<string> = new Set([
   "workspace",
   "invoices",
   "accruals",
-  "journals"
+  "journals",
+  "trial-balance"
 ]);
 
 export type JournalStatusFilter = "" | "Draft" | "Posted";

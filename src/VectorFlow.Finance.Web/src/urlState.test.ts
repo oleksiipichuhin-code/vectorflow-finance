@@ -1078,3 +1078,52 @@ describe("journal entry deep-link URL policy", () => {
     assert.equal(parsed.journalEntryId, null);
   });
 });
+
+describe("trial balance URL policy", () => {
+  const workspaceId = "11111111-1111-1111-1111-111111111111";
+
+  it("round-trips trial-balance view with workspaceId", () => {
+    const search = buildUrlSearch({
+      view: "trial-balance",
+      workspaceId,
+      accrualId: null,
+      invoiceId: null,
+      journalEntryId: null,
+      discovery: EMPTY_DISCOVERY
+    });
+
+    assert.equal(
+      search,
+      `?view=trial-balance&workspaceId=${workspaceId}`
+    );
+
+    const parsed = parseUrlSearch(search);
+    assert.equal(parsed.view, "trial-balance");
+    assert.equal(parsed.workspaceId, workspaceId);
+    assert.equal(parsed.accrualId, null);
+    assert.equal(parsed.invoiceId, null);
+    assert.equal(parsed.journalEntryId, null);
+  });
+
+  it("ignores journal filters when building trial-balance URL", () => {
+    const search = buildUrlSearch({
+      view: "trial-balance",
+      workspaceId,
+      accrualId: "a1111111-1111-1111-1111-111111111111",
+      invoiceId: "b1111111-1111-1111-1111-111111111111",
+      journalEntryId: "c1111111-1111-1111-1111-111111111111",
+      discovery: {
+        ...EMPTY_DISCOVERY,
+        page: 3,
+        journalStatus: "Posted"
+      }
+    });
+
+    assert.equal(search, `?view=trial-balance&workspaceId=${workspaceId}`);
+    assert.equal(search.includes("status="), false);
+    assert.equal(search.includes("page="), false);
+    assert.equal(search.includes("journalEntryId"), false);
+    assert.equal(search.includes("accrualId"), false);
+    assert.equal(search.includes("invoiceId"), false);
+  });
+});
