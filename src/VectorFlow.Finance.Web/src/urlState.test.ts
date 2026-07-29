@@ -248,7 +248,7 @@ describe("urlState", () => {
   });
 
   it("rejects invalid workspace ids and unknown views", () => {
-    const parsed = parseUrlSearch("?view=ledger&workspaceId=not-a-guid&status=Draft");
+    const parsed = parseUrlSearch("?view=not-a-view&workspaceId=not-a-guid&status=Draft");
     assert.equal(parsed.view, "dashboard");
     assert.equal(parsed.workspaceId, null);
     assert.equal(parsed.accrualId, null);
@@ -1036,6 +1036,7 @@ describe("journal entry deep-link URL policy", () => {
       invoiceId: null,
       journalEntryId,
       accountId: null,
+      ledgerPostingId: null,
       discovery: {
         ...EMPTY_DISCOVERY,
         page: 2,
@@ -1065,6 +1066,7 @@ describe("journal entry deep-link URL policy", () => {
       invoiceId: null,
       journalEntryId,
       accountId: null,
+      ledgerPostingId: null,
       discovery: {
         ...EMPTY_DISCOVERY,
         invoiceFilters: { ...EMPTY_INVOICE_FILTERS, status: "Draft" }
@@ -1092,6 +1094,7 @@ describe("trial balance URL policy", () => {
       invoiceId: null,
       journalEntryId: null,
       accountId: null,
+      ledgerPostingId: null,
       discovery: EMPTY_DISCOVERY
     });
 
@@ -1116,6 +1119,7 @@ describe("trial balance URL policy", () => {
       invoiceId: "b1111111-1111-1111-1111-111111111111",
       journalEntryId: "c1111111-1111-1111-1111-111111111111",
       accountId: "d1111111-1111-1111-1111-111111111111",
+      ledgerPostingId: null,
       discovery: {
         ...EMPTY_DISCOVERY,
         page: 3,
@@ -1145,6 +1149,7 @@ describe("account statement URL policy", () => {
       invoiceId: null,
       journalEntryId: null,
       accountId,
+      ledgerPostingId: null,
       discovery: {
         ...EMPTY_DISCOVERY,
         statementPeriodFrom: "2026-07-01",
@@ -1173,6 +1178,7 @@ describe("account statement URL policy", () => {
       invoiceId: null,
       journalEntryId: null,
       accountId,
+      ledgerPostingId: null,
       discovery: EMPTY_DISCOVERY
     });
     assert.equal(search.includes("accountId"), false);
@@ -1183,5 +1189,67 @@ describe("account statement URL policy", () => {
       `?view=account-statement&workspaceId=${workspaceId}&accountId=not-a-guid`
     );
     assert.equal(parsed.accountId, null);
+  });
+});
+
+describe("ledger URL policy", () => {
+  const workspaceId = "11111111-1111-1111-1111-111111111111";
+  const ledgerPostingId = "51111111-1111-1111-1111-111111111111";
+  const sourceJournalEntryId = "61111111-1111-1111-1111-111111111111";
+
+  it("round-trips ledger view with posting id and filters", () => {
+    const search = buildUrlSearch({
+      view: "ledger",
+      workspaceId,
+      accrualId: null,
+      invoiceId: null,
+      journalEntryId: null,
+      accountId: null,
+      ledgerPostingId,
+      discovery: {
+        ...EMPTY_DISCOVERY,
+        ledgerPostedFrom: "2026-07-01",
+        ledgerPostedTo: "2026-07-31",
+        ledgerSourceJournalEntryId: sourceJournalEntryId
+      }
+    });
+
+    assert.equal(
+      search,
+      `?view=ledger&workspaceId=${workspaceId}&postedFrom=2026-07-01&postedTo=2026-07-31&sourceJournalEntryId=${sourceJournalEntryId}&ledgerPostingId=${ledgerPostingId}`
+    );
+
+    const parsed = parseUrlSearch(search);
+    assert.equal(parsed.view, "ledger");
+    assert.equal(parsed.ledgerPostingId, ledgerPostingId);
+    assert.equal(parsed.discovery.ledgerPostedFrom, "2026-07-01");
+    assert.equal(parsed.discovery.ledgerPostedTo, "2026-07-31");
+    assert.equal(parsed.discovery.ledgerSourceJournalEntryId, sourceJournalEntryId);
+    assert.equal(parsed.journalEntryId, null);
+    assert.equal(parsed.accountId, null);
+  });
+
+  it("ignores ledgerPostingId outside ledger view", () => {
+    const search = buildUrlSearch({
+      view: "journals",
+      workspaceId,
+      accrualId: null,
+      invoiceId: null,
+      journalEntryId: null,
+      accountId: null,
+      ledgerPostingId,
+      discovery: EMPTY_DISCOVERY
+    });
+    assert.equal(search.includes("ledgerPostingId"), false);
+    assert.equal(search.includes("postedFrom"), false);
+  });
+
+  it("invalid ledgerPostingId and source journal normalize away", () => {
+    const parsed = parseUrlSearch(
+      `?view=ledger&workspaceId=${workspaceId}&ledgerPostingId=not-a-guid&sourceJournalEntryId=bad&postedFrom=2026-07-15`
+    );
+    assert.equal(parsed.ledgerPostingId, null);
+    assert.equal(parsed.discovery.ledgerSourceJournalEntryId, "");
+    assert.equal(parsed.discovery.ledgerPostedFrom, "2026-07-15");
   });
 });

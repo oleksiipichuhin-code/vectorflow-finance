@@ -36,6 +36,7 @@ const VIEW_IDS: ReadonlySet<string> = new Set([
   "invoices",
   "accruals",
   "journals",
+  "ledger",
   "trial-balance",
   "account-statement"
 ]);
@@ -104,6 +105,18 @@ export type ListDiscovery = {
    * Account statement period to (`periodTo=` YYYY-MM-DD) when `view=account-statement`.
    */
   statementPeriodTo: string;
+  /**
+   * Ledger posted-from filter (`postedFrom=` YYYY-MM-DD) when `view=ledger`.
+   */
+  ledgerPostedFrom: string;
+  /**
+   * Ledger posted-to filter (`postedTo=` YYYY-MM-DD) when `view=ledger`.
+   */
+  ledgerPostedTo: string;
+  /**
+   * Ledger source journal filter (`sourceJournalEntryId=`) when `view=ledger`.
+   */
+  ledgerSourceJournalEntryId: string;
 };
 
 export type AppUrlState = {
@@ -117,6 +130,8 @@ export type AppUrlState = {
   journalEntryId: string | null;
   /** Account statement detail deep-link; omitted outside account-statement view. */
   accountId: string | null;
+  /** Ledger posting detail deep-link; omitted outside ledger view. */
+  ledgerPostingId: string | null;
   discovery: ListDiscovery;
 };
 
@@ -158,7 +173,10 @@ export const EMPTY_DISCOVERY: ListDiscovery = {
   caseHistorySearch: "",
   caseHistoryExpanded: false,
   statementPeriodFrom: "",
-  statementPeriodTo: ""
+  statementPeriodTo: "",
+  ledgerPostedFrom: "",
+  ledgerPostedTo: "",
+  ledgerSourceJournalEntryId: ""
 };
 
 export function parseCollectionPanelParam(
@@ -203,6 +221,11 @@ export function isJournalEntryId(value: string | null | undefined): value is str
 
 /** Same GUID shape; invalid values never become account statement targets. */
 export function isAccountId(value: string | null | undefined): value is string {
+  return isWorkspaceId(value);
+}
+
+/** Same GUID shape; invalid values never become ledger posting detail targets. */
+export function isLedgerPostingId(value: string | null | undefined): value is string {
   return isWorkspaceId(value);
 }
 
@@ -276,6 +299,25 @@ export function parseAccountIdParam(value: string | null | undefined): string | 
   return isAccountId(trimmed) ? trimmed : null;
 }
 
+/**
+ * Parse ledgerPostingId query value for ledger view.
+ * Missing/blank/invalid → null (no API call; normalize strips the param).
+ */
+export function parseLedgerPostingIdParam(
+  value: string | null | undefined
+): string | null {
+  if (value == null) {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  return isLedgerPostingId(trimmed) ? trimmed : null;
+}
+
 /** Open accrual detail: set accrualId while preserving all other AppUrlState fields. */
 export function withAccrualId(state: AppUrlState, accrualId: string | null): AppUrlState {
   return {
@@ -341,6 +383,26 @@ export function withoutAccountId(state: AppUrlState): AppUrlState {
   return {
     ...state,
     accountId: null
+  };
+}
+
+/** Open ledger posting detail: set ledgerPostingId while preserving other AppUrlState fields. */
+export function withLedgerPostingId(
+  state: AppUrlState,
+  ledgerPostingId: string | null
+): AppUrlState {
+  return {
+    ...state,
+    ledgerPostingId:
+      ledgerPostingId && isLedgerPostingId(ledgerPostingId) ? ledgerPostingId : null
+  };
+}
+
+/** Close ledger posting detail: clear only ledgerPostingId. */
+export function withoutLedgerPostingId(state: AppUrlState): AppUrlState {
+  return {
+    ...state,
+    ledgerPostingId: null
   };
 }
 
@@ -417,7 +479,10 @@ export function createEmptyDiscovery(): ListDiscovery {
     caseHistorySearch: "",
     caseHistoryExpanded: false,
     statementPeriodFrom: "",
-    statementPeriodTo: ""
+    statementPeriodTo: "",
+    ledgerPostedFrom: "",
+    ledgerPostedTo: "",
+    ledgerSourceJournalEntryId: ""
   };
 }
 
@@ -435,6 +500,7 @@ export function parseUrlSearch(search: string): AppUrlState {
   const invoiceId = parseInvoiceIdParam(params.get("invoiceId"));
   const journalEntryId = parseJournalEntryIdParam(params.get("journalEntryId"));
   const accountId = parseAccountIdParam(params.get("accountId"));
+  const ledgerPostingId = parseLedgerPostingIdParam(params.get("ledgerPostingId"));
 
   const page = parsePage(params.get("page"));
   const invoiceQueue = view === "invoices" ? parseInvoiceQueue(params.get("queue")) : "";
@@ -521,6 +587,14 @@ export function parseUrlSearch(search: string): AppUrlState {
   const statementPeriodTo =
     view === "account-statement" ? parseDateInput(params.get("periodTo")) : "";
 
+  const ledgerPostedFrom =
+    view === "ledger" ? parseDateInput(params.get("postedFrom")) : "";
+  const ledgerPostedTo = view === "ledger" ? parseDateInput(params.get("postedTo")) : "";
+  const ledgerSourceJournalEntryId =
+    view === "ledger"
+      ? parseJournalEntryIdParam(params.get("sourceJournalEntryId")) ?? ""
+      : "";
+
   return {
     view,
     workspaceId,
@@ -528,6 +602,7 @@ export function parseUrlSearch(search: string): AppUrlState {
     invoiceId: view === "invoices" ? invoiceId : null,
     journalEntryId: view === "journals" ? journalEntryId : null,
     accountId: view === "account-statement" ? accountId : null,
+    ledgerPostingId: view === "ledger" ? ledgerPostingId : null,
     discovery: {
       page,
       invoiceFilters,
@@ -547,7 +622,10 @@ export function parseUrlSearch(search: string): AppUrlState {
       caseHistorySearch,
       caseHistoryExpanded,
       statementPeriodFrom,
-      statementPeriodTo
+      statementPeriodTo,
+      ledgerPostedFrom,
+      ledgerPostedTo,
+      ledgerSourceJournalEntryId
     }
   };
 }
@@ -693,6 +771,19 @@ export function buildUrlSearch(state: AppUrlState): string {
     }
   }
 
+  if (state.view === "ledger") {
+    setIfPresent(params, "postedFrom", state.discovery.ledgerPostedFrom);
+    setIfPresent(params, "postedTo", state.discovery.ledgerPostedTo);
+    setIfPresent(
+      params,
+      "sourceJournalEntryId",
+      state.discovery.ledgerSourceJournalEntryId
+    );
+    if (state.ledgerPostingId && isLedgerPostingId(state.ledgerPostingId)) {
+      params.set("ledgerPostingId", state.ledgerPostingId);
+    }
+  }
+
   const query = params.toString();
   return query ? `?${query}` : "";
 }
@@ -725,7 +816,10 @@ export function draftInvoicesDiscovery(): ListDiscovery {
     caseHistorySearch: "",
     caseHistoryExpanded: false,
     statementPeriodFrom: "",
-    statementPeriodTo: ""
+    statementPeriodTo: "",
+    ledgerPostedFrom: "",
+    ledgerPostedTo: "",
+    ledgerSourceJournalEntryId: ""
   };
 }
 
@@ -756,7 +850,10 @@ export function issuedInvoicesDiscovery(): ListDiscovery {
     caseHistorySearch: "",
     caseHistoryExpanded: false,
     statementPeriodFrom: "",
-    statementPeriodTo: ""
+    statementPeriodTo: "",
+    ledgerPostedFrom: "",
+    ledgerPostedTo: "",
+    ledgerSourceJournalEntryId: ""
   };
 }
 
@@ -789,6 +886,9 @@ export function overdueIssuedInvoicesDiscovery(): ListDiscovery {
     caseHistorySearch: "",
     caseHistoryExpanded: false,
     statementPeriodFrom: "",
-    statementPeriodTo: ""
+    statementPeriodTo: "",
+    ledgerPostedFrom: "",
+    ledgerPostedTo: "",
+    ledgerSourceJournalEntryId: ""
   };
 }

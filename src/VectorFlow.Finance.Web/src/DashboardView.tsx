@@ -215,6 +215,19 @@ export function DashboardView({
           <button
             type="button"
             className="nav-card"
+            onClick={() => onNavigate("ledger")}
+            disabled={!workspace}
+          >
+            <span className="nav-card-title">Ledger</span>
+            <span className="nav-card-copy">
+              {workspace
+                ? "Реєстр immutable ledger postings"
+                : "Потрібен finance workspace"}
+            </span>
+          </button>
+          <button
+            type="button"
+            className="nav-card"
             onClick={() => onNavigate("trial-balance")}
             disabled={!workspace}
           >

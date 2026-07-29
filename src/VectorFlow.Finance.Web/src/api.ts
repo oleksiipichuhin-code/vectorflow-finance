@@ -821,6 +821,19 @@ export function getLedgerPostingByJournalEntry(
   );
 }
 
+export function listLedgerPostings(workspaceId: string): Promise<LedgerPosting[]> {
+  return requestJson<LedgerPosting[]>(`/api/finance-workspaces/${workspaceId}/ledger`);
+}
+
+export function getLedgerPosting(
+  workspaceId: string,
+  ledgerPostingId: string
+): Promise<LedgerPosting> {
+  return requestJson<LedgerPosting>(
+    `/api/finance-workspaces/${workspaceId}/ledger/${ledgerPostingId}`
+  );
+}
+
 export type TrialBalanceSide = "Debit" | "Credit" | "Zero";
 
 export type TrialBalanceLine = {

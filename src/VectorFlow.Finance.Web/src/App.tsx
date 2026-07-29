@@ -29,6 +29,7 @@ import type { CollectionPanelMode } from "./urlState";
 import { isPromisePanel } from "./urlState";
 import { InvoicesView } from "./InvoicesView";
 import { JournalsView } from "./JournalsView";
+import { LedgerView } from "./LedgerView";
 import { TrialBalanceView } from "./TrialBalanceView";
 import { AccountStatementView } from "./AccountStatementView";
 import { APP_VIEWS, type AppView } from "./navigation";
@@ -61,6 +62,9 @@ export default function App() {
     initialUrl.journalEntryId
   );
   const [accountId, setAccountId] = useState<string | null>(initialUrl.accountId);
+  const [ledgerPostingId, setLedgerPostingId] = useState<string | null>(
+    initialUrl.ledgerPostingId
+  );
   const [listEpoch, setListEpoch] = useState(0);
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
 
@@ -154,6 +158,7 @@ export default function App() {
           invoiceId: initialUrl.invoiceId,
           journalEntryId: initialUrl.journalEntryId,
           accountId: initialUrl.accountId,
+          ledgerPostingId: initialUrl.ledgerPostingId,
           discovery: initialUrl.discovery
         });
         if (window.location.search !== expected) {
@@ -170,6 +175,7 @@ export default function App() {
       invoiceId: view === "invoices" ? invoiceId : null,
       journalEntryId: view === "journals" ? journalEntryId : null,
       accountId: view === "account-statement" ? accountId : null,
+      ledgerPostingId: view === "ledger" ? ledgerPostingId : null,
       discovery
     };
     const search = buildUrlSearch(next);
@@ -183,7 +189,7 @@ export default function App() {
       }
     }
     urlWriteModeRef.current = "push";
-  }, [view, workspace?.id, discovery, accrualId, invoiceId, journalEntryId, accountId, initialUrl]);
+  }, [view, workspace?.id, discovery, accrualId, invoiceId, journalEntryId, accountId, ledgerPostingId, initialUrl]);
 
   useEffect(() => {
     function onPopState() {
@@ -195,6 +201,7 @@ export default function App() {
       setInvoiceId(parsed.view === "invoices" ? parsed.invoiceId : null);
       setJournalEntryId(parsed.view === "journals" ? parsed.journalEntryId : null);
       setAccountId(parsed.view === "account-statement" ? parsed.accountId : null);
+      setLedgerPostingId(parsed.view === "ledger" ? parsed.ledgerPostingId : null);
       setListEpoch((value) => value + 1);
 
       if (parsed.workspaceId) {
@@ -214,6 +221,7 @@ export default function App() {
       (next === "invoices" ||
         next === "accruals" ||
         next === "journals" ||
+        next === "ledger" ||
         next === "trial-balance" ||
         next === "account-statement") &&
       !workspace
@@ -224,6 +232,7 @@ export default function App() {
       setInvoiceId(null);
       setJournalEntryId(null);
       setAccountId(null);
+      setLedgerPostingId(null);
       return;
     }
 
@@ -243,6 +252,15 @@ export default function App() {
         ...current,
         statementPeriodFrom: "",
         statementPeriodTo: ""
+      }));
+    }
+    if (next !== "ledger") {
+      setLedgerPostingId(null);
+      setDiscovery((current) => ({
+        ...current,
+        ledgerPostedFrom: "",
+        ledgerPostedTo: "",
+        ledgerSourceJournalEntryId: ""
       }));
     }
     if (
@@ -362,12 +380,34 @@ export default function App() {
     []
   );
 
+  const handleLedgerPostingIdChange = useCallback(
+    (nextLedgerPostingId: string | null, options?: DetailIdChangeOptions) => {
+      if (options?.replace) {
+        urlWriteModeRef.current = "replace";
+      }
+      setLedgerPostingId(nextLedgerPostingId);
+    },
+    []
+  );
+
   const handleStatementPeriodChange = useCallback(
     (periodFromDate: string, periodToDate: string) => {
       setDiscovery((current) => ({
         ...current,
         statementPeriodFrom: periodFromDate,
         statementPeriodTo: periodToDate
+      }));
+    },
+    []
+  );
+
+  const handleLedgerFilterChange = useCallback(
+    (postedFromDate: string, postedToDate: string, sourceJournalEntryId: string) => {
+      setDiscovery((current) => ({
+        ...current,
+        ledgerPostedFrom: postedFromDate,
+        ledgerPostedTo: postedToDate,
+        ledgerSourceJournalEntryId: sourceJournalEntryId
       }));
     },
     []
@@ -384,6 +424,7 @@ export default function App() {
     setInvoiceId(null);
     setJournalEntryId(null);
     setAccountId(null);
+    setLedgerPostingId(null);
     setListEpoch((value) => value + 1);
     setView("invoices");
   }, [workspace]);
@@ -399,6 +440,7 @@ export default function App() {
     setInvoiceId(null);
     setJournalEntryId(null);
     setAccountId(null);
+    setLedgerPostingId(null);
     setListEpoch((value) => value + 1);
     setView("invoices");
   }, [workspace]);
@@ -414,6 +456,7 @@ export default function App() {
     setInvoiceId(null);
     setJournalEntryId(null);
     setAccountId(null);
+    setLedgerPostingId(null);
     setListEpoch((value) => value + 1);
     setView("invoices");
   }, [workspace]);
@@ -429,6 +472,7 @@ export default function App() {
       setInvoiceId(null);
       setJournalEntryId(null);
       setAccountId(null);
+      setLedgerPostingId(null);
       setAccrualId(nextAccrualId);
       setListEpoch((value) => value + 1);
       setView("accruals");
@@ -447,6 +491,7 @@ export default function App() {
       setAccrualId(null);
       setJournalEntryId(null);
       setAccountId(null);
+      setLedgerPostingId(null);
       setInvoiceId(nextInvoiceId);
       setListEpoch((value) => value + 1);
       setView("invoices");
@@ -465,8 +510,28 @@ export default function App() {
       setAccrualId(null);
       setInvoiceId(null);
       setAccountId(null);
+      setLedgerPostingId(null);
       setJournalEntryId(nextJournalEntryId);
       setView("journals");
+    },
+    [workspace]
+  );
+
+  const openAccountStatement = useCallback(
+    (nextAccountId: string) => {
+      if (!workspace) {
+        setView("workspace");
+        return;
+      }
+
+      setDiscovery(createEmptyDiscovery());
+      setAccrualId(null);
+      setInvoiceId(null);
+      setJournalEntryId(null);
+      setLedgerPostingId(null);
+      setAccountId(nextAccountId);
+      setListEpoch((value) => value + 1);
+      setView("account-statement");
     },
     [workspace]
   );
@@ -479,6 +544,7 @@ export default function App() {
       invoiceId: view === "invoices" ? invoiceId : null,
       journalEntryId: view === "journals" ? journalEntryId : null,
       accountId: view === "account-statement" ? accountId : null,
+      ledgerPostingId: view === "ledger" ? ledgerPostingId : null,
       discovery
     });
     const href = `${window.location.origin}${window.location.pathname}${search}`;
@@ -491,7 +557,16 @@ export default function App() {
     }
 
     window.setTimeout(() => setCopyFeedback(null), 2500);
-  }, [view, workspace?.id, discovery, accrualId, invoiceId, journalEntryId, accountId]);
+  }, [
+    view,
+    workspace?.id,
+    discovery,
+    accrualId,
+    invoiceId,
+    journalEntryId,
+    accountId,
+    ledgerPostingId
+  ]);
 
   async function handleLoadWorkspace(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -641,6 +716,21 @@ export default function App() {
           selectedJournalEntryId={journalEntryId}
           onDiscoveryChange={handleJournalDiscoveryChange}
           onSelectedJournalEntryIdChange={handleJournalEntryIdChange}
+        />
+      ) : null}
+
+      {view === "ledger" ? (
+        <LedgerView
+          key={`ledger-${listEpoch}`}
+          workspace={workspace}
+          selectedLedgerPostingId={ledgerPostingId}
+          initialPostedFrom={discovery.ledgerPostedFrom}
+          initialPostedTo={discovery.ledgerPostedTo}
+          initialSourceJournalEntryId={discovery.ledgerSourceJournalEntryId}
+          onSelectedLedgerPostingIdChange={handleLedgerPostingIdChange}
+          onFilterChange={handleLedgerFilterChange}
+          onOpenJournal={openJournalDetail}
+          onOpenAccountStatement={openAccountStatement}
         />
       ) : null}
 
