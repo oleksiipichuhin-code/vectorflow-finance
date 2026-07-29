@@ -14,6 +14,7 @@ import {
   type StatementPeriodFilters
 } from "./accountStatement";
 import { formatDate, formatMoney } from "./i18n/format.ts";
+import { formatBalanceSide } from "./trialBalance";
 import { ListLoadState } from "./components/ListLoadState";
 import { Panel, StatusMessage } from "./components/Panel";
 
@@ -33,16 +34,6 @@ type AccountStatementViewProps = {
   onPeriodChange?: (periodFromDate: string, periodToDate: string) => void;
   onOpenJournal?: (journalEntryId: string) => void;
 };
-
-function localizeBalanceSide(
-  side: string | null | undefined,
-  t: (key: string, options?: Record<string, unknown>) => string
-): string {
-  if (side === "Debit" || side === "Credit" || side === "Zero") {
-    return t(`accountStatement.balanceSide.${side}`);
-  }
-  return side?.trim() || t("emDash", { ns: "common" });
-}
 
 export function AccountStatementView({
   workspace,
@@ -274,7 +265,7 @@ export function AccountStatementView({
                       <td>{formatMoney(row.debitTotal, currency)}</td>
                       <td>{formatMoney(row.creditTotal, currency)}</td>
                       <td>{formatMoney(Math.abs(row.balance), currency)}</td>
-                      <td>{localizeBalanceSide(row.balanceSide, t)}</td>
+                      <td>{formatBalanceSide(row.balanceSide, t)}</td>
                       <td>
                         <button
                           type="button"

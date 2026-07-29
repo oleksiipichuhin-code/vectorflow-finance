@@ -18,6 +18,7 @@
   "emDash": "—",
   "nav.accounts": "Accounts",
   "nav.ledger": "Ledger",
+  "nav.trialBalance": "Trial balance",
   "nav.accountStatement": "Account statement",
   "nav.customerLedger": "Customer ledger"
 }

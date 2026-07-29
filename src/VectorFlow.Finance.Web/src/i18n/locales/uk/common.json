@@ -18,6 +18,7 @@
   "emDash": "—",
   "nav.accounts": "Рахунки",
   "nav.ledger": "Головна книга",
+  "nav.trialBalance": "Оборотно-сальдова відомість",
   "nav.accountStatement": "Виписка рахунку",
   "nav.customerLedger": "Книга клієнта"
 }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { getTrialBalance, type FinanceWorkspace, type TrialBalance } from "./api";
-import { formatDate, formatMoney } from "./format";
+import { formatDate, formatMoney } from "./i18n/format.ts";
 import { formatBalanceSide, trialBalanceBalanceLabel } from "./trialBalance";
 import { ListLoadState } from "./components/ListLoadState";
 import { Panel, StatusMessage } from "./components/Panel";
@@ -10,38 +11,42 @@ type TrialBalanceViewProps = {
 };
 
 export function TrialBalanceView({ workspace }: TrialBalanceViewProps) {
+  const { t } = useTranslation(["finance", "common"]);
   const [trialBalance, setTrialBalance] = useState<TrialBalance | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const requestSeq = useRef(0);
 
-  const load = useCallback(async (workspaceId: string) => {
-    const seq = ++requestSeq.current;
-    setLoading(true);
-    setError(null);
+  const load = useCallback(
+    async (workspaceId: string) => {
+      const seq = ++requestSeq.current;
+      setLoading(true);
+      setError(null);
 
-    try {
-      const next = await getTrialBalance(workspaceId);
-      if (seq !== requestSeq.current) {
-        return;
+      try {
+        const next = await getTrialBalance(workspaceId);
+        if (seq !== requestSeq.current) {
+          return;
+        }
+        setTrialBalance(next);
+      } catch (loadError) {
+        if (seq !== requestSeq.current) {
+          return;
+        }
+        setTrialBalance(null);
+        setError(
+          loadError instanceof Error
+            ? loadError.message
+            : t("trialBalance.listLoadFailed")
+        );
+      } finally {
+        if (seq === requestSeq.current) {
+          setLoading(false);
+        }
       }
-      setTrialBalance(next);
-    } catch (loadError) {
-      if (seq !== requestSeq.current) {
-        return;
-      }
-      setTrialBalance(null);
-      setError(
-        loadError instanceof Error
-          ? loadError.message
-          : "Не вдалося завантажити trial balance."
-      );
-    } finally {
-      if (seq === requestSeq.current) {
-        setLoading(false);
-      }
-    }
-  }, []);
+    },
+    [t]
+  );
 
   useEffect(() => {
     if (!workspace) {
@@ -59,8 +64,8 @@ export function TrialBalanceView({ workspace }: TrialBalanceViewProps) {
 
   if (!workspace) {
     return (
-      <Panel title="Trial balance" headingId="trial-balance-heading">
-        <StatusMessage>Спочатку відкрийте finance workspace.</StatusMessage>
+      <Panel title={t("trialBalance.title")} headingId="trial-balance-heading">
+        <StatusMessage>{t("trialBalance.needWorkspace")}</StatusMessage>
       </Panel>
     );
   }
@@ -71,16 +76,13 @@ export function TrialBalanceView({ workspace }: TrialBalanceViewProps) {
   return (
     <>
       <header className="hero">
-        <p className="eyebrow">General ledger</p>
-        <h1>Trial balance</h1>
-        <p className="lede">
-          Оборотно-сальдова відомість за проведеними ledger postings workspace. Після Post to
-          ledger у Journals натисніть «Оновити».
-        </p>
+        <p className="eyebrow">{t("trialBalance.eyebrow")}</p>
+        <h1>{t("trialBalance.title")}</h1>
+        <p className="lede">{t("trialBalance.lede")}</p>
       </header>
 
       <Panel
-        title="Trial balance"
+        title={t("trialBalance.panelTitle")}
         headingId="trial-balance-heading"
         actions={
           <button
@@ -89,46 +91,46 @@ export function TrialBalanceView({ workspace }: TrialBalanceViewProps) {
             disabled={loading}
             onClick={() => void load(workspace.id)}
           >
-            {loading ? "Завантаження…" : "Оновити"}
+            {loading ? t("loading", { ns: "common" }) : t("refresh", { ns: "common" })}
           </button>
         }
       >
         <ListLoadState
           loading={loading && !trialBalance}
-          loadingMessage="Завантаження trial balance…"
+          loadingMessage={t("trialBalance.listLoading")}
           error={error}
           onRetry={() => void load(workspace.id)}
           retryDisabled={loading}
           empty={!loading && !error && trialBalance != null && lines.length === 0}
-          emptyMessage="Немає рахунків у цьому workspace. Створіть рахунки та проведіть journal entry у Journals."
+          emptyMessage={t("trialBalance.listEmpty")}
         />
 
         {!error && trialBalance ? (
           <>
             <div className="queue-banner" role="status">
               <p className="queue-banner-title">
-                {trialBalanceBalanceLabel(trialBalance.isBalanced)}
+                {trialBalanceBalanceLabel(trialBalance.isBalanced, t)}
               </p>
               <StatusMessage tone={trialBalance.isBalanced ? "success" : "error"}>
                 {trialBalance.isBalanced
-                  ? "Total debit дорівнює total credit за ledger postings."
-                  : "Total debit і total credit не збігаються — перевірте ledger postings."}
+                  ? t("trialBalance.balancedMessage")
+                  : t("trialBalance.unbalancedMessage")}
               </StatusMessage>
               <dl className="facts">
                 <div>
-                  <dt>Total debit</dt>
+                  <dt>{t("trialBalance.field.totalDebit")}</dt>
                   <dd>{formatMoney(trialBalance.totalDebit, currency)}</dd>
                 </div>
                 <div>
-                  <dt>Total credit</dt>
+                  <dt>{t("trialBalance.field.totalCredit")}</dt>
                   <dd>{formatMoney(trialBalance.totalCredit, currency)}</dd>
                 </div>
                 <div>
-                  <dt>Generated</dt>
+                  <dt>{t("trialBalance.field.generated")}</dt>
                   <dd>{formatDate(trialBalance.generatedAtUtc)}</dd>
                 </div>
                 <div>
-                  <dt>Accounts</dt>
+                  <dt>{t("trialBalance.field.accounts")}</dt>
                   <dd>{lines.length}</dd>
                 </div>
               </dl>
@@ -139,12 +141,12 @@ export function TrialBalanceView({ workspace }: TrialBalanceViewProps) {
                 <table>
                   <thead>
                     <tr>
-                      <th>Code</th>
-                      <th>Name</th>
-                      <th>Debit</th>
-                      <th>Credit</th>
-                      <th>Balance</th>
-                      <th>Side</th>
+                      <th>{t("trialBalance.col.code")}</th>
+                      <th>{t("trialBalance.col.name")}</th>
+                      <th>{t("trialBalance.col.debit")}</th>
+                      <th>{t("trialBalance.col.credit")}</th>
+                      <th>{t("trialBalance.col.balance")}</th>
+                      <th>{t("trialBalance.col.side")}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -155,13 +157,13 @@ export function TrialBalanceView({ workspace }: TrialBalanceViewProps) {
                         <td>{formatMoney(line.debitTotal, currency)}</td>
                         <td>{formatMoney(line.creditTotal, currency)}</td>
                         <td>{formatMoney(Math.abs(line.balance), currency)}</td>
-                        <td>{formatBalanceSide(line.balanceSide)}</td>
+                        <td>{formatBalanceSide(line.balanceSide, t)}</td>
                       </tr>
                     ))}
                   </tbody>
                   <tfoot>
                     <tr>
-                      <th colSpan={2}>Totals</th>
+                      <th colSpan={2}>{t("trialBalance.totals")}</th>
                       <th>{formatMoney(trialBalance.totalDebit, currency)}</th>
                       <th>{formatMoney(trialBalance.totalCredit, currency)}</th>
                       <th colSpan={2} />
@@ -171,7 +173,7 @@ export function TrialBalanceView({ workspace }: TrialBalanceViewProps) {
               </div>
             ) : null}
 
-            {loading ? <StatusMessage>Оновлення…</StatusMessage> : null}
+            {loading ? <StatusMessage>{t("trialBalance.updating")}</StatusMessage> : null}
           </>
         ) : null}
       </Panel>

@@ -240,17 +240,17 @@ describe("account statement finance catalogs", () => {
   });
 
   it("preserves balance-side wire values while localizing labels", async () => {
-    assert.equal(i18n.t("accountStatement.balanceSide.Debit", { ns: "finance" }), "Дебет");
-    assert.equal(i18n.t("accountStatement.balanceSide.Credit", { ns: "finance" }), "Кредит");
-    assert.equal(i18n.t("accountStatement.balanceSide.Zero", { ns: "finance" }), "Нуль");
+    assert.equal(i18n.t("balanceSide.Debit", { ns: "finance" }), "Дебет");
+    assert.equal(i18n.t("balanceSide.Credit", { ns: "finance" }), "Кредит");
+    assert.equal(i18n.t("balanceSide.Zero", { ns: "finance" }), "Нуль");
     assert.equal("Debit", "Debit");
     assert.equal("Credit", "Credit");
     assert.equal("Zero", "Zero");
 
     await i18n.changeLanguage("en");
-    assert.equal(i18n.t("accountStatement.balanceSide.Debit", { ns: "finance" }), "Debit");
-    assert.equal(i18n.t("accountStatement.balanceSide.Credit", { ns: "finance" }), "Credit");
-    assert.equal(i18n.t("accountStatement.balanceSide.Zero", { ns: "finance" }), "Zero");
+    assert.equal(i18n.t("balanceSide.Debit", { ns: "finance" }), "Debit");
+    assert.equal(i18n.t("balanceSide.Credit", { ns: "finance" }), "Credit");
+    assert.equal(i18n.t("balanceSide.Zero", { ns: "finance" }), "Zero");
     assert.equal(i18n.t("accountStatement.openJournal", { ns: "finance" }), "Journal entry");
   });
 
@@ -262,6 +262,54 @@ describe("account statement finance catalogs", () => {
     const enKeys = Object.keys(financeEn).filter(
       (key) =>
         key.startsWith("accountStatement.") || key === "dashboard.accountStatementCopy"
+    );
+    assert.deepEqual(ukKeys.sort(), enKeys.sort());
+  });
+});
+
+describe("trial balance finance catalogs", () => {
+  beforeEach(async () => {
+    await i18n.changeLanguage("uk");
+  });
+
+  it("localizes trial balance workflow chrome in Ukrainian and English", async () => {
+    assert.equal(i18n.t("trialBalance.title", { ns: "finance" }), "Оборотно-сальдова відомість");
+    assert.equal(i18n.t("trialBalance.balanced", { ns: "finance" }), "Збалансовано");
+    assert.equal(i18n.t("trialBalance.field.totalDebit", { ns: "finance" }), "Разом дебет");
+    assert.equal(i18n.t("nav.trialBalance", { ns: "common" }), "Оборотно-сальдова відомість");
+
+    await i18n.changeLanguage("en");
+    assert.equal(i18n.t("trialBalance.title", { ns: "finance" }), "Trial balance");
+    assert.equal(i18n.t("trialBalance.balanced", { ns: "finance" }), "Balanced");
+    assert.equal(i18n.t("trialBalance.field.totalDebit", { ns: "finance" }), "Total debit");
+    assert.equal(i18n.t("nav.trialBalance", { ns: "common" }), "Trial balance");
+  });
+
+  it("preserves balance-side wire values for trial balance presentation", async () => {
+    assert.equal(i18n.t("balanceSide.Debit", { ns: "finance" }), "Дебет");
+    assert.equal(i18n.t("balanceSide.Credit", { ns: "finance" }), "Кредит");
+    assert.equal(i18n.t("balanceSide.Zero", { ns: "finance" }), "Нуль");
+    assert.equal("Debit", "Debit");
+    assert.equal("Credit", "Credit");
+    assert.equal("Zero", "Zero");
+
+    await i18n.changeLanguage("en");
+    assert.equal(i18n.t("balanceSide.Debit", { ns: "finance" }), "Debit");
+    assert.equal(i18n.t("trialBalance.unbalanced", { ns: "finance" }), "Unbalanced");
+  });
+
+  it("has matching trialBalance key structure in uk and en", async () => {
+    const ukKeys = Object.keys(financeUk).filter(
+      (key) =>
+        key.startsWith("trialBalance.") ||
+        key === "dashboard.trialBalanceCopy" ||
+        key.startsWith("balanceSide.")
+    );
+    const enKeys = Object.keys(financeEn).filter(
+      (key) =>
+        key.startsWith("trialBalance.") ||
+        key === "dashboard.trialBalanceCopy" ||
+        key.startsWith("balanceSide.")
     );
     assert.deepEqual(ukKeys.sort(), enKeys.sort());
   });

@@ -246,11 +246,13 @@ export function DashboardView({
             onClick={() => onNavigate("trial-balance")}
             disabled={!workspace}
           >
-            <span className="nav-card-title">Trial balance</span>
+            <span className="nav-card-title">
+              {t("nav.trialBalance", { ns: "common" })}
+            </span>
             <span className="nav-card-copy">
               {workspace
-                ? "Оборотно-сальдова відомість за ledger postings"
-                : "Потрібен finance workspace"}
+                ? t("dashboard.trialBalanceCopy", { ns: "finance" })
+                : t("dashboard.needWorkspace", { ns: "finance" })}
             </span>
           </button>
           <button
