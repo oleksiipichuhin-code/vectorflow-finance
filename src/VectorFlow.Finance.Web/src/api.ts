@@ -611,3 +611,212 @@ export function changeAccrualCurrency(
     }
   );
 }
+
+export type AccountType = "Asset" | "Liability" | "Equity" | "Revenue" | "Expense";
+
+export type FinancialAccount = {
+  id: string;
+  financeWorkspaceId: string;
+  code: string;
+  name: string;
+  type: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+  archivedAt: string | null;
+};
+
+export type JournalEntryLine = {
+  id: string;
+  financialAccountId: string;
+  debit: number;
+  credit: number;
+  description: string | null;
+  sequence: number;
+};
+
+export type JournalEntry = {
+  id: string;
+  financeWorkspaceId: string;
+  name: string;
+  status: string;
+  createdAtUtc: string;
+  updatedAtUtc: string;
+  postedAtUtc: string | null;
+  lines: JournalEntryLine[];
+  totalDebit: number;
+  totalCredit: number;
+};
+
+export type LedgerPostingLine = {
+  id: string;
+  sourceJournalEntryLineId: string;
+  financialAccountId: string;
+  debit: number;
+  credit: number;
+  description: string | null;
+  sequence: number;
+};
+
+export type LedgerPosting = {
+  id: string;
+  financeWorkspaceId: string;
+  journalEntryId: string;
+  postedAtUtc: string;
+  lines: LedgerPostingLine[];
+  totalDebit: number;
+  totalCredit: number;
+};
+
+export function createAccount(
+  workspaceId: string,
+  input: { code: string; name: string; type: AccountType }
+): Promise<FinancialAccount> {
+  return requestJson<FinancialAccount>(`/api/finance-workspaces/${workspaceId}/accounts`, {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export function getAccountByCode(
+  workspaceId: string,
+  code: string
+): Promise<FinancialAccount> {
+  const params = new URLSearchParams({ code });
+  return requestJson<FinancialAccount>(
+    `/api/finance-workspaces/${workspaceId}/accounts/by-code?${params.toString()}`
+  );
+}
+
+export function getAccount(
+  workspaceId: string,
+  accountId: string
+): Promise<FinancialAccount> {
+  return requestJson<FinancialAccount>(
+    `/api/finance-workspaces/${workspaceId}/accounts/${accountId}`
+  );
+}
+
+export function listJournalEntries(workspaceId: string): Promise<JournalEntry[]> {
+  return requestJson<JournalEntry[]>(
+    `/api/finance-workspaces/${workspaceId}/journal-entries`
+  );
+}
+
+export function getJournalEntry(
+  workspaceId: string,
+  journalEntryId: string
+): Promise<JournalEntry> {
+  return requestJson<JournalEntry>(
+    `/api/finance-workspaces/${workspaceId}/journal-entries/${journalEntryId}`
+  );
+}
+
+export function createJournalEntry(
+  workspaceId: string,
+  name: string
+): Promise<JournalEntry> {
+  return requestJson<JournalEntry>(
+    `/api/finance-workspaces/${workspaceId}/journal-entries`,
+    {
+      method: "POST",
+      body: JSON.stringify({ name })
+    }
+  );
+}
+
+export function renameJournalEntry(
+  workspaceId: string,
+  journalEntryId: string,
+  name: string
+): Promise<JournalEntry> {
+  return requestJson<JournalEntry>(
+    `/api/finance-workspaces/${workspaceId}/journal-entries/${journalEntryId}/rename`,
+    {
+      method: "POST",
+      body: JSON.stringify({ name })
+    }
+  );
+}
+
+export function addJournalEntryLine(
+  workspaceId: string,
+  journalEntryId: string,
+  input: {
+    financialAccountId: string;
+    debit: number;
+    credit: number;
+    description?: string | null;
+  }
+): Promise<JournalEntry> {
+  return requestJson<JournalEntry>(
+    `/api/finance-workspaces/${workspaceId}/journal-entries/${journalEntryId}/lines`,
+    {
+      method: "POST",
+      body: JSON.stringify(input)
+    }
+  );
+}
+
+export function updateJournalEntryLine(
+  workspaceId: string,
+  journalEntryId: string,
+  lineId: string,
+  input: {
+    financialAccountId: string;
+    debit: number;
+    credit: number;
+    description?: string | null;
+  }
+): Promise<JournalEntry> {
+  return requestJson<JournalEntry>(
+    `/api/finance-workspaces/${workspaceId}/journal-entries/${journalEntryId}/lines/${lineId}`,
+    {
+      method: "PUT",
+      body: JSON.stringify(input)
+    }
+  );
+}
+
+export function removeJournalEntryLine(
+  workspaceId: string,
+  journalEntryId: string,
+  lineId: string
+): Promise<JournalEntry> {
+  return requestJson<JournalEntry>(
+    `/api/finance-workspaces/${workspaceId}/journal-entries/${journalEntryId}/lines/${lineId}`,
+    { method: "DELETE" }
+  );
+}
+
+export function postJournalEntry(
+  workspaceId: string,
+  journalEntryId: string
+): Promise<JournalEntry> {
+  return requestJson<JournalEntry>(
+    `/api/finance-workspaces/${workspaceId}/journal-entries/${journalEntryId}/post`,
+    { method: "POST" }
+  );
+}
+
+export function postJournalEntryToLedger(
+  workspaceId: string,
+  journalEntryId: string
+): Promise<LedgerPosting> {
+  return requestJson<LedgerPosting>(
+    `/api/finance-workspaces/${workspaceId}/ledger/post`,
+    {
+      method: "POST",
+      body: JSON.stringify({ journalEntryId })
+    }
+  );
+}
+
+export function getLedgerPostingByJournalEntry(
+  workspaceId: string,
+  journalEntryId: string
+): Promise<LedgerPosting> {
+  return requestJson<LedgerPosting>(
+    `/api/finance-workspaces/${workspaceId}/ledger/by-journal/${journalEntryId}`
+  );
+}

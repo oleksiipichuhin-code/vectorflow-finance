@@ -17,6 +17,7 @@ import {
   overdueIssuedInvoicesDiscovery,
   parseUrlSearch,
   type AppUrlState,
+  type JournalStatusFilter,
   type ListDiscovery
 } from "./urlState";
 import type { InvoiceQueueMode } from "./invoiceListQuery";
@@ -27,6 +28,7 @@ import type { CollectionActivityEventTypeFilter } from "./collectionCaseHistory"
 import type { CollectionPanelMode } from "./urlState";
 import { isPromisePanel } from "./urlState";
 import { InvoicesView } from "./InvoicesView";
+import { JournalsView } from "./JournalsView";
 import { APP_VIEWS, type AppView } from "./navigation";
 import { WorkspaceContextBar } from "./WorkspaceContextBar";
 import { WorkspaceView } from "./WorkspaceView";
@@ -53,6 +55,9 @@ export default function App() {
   const [discovery, setDiscovery] = useState<ListDiscovery>(initialUrl.discovery);
   const [accrualId, setAccrualId] = useState<string | null>(initialUrl.accrualId);
   const [invoiceId, setInvoiceId] = useState<string | null>(initialUrl.invoiceId);
+  const [journalEntryId, setJournalEntryId] = useState<string | null>(
+    initialUrl.journalEntryId
+  );
   const [listEpoch, setListEpoch] = useState(0);
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
 
@@ -144,6 +149,7 @@ export default function App() {
           workspaceId: initialUrl.workspaceId,
           accrualId: initialUrl.accrualId,
           invoiceId: initialUrl.invoiceId,
+          journalEntryId: initialUrl.journalEntryId,
           discovery: initialUrl.discovery
         });
         if (window.location.search !== expected) {
@@ -158,6 +164,7 @@ export default function App() {
       workspaceId: workspace?.id ?? null,
       accrualId: view === "accruals" ? accrualId : null,
       invoiceId: view === "invoices" ? invoiceId : null,
+      journalEntryId: view === "journals" ? journalEntryId : null,
       discovery
     };
     const search = buildUrlSearch(next);
@@ -171,7 +178,7 @@ export default function App() {
       }
     }
     urlWriteModeRef.current = "push";
-  }, [view, workspace?.id, discovery, accrualId, invoiceId, initialUrl]);
+  }, [view, workspace?.id, discovery, accrualId, invoiceId, journalEntryId, initialUrl]);
 
   useEffect(() => {
     function onPopState() {
@@ -181,6 +188,7 @@ export default function App() {
       setDiscovery(parsed.discovery);
       setAccrualId(parsed.view === "accruals" ? parsed.accrualId : null);
       setInvoiceId(parsed.view === "invoices" ? parsed.invoiceId : null);
+      setJournalEntryId(parsed.view === "journals" ? parsed.journalEntryId : null);
       setListEpoch((value) => value + 1);
 
       if (parsed.workspaceId) {
@@ -196,11 +204,12 @@ export default function App() {
   }, [loadWorkspace, workspace?.id]);
 
   function navigate(next: AppView) {
-    if ((next === "invoices" || next === "accruals") && !workspace) {
+    if ((next === "invoices" || next === "accruals" || next === "journals") && !workspace) {
       setView("workspace");
       setDiscovery(createEmptyDiscovery());
       setAccrualId(null);
       setInvoiceId(null);
+      setJournalEntryId(null);
       return;
     }
 
@@ -211,7 +220,10 @@ export default function App() {
     if (next !== "invoices") {
       setInvoiceId(null);
     }
-    if (next !== "invoices" && next !== "accruals") {
+    if (next !== "journals") {
+      setJournalEntryId(null);
+    }
+    if (next !== "invoices" && next !== "accruals" && next !== "journals") {
       setDiscovery((current) => ({
         ...current,
         page: 1
@@ -273,6 +285,17 @@ export default function App() {
     []
   );
 
+  const handleJournalDiscoveryChange = useCallback(
+    (page: number, status: JournalStatusFilter) => {
+      setDiscovery((current) => ({
+        ...current,
+        page,
+        journalStatus: status
+      }));
+    },
+    []
+  );
+
   const handleAccrualIdChange = useCallback(
     (nextAccrualId: string | null, options?: DetailIdChangeOptions) => {
       if (options?.replace) {
@@ -293,6 +316,16 @@ export default function App() {
     []
   );
 
+  const handleJournalEntryIdChange = useCallback(
+    (nextJournalEntryId: string | null, options?: DetailIdChangeOptions) => {
+      if (options?.replace) {
+        urlWriteModeRef.current = "replace";
+      }
+      setJournalEntryId(nextJournalEntryId);
+    },
+    []
+  );
+
   const showDraftInvoices = useCallback(() => {
     if (!workspace) {
       setView("workspace");
@@ -302,6 +335,7 @@ export default function App() {
     setDiscovery(draftInvoicesDiscovery());
     setAccrualId(null);
     setInvoiceId(null);
+    setJournalEntryId(null);
     setListEpoch((value) => value + 1);
     setView("invoices");
   }, [workspace]);
@@ -315,6 +349,7 @@ export default function App() {
     setDiscovery(issuedInvoicesDiscovery());
     setAccrualId(null);
     setInvoiceId(null);
+    setJournalEntryId(null);
     setListEpoch((value) => value + 1);
     setView("invoices");
   }, [workspace]);
@@ -328,6 +363,7 @@ export default function App() {
     setDiscovery(overdueIssuedInvoicesDiscovery());
     setAccrualId(null);
     setInvoiceId(null);
+    setJournalEntryId(null);
     setListEpoch((value) => value + 1);
     setView("invoices");
   }, [workspace]);
@@ -341,6 +377,7 @@ export default function App() {
 
       setDiscovery(createEmptyDiscovery());
       setInvoiceId(null);
+      setJournalEntryId(null);
       setAccrualId(nextAccrualId);
       setListEpoch((value) => value + 1);
       setView("accruals");
@@ -357,6 +394,7 @@ export default function App() {
 
       setDiscovery(createEmptyDiscovery());
       setAccrualId(null);
+      setJournalEntryId(null);
       setInvoiceId(nextInvoiceId);
       setListEpoch((value) => value + 1);
       setView("invoices");
@@ -370,6 +408,7 @@ export default function App() {
       workspaceId: workspace?.id ?? null,
       accrualId: view === "accruals" ? accrualId : null,
       invoiceId: view === "invoices" ? invoiceId : null,
+      journalEntryId: view === "journals" ? journalEntryId : null,
       discovery
     });
     const href = `${window.location.origin}${window.location.pathname}${search}`;
@@ -382,7 +421,7 @@ export default function App() {
     }
 
     window.setTimeout(() => setCopyFeedback(null), 2500);
-  }, [view, workspace?.id, discovery, accrualId, invoiceId]);
+  }, [view, workspace?.id, discovery, accrualId, invoiceId, journalEntryId]);
 
   async function handleLoadWorkspace(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -520,6 +559,18 @@ export default function App() {
           onDiscoveryChange={handleAccrualDiscoveryChange}
           onSelectedAccrualIdChange={handleAccrualIdChange}
           onOpenInvoice={openInvoiceDetail}
+        />
+      ) : null}
+
+      {view === "journals" ? (
+        <JournalsView
+          key={`journals-${listEpoch}`}
+          workspace={workspace}
+          initialPage={discovery.page}
+          initialStatus={discovery.journalStatus}
+          selectedJournalEntryId={journalEntryId}
+          onDiscoveryChange={handleJournalDiscoveryChange}
+          onSelectedJournalEntryIdChange={handleJournalEntryIdChange}
         />
       ) : null}
     </main>

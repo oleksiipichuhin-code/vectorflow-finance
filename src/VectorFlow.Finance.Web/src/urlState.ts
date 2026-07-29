@@ -34,8 +34,11 @@ const VIEW_IDS: ReadonlySet<string> = new Set([
   "dashboard",
   "workspace",
   "invoices",
-  "accruals"
+  "accruals",
+  "journals"
 ]);
+
+export type JournalStatusFilter = "" | "Draft" | "Posted";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -46,6 +49,8 @@ export type ListDiscovery = {
   page: number;
   invoiceFilters: InvoiceListFilters;
   accrualFilters: AccrualListFilters;
+  /** Journal list status filter when `view=journals` (`status=Draft|Posted`). */
+  journalStatus: JournalStatusFilter;
   /** Payment collection workspace (`queue=overdue` in URL): overdue + due today. */
   invoiceQueue: InvoiceQueueMode;
   /**
@@ -98,6 +103,8 @@ export type AppUrlState = {
   accrualId: string | null;
   /** Invoices detail deep-link; omitted outside invoices view. */
   invoiceId: string | null;
+  /** Journal entry detail deep-link; omitted outside journals view. */
+  journalEntryId: string | null;
   discovery: ListDiscovery;
 };
 
@@ -124,6 +131,7 @@ export const EMPTY_DISCOVERY: ListDiscovery = {
   page: 1,
   invoiceFilters: { ...EMPTY_INVOICE_FILTERS },
   accrualFilters: { ...EMPTY_ACCRUAL_FILTERS },
+  journalStatus: "",
   invoiceQueue: "",
   agingBucket: "",
   collectionPanel: "",
@@ -174,6 +182,11 @@ export function isInvoiceId(value: string | null | undefined): value is string {
   return isWorkspaceId(value);
 }
 
+/** Same GUID shape; invalid values never become journal detail targets. */
+export function isJournalEntryId(value: string | null | undefined): value is string {
+  return isWorkspaceId(value);
+}
+
 /**
  * Parse accrualId query value.
  * Missing/blank/invalid → null (no API call; normalize strips the param).
@@ -208,6 +221,25 @@ export function parseInvoiceIdParam(value: string | null | undefined): string | 
   return isInvoiceId(trimmed) ? trimmed : null;
 }
 
+/**
+ * Parse journalEntryId query value.
+ * Missing/blank/invalid → null (no API call; normalize strips the param).
+ */
+export function parseJournalEntryIdParam(
+  value: string | null | undefined
+): string | null {
+  if (value == null) {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  return isJournalEntryId(trimmed) ? trimmed : null;
+}
+
 /** Open accrual detail: set accrualId while preserving all other AppUrlState fields. */
 export function withAccrualId(state: AppUrlState, accrualId: string | null): AppUrlState {
   return {
@@ -237,6 +269,26 @@ export function withoutInvoiceId(state: AppUrlState): AppUrlState {
   return {
     ...state,
     invoiceId: null
+  };
+}
+
+/** Open journal detail: set journalEntryId while preserving all other AppUrlState fields. */
+export function withJournalEntryId(
+  state: AppUrlState,
+  journalEntryId: string | null
+): AppUrlState {
+  return {
+    ...state,
+    journalEntryId:
+      journalEntryId && isJournalEntryId(journalEntryId) ? journalEntryId : null
+  };
+}
+
+/** Close journal detail: clear only journalEntryId. */
+export function withoutJournalEntryId(state: AppUrlState): AppUrlState {
+  return {
+    ...state,
+    journalEntryId: null
   };
 }
 
@@ -277,6 +329,14 @@ function parseAccrualStatus(value: string | null): AccrualStatusFilter {
   return "";
 }
 
+function parseJournalStatus(value: string | null): JournalStatusFilter {
+  if (value === "Draft" || value === "Posted") {
+    return value;
+  }
+
+  return "";
+}
+
 function parseInvoiceQueue(value: string | null): InvoiceQueueMode {
   if (value === "overdue") {
     return "overdue";
@@ -290,6 +350,7 @@ export function createEmptyDiscovery(): ListDiscovery {
     page: 1,
     invoiceFilters: { ...EMPTY_INVOICE_FILTERS },
     accrualFilters: { ...EMPTY_ACCRUAL_FILTERS },
+    journalStatus: "",
     invoiceQueue: "",
     agingBucket: "",
     collectionPanel: "",
@@ -318,6 +379,7 @@ export function parseUrlSearch(search: string): AppUrlState {
   const workspaceId = isWorkspaceId(workspaceRaw) ? workspaceRaw : null;
   const accrualId = parseAccrualIdParam(params.get("accrualId"));
   const invoiceId = parseInvoiceIdParam(params.get("invoiceId"));
+  const journalEntryId = parseJournalEntryIdParam(params.get("journalEntryId"));
 
   const page = parsePage(params.get("page"));
   const invoiceQueue = view === "invoices" ? parseInvoiceQueue(params.get("queue")) : "";
@@ -391,20 +453,25 @@ export function parseUrlSearch(search: string): AppUrlState {
 
   const accrualFilters: AccrualListFilters = {
     descriptionPrefix: params.get("descriptionPrefix")?.trim() ?? "",
-    status: parseAccrualStatus(params.get("status")),
+    status: view === "accruals" ? parseAccrualStatus(params.get("status")) : "",
     recognitionFromDate: parseDateInput(params.get("recognitionFrom")),
     recognitionToDate: parseDateInput(params.get("recognitionTo"))
   };
+
+  const journalStatus =
+    view === "journals" ? parseJournalStatus(params.get("status")) : "";
 
   return {
     view,
     workspaceId,
     accrualId: view === "accruals" ? accrualId : null,
     invoiceId: view === "invoices" ? invoiceId : null,
+    journalEntryId: view === "journals" ? journalEntryId : null,
     discovery: {
       page,
       invoiceFilters,
       accrualFilters,
+      journalStatus,
       invoiceQueue,
       agingBucket,
       collectionPanel,
@@ -540,6 +607,21 @@ export function buildUrlSearch(state: AppUrlState): string {
     }
   }
 
+  if (state.view === "journals") {
+    if (
+      state.discovery.journalStatus === "Draft" ||
+      state.discovery.journalStatus === "Posted"
+    ) {
+      params.set("status", state.discovery.journalStatus);
+    }
+    if (page > 1) {
+      params.set("page", String(page));
+    }
+    if (state.journalEntryId && isJournalEntryId(state.journalEntryId)) {
+      params.set("journalEntryId", state.journalEntryId);
+    }
+  }
+
   const query = params.toString();
   return query ? `?${query}` : "";
 }
@@ -557,6 +639,7 @@ export function draftInvoicesDiscovery(): ListDiscovery {
       status: "Draft"
     },
     accrualFilters: { ...EMPTY_ACCRUAL_FILTERS },
+    journalStatus: "",
     invoiceQueue: "",
     agingBucket: "",
     collectionPanel: "",
@@ -585,6 +668,7 @@ export function issuedInvoicesDiscovery(): ListDiscovery {
       status: "Issued"
     },
     accrualFilters: { ...EMPTY_ACCRUAL_FILTERS },
+    journalStatus: "",
     invoiceQueue: "",
     agingBucket: "",
     collectionPanel: "",
@@ -615,6 +699,7 @@ export function overdueIssuedInvoicesDiscovery(): ListDiscovery {
       status: "Issued"
     },
     accrualFilters: { ...EMPTY_ACCRUAL_FILTERS },
+    journalStatus: "",
     invoiceQueue: "overdue",
     agingBucket: "",
     collectionPanel: "",

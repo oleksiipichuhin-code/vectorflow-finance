@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   EMPTY_ACCRUAL_FILTERS,
+  EMPTY_DISCOVERY,
   EMPTY_INVOICE_FILTERS,
   buildUrlSearch,
   draftInvoicesDiscovery,
@@ -26,7 +27,9 @@ describe("urlState", () => {
     assert.equal(state.discovery.page, 1);
     assert.deepEqual(state.discovery.invoiceFilters, EMPTY_INVOICE_FILTERS);
     assert.deepEqual(state.discovery.accrualFilters, EMPTY_ACCRUAL_FILTERS);
+    assert.equal(state.discovery.journalStatus, "");
     assert.equal(state.discovery.invoiceQueue, "");
+    assert.equal(state.journalEntryId, null);
   });
 
   it("round-trips draft invoices discovery", () => {
@@ -1018,5 +1021,60 @@ describe("accrual → invoice reverse-link URL handoff", () => {
     assert.match(search, /view=accruals/);
     assert.match(search, new RegExp(`accrualId=${accrualId}`));
     assert.equal(search.includes("invoiceId"), false);
+  });
+});
+
+describe("journal entry deep-link URL policy", () => {
+  const workspaceId = "11111111-1111-1111-1111-111111111111";
+  const journalEntryId = "31111111-1111-1111-1111-111111111111";
+
+  it("round-trips journals view with status and journalEntryId", () => {
+    const search = buildUrlSearch({
+      view: "journals",
+      workspaceId,
+      accrualId: null,
+      invoiceId: null,
+      journalEntryId,
+      discovery: {
+        ...EMPTY_DISCOVERY,
+        page: 2,
+        journalStatus: "Draft"
+      }
+    });
+
+    assert.equal(
+      search,
+      `?view=journals&workspaceId=${workspaceId}&status=Draft&page=2&journalEntryId=${journalEntryId}`
+    );
+
+    const parsed = parseUrlSearch(search);
+    assert.equal(parsed.view, "journals");
+    assert.equal(parsed.journalEntryId, journalEntryId);
+    assert.equal(parsed.discovery.journalStatus, "Draft");
+    assert.equal(parsed.discovery.page, 2);
+    assert.equal(parsed.accrualId, null);
+    assert.equal(parsed.invoiceId, null);
+  });
+
+  it("ignores journalEntryId outside journals view", () => {
+    const search = buildUrlSearch({
+      view: "invoices",
+      workspaceId,
+      accrualId: null,
+      invoiceId: null,
+      journalEntryId,
+      discovery: {
+        ...EMPTY_DISCOVERY,
+        invoiceFilters: { ...EMPTY_INVOICE_FILTERS, status: "Draft" }
+      }
+    });
+    assert.equal(search.includes("journalEntryId"), false);
+  });
+
+  it("invalid journalEntryId normalizes to null", () => {
+    const parsed = parseUrlSearch(
+      `?view=journals&workspaceId=${workspaceId}&journalEntryId=not-a-guid`
+    );
+    assert.equal(parsed.journalEntryId, null);
   });
 });
