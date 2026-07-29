@@ -1,4 +1,5 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   createAccrual,
   FinanceApiRequestError,
@@ -22,8 +23,12 @@ import {
   type CreateAccrualFromInvoiceValues
 } from "./invoiceAccrualBridge";
 import { CreateAccrualFromInvoiceEditor } from "./components/CreateAccrualFromInvoiceEditor";
-import { classifyDueDateAging } from "./invoiceDueDateAging";
-import { formatDate, formatMoney } from "./format";
+import {
+  classifyDueDateAging,
+  type DueDateAging,
+  type DueDateAgingKind
+} from "./invoiceDueDateAging";
+import { formatDate, formatMoney } from "./i18n/format.ts";
 import { ListLoadState } from "./components/ListLoadState";
 import { Panel, StatusMessage } from "./components/Panel";
 import {
@@ -34,9 +39,9 @@ import {
   EMPTY_CUSTOMER_LEDGER_FILTERS,
   filterCustomerLedgerSummaries,
   findCustomerLedgerSummary,
-  formatCustomerLedgerAgingBadge,
   normalizeCounterpartyReference,
-  type CustomerLedgerListFilters
+  type CustomerLedgerListFilters,
+  type CustomerLedgerSummary
 } from "./customerLedger";
 
 type SelectionChangeOptions = {
@@ -63,6 +68,104 @@ type CustomerLedgerViewProps = {
   onOpenCollections?: (counterpartyReference: string) => void;
 };
 
+function agingBucketKey(id: string): string {
+  return id ? `customerLedger.agingBucket.${id}` : "customerLedger.agingBucket.all";
+}
+
+function localizeAgingBadge(
+  summary: Pick<CustomerLedgerSummary, "worstAgingKind" | "maxOverdueDays" | "dueTodayCount">,
+  t: (key: string, options?: Record<string, unknown>) => string
+): string {
+  if (summary.worstAgingKind === "overdue") {
+    if (summary.maxOverdueDays == null) {
+      return t("customerLedger.agingBadge.overdue");
+    }
+    if (summary.maxOverdueDays === 1) {
+      return t("customerLedger.agingBadge.overdueOneDay");
+    }
+    return t("customerLedger.agingBadge.overdueDays", { count: summary.maxOverdueDays });
+  }
+
+  if (summary.worstAgingKind === "due_today") {
+    return t("customerLedger.agingBadge.dueToday");
+  }
+
+  if (summary.worstAgingKind === "not_due_yet") {
+    return t("customerLedger.agingBadge.notDueYet");
+  }
+
+  return t("customerLedger.agingBadge.noDueDate");
+}
+
+function localizeAgingPresentation(
+  aging: DueDateAging,
+  t: (key: string, options?: Record<string, unknown>) => string
+): { label: string; dayOffsetLabel: string; explanation: string } {
+  const kind = aging.kind as DueDateAgingKind;
+  const label = t(`customerLedger.agingKind.${kind}`);
+  const explanation = t("customerLedger.agingExplanation");
+  const emDash = t("emDash", { ns: "common" });
+
+  if (kind === "no_due_date" || aging.dayOffset == null) {
+    return { label, dayOffsetLabel: emDash, explanation };
+  }
+
+  if (kind === "due_today") {
+    return {
+      label,
+      dayOffsetLabel: t("customerLedger.dayOffset.dueToday"),
+      explanation
+    };
+  }
+
+  if (kind === "overdue") {
+    return {
+      label,
+      dayOffsetLabel:
+        aging.dayOffset === 1
+          ? t("customerLedger.dayOffset.overdueOne")
+          : t("customerLedger.dayOffset.overdue", { count: aging.dayOffset }),
+      explanation
+    };
+  }
+
+  return {
+    label,
+    dayOffsetLabel:
+      aging.dayOffset === 1
+        ? t("customerLedger.dayOffset.untilOne")
+        : t("customerLedger.dayOffset.until", { count: aging.dayOffset }),
+    explanation
+  };
+}
+
+function localizeInvoiceStatus(
+  status: string,
+  t: (key: string, options?: Record<string, unknown>) => string
+): string {
+  const key = `customerLedger.invoiceStatus.${status}`;
+  const translated = t(key);
+  return translated === key ? status : translated;
+}
+
+function localizeAccrualStatus(
+  status: string,
+  t: (key: string, options?: Record<string, unknown>) => string
+): string {
+  const key = `customerLedger.accrualStatus.${status}`;
+  const translated = t(key);
+  return translated === key ? status : translated;
+}
+
+function localizeAccrualType(
+  type: string,
+  t: (key: string, options?: Record<string, unknown>) => string
+): string {
+  const key = `type.${type}`;
+  const translated = t(key);
+  return translated === key ? type : translated;
+}
+
 export function CustomerLedgerView({
   workspace,
   selectedCounterpartyReference = "",
@@ -76,6 +179,7 @@ export function CustomerLedgerView({
   onOpenAccrual,
   onOpenCollections
 }: CustomerLedgerViewProps) {
+  const { t } = useTranslation(["finance", "common"]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [listTotalCount, setListTotalCount] = useState(0);
   const [listLoading, setListLoading] = useState(false);
@@ -98,7 +202,10 @@ export function CustomerLedgerView({
     useState<CreateAccrualFromInvoiceValues | null>(null);
   const [createAccrualBusy, setCreateAccrualBusy] = useState(false);
   const [createAccrualError, setCreateAccrualError] = useState<string | null>(null);
-  const [createAccrualSuccess, setCreateAccrualSuccess] = useState<string | null>(null);
+  const [createAccrualSuccessMeta, setCreateAccrualSuccessMeta] = useState<{
+    id: string;
+    status: string;
+  } | null>(null);
   const createAccrualBusyRef = useRef(false);
 
   const listSeq = useRef(0);
@@ -109,38 +216,39 @@ export function CustomerLedgerView({
     selectedCounterpartyReference
   );
 
-  const loadIssuedInvoices = useCallback(async (workspaceId: string) => {
-    const seq = ++listSeq.current;
-    setListLoading(true);
-    setListError(null);
-    try {
-      const page = await listInvoicesPaged(workspaceId, {
-        page: 1,
-        pageSize: CUSTOMER_LEDGER_PAGE_SIZE,
-        status: "Issued"
-      });
-      if (seq !== listSeq.current) {
-        return;
+  const loadIssuedInvoices = useCallback(
+    async (workspaceId: string) => {
+      const seq = ++listSeq.current;
+      setListLoading(true);
+      setListError(null);
+      try {
+        const page = await listInvoicesPaged(workspaceId, {
+          page: 1,
+          pageSize: CUSTOMER_LEDGER_PAGE_SIZE,
+          status: "Issued"
+        });
+        if (seq !== listSeq.current) {
+          return;
+        }
+        setInvoices(page.items);
+        setListTotalCount(page.totalCount);
+      } catch (error) {
+        if (seq !== listSeq.current) {
+          return;
+        }
+        setInvoices([]);
+        setListTotalCount(0);
+        setListError(
+          error instanceof Error ? error.message : t("customerLedger.listLoadFailed")
+        );
+      } finally {
+        if (seq === listSeq.current) {
+          setListLoading(false);
+        }
       }
-      setInvoices(page.items);
-      setListTotalCount(page.totalCount);
-    } catch (error) {
-      if (seq !== listSeq.current) {
-        return;
-      }
-      setInvoices([]);
-      setListTotalCount(0);
-      setListError(
-        error instanceof Error
-          ? error.message
-          : "Не вдалося завантажити виставлені рахунки."
-      );
-    } finally {
-      if (seq === listSeq.current) {
-        setListLoading(false);
-      }
-    }
-  }, []);
+    },
+    [t]
+  );
 
   const loadInvoiceDetail = useCallback(
     async (workspaceId: string, invoiceId: string) => {
@@ -159,12 +267,12 @@ export function CustomerLedgerView({
         }
         setDetailInvoice(null);
         if (error instanceof FinanceApiRequestError && error.status === 404) {
-          setDetailError("Рахунок не знайдено в цьому workspace.");
+          setDetailError(t("customerLedger.detailNotFound"));
           onSelectedInvoiceIdChange?.(null, { replace: true });
           return;
         }
         setDetailError(
-          error instanceof Error ? error.message : "Не вдалося завантажити рахунок."
+          error instanceof Error ? error.message : t("customerLedger.detailLoadFailed")
         );
       } finally {
         if (seq === detailSeq.current) {
@@ -172,30 +280,33 @@ export function CustomerLedgerView({
         }
       }
     },
-    [onSelectedInvoiceIdChange]
+    [onSelectedInvoiceIdChange, t]
   );
 
-  const loadLinkedAccruals = useCallback(async (workspaceId: string, invoiceId: string) => {
-    const seq = ++accrualsSeq.current;
-    setLinkedAccrualsError(null);
-    try {
-      const items = await listAccrualsByInvoice(workspaceId, invoiceId);
-      if (seq !== accrualsSeq.current) {
-        return;
+  const loadLinkedAccruals = useCallback(
+    async (workspaceId: string, invoiceId: string) => {
+      const seq = ++accrualsSeq.current;
+      setLinkedAccrualsError(null);
+      try {
+        const items = await listAccrualsByInvoice(workspaceId, invoiceId);
+        if (seq !== accrualsSeq.current) {
+          return;
+        }
+        setLinkedAccruals(items);
+      } catch (error) {
+        if (seq !== accrualsSeq.current) {
+          return;
+        }
+        setLinkedAccruals([]);
+        setLinkedAccrualsError(
+          error instanceof Error
+            ? error.message
+            : t("customerLedger.linkedAccrualsLoadFailed")
+        );
       }
-      setLinkedAccruals(items);
-    } catch (error) {
-      if (seq !== accrualsSeq.current) {
-        return;
-      }
-      setLinkedAccruals([]);
-      setLinkedAccrualsError(
-        error instanceof Error
-          ? error.message
-          : "Не вдалося завантажити нарахування за рахунком."
-      );
-    }
-  }, []);
+    },
+    [t]
+  );
 
   useEffect(() => {
     if (!workspace) {
@@ -299,7 +410,7 @@ export function CustomerLedgerView({
     if (!key) {
       return;
     }
-    setCreateAccrualSuccess(null);
+    setCreateAccrualSuccessMeta(null);
     setCreateAccrualError(null);
     setCreateAccrualBaseline(null);
     onSelectedInvoiceIdChange?.(null);
@@ -309,7 +420,7 @@ export function CustomerLedgerView({
   function closeCustomer() {
     setCreateAccrualBaseline(null);
     setCreateAccrualError(null);
-    setCreateAccrualSuccess(null);
+    setCreateAccrualSuccessMeta(null);
     onSelectedInvoiceIdChange?.(null);
     onSelectedCounterpartyChange?.(null);
   }
@@ -317,7 +428,7 @@ export function CustomerLedgerView({
   function openInvoiceRow(invoiceId: string) {
     setCreateAccrualBaseline(null);
     setCreateAccrualError(null);
-    setCreateAccrualSuccess(null);
+    setCreateAccrualSuccessMeta(null);
     onSelectedInvoiceIdChange?.(invoiceId);
   }
 
@@ -326,7 +437,7 @@ export function CustomerLedgerView({
       return;
     }
     setCreateAccrualError(null);
-    setCreateAccrualSuccess(null);
+    setCreateAccrualSuccessMeta(null);
     setCreateAccrualBaseline(initialCreateAccrualFromInvoiceValues(invoice));
   }
 
@@ -343,7 +454,7 @@ export function CustomerLedgerView({
 
     const validationError = validateCreateAccrualFromInvoiceValues(values);
     if (validationError) {
-      setCreateAccrualError(validationError);
+      setCreateAccrualError(t("customerLedger.createValidationFailed"));
       return;
     }
 
@@ -359,9 +470,10 @@ export function CustomerLedgerView({
         { createAccrual }
       );
       setCreateAccrualBaseline(null);
-      setCreateAccrualSuccess(
-        `Створено нарахування ${created.id.slice(0, 8)}… зі статусом ${created.status}.`
-      );
+      setCreateAccrualSuccessMeta({
+        id: created.id.slice(0, 8),
+        status: created.status
+      });
       await loadLinkedAccruals(workspace.id, detailInvoice.id);
     } catch (createErr) {
       const failure = interpretCreateAccrualFromInvoiceError(createErr);
@@ -380,27 +492,25 @@ export function CustomerLedgerView({
 
   if (!workspace) {
     return (
-      <Panel title="Customer ledger" headingId="customer-ledger-heading">
-        <StatusMessage>Спочатку відкрийте finance workspace.</StatusMessage>
+      <Panel title={t("customerLedger.title")} headingId="customer-ledger-heading">
+        <StatusMessage>{t("customerLedger.needWorkspace")}</StatusMessage>
       </Panel>
     );
   }
 
   const truncated = listTotalCount > invoices.length;
+  const emDash = t("emDash", { ns: "common" });
 
   return (
     <>
       <header className="hero">
-        <p className="eyebrow">Accounts receivable</p>
-        <h1>Customer ledger</h1>
-        <p className="lede">
-          Відкриті Issued рахунки за контрагентом → aging → деталі → нарахування. Стан у
-          shareable URL. Оплата ще не моделюється в API.
-        </p>
+        <p className="eyebrow">{t("customerLedger.eyebrow")}</p>
+        <h1>{t("customerLedger.title")}</h1>
+        <p className="lede">{t("customerLedger.lede")}</p>
       </header>
 
       <Panel
-        title="Контрагенти"
+        title={t("customerLedger.listTitle")}
         headingId="customer-ledger-list-heading"
         actions={
           <button
@@ -409,42 +519,42 @@ export function CustomerLedgerView({
             disabled={listLoading}
             onClick={() => void loadIssuedInvoices(workspace.id)}
           >
-            {listLoading ? "Завантаження…" : "Оновити"}
+            {listLoading ? t("loading", { ns: "common" }) : t("refresh", { ns: "common" })}
           </button>
         }
       >
         <form className="filter-form" onSubmit={applyFilters}>
           <label>
-            Пошук контрагента
+            {t("customerLedger.searchLabel")}
             <input
               type="text"
               value={queryDraft}
               onChange={(event) => setQueryDraft(event.target.value)}
               disabled={listLoading}
-              placeholder="Частина counterpartyReference"
-              aria-label="Пошук контрагента"
+              placeholder={t("customerLedger.searchPlaceholder")}
+              aria-label={t("customerLedger.searchLabel")}
             />
           </label>
           <label>
-            Aging bucket
+            {t("customerLedger.agingBucketLabel")}
             <select
               value={agingDraft}
               onChange={(event) =>
                 setAgingDraft(event.target.value as AgingBucketFilter)
               }
               disabled={listLoading}
-              aria-label="Aging bucket"
+              aria-label={t("customerLedger.agingBucketLabel")}
             >
               {AGING_BUCKET_OPTIONS.map((option) => (
                 <option key={option.id || "all"} value={option.id}>
-                  {option.label}
+                  {t(agingBucketKey(option.id))}
                 </option>
               ))}
             </select>
           </label>
           <div className="filter-actions">
             <button type="submit" disabled={listLoading}>
-              Застосувати фільтр
+              {t("applyFilter", { ns: "common" })}
             </button>
             <button
               type="button"
@@ -452,30 +562,33 @@ export function CustomerLedgerView({
               disabled={listLoading}
               onClick={clearFilters}
             >
-              Скинути фільтр
+              {t("clearFilter", { ns: "common" })}
             </button>
           </div>
         </form>
 
         <ListLoadState
           loading={listLoading && invoices.length === 0}
-          loadingMessage="Завантаження customer ledger…"
+          loadingMessage={t("customerLedger.listLoading")}
           error={listError}
           onRetry={() => void loadIssuedInvoices(workspace.id)}
           retryDisabled={listLoading}
           empty={!listLoading && !listError && summaries.length === 0}
-          emptyMessage="Немає Issued рахунків. Виставте рахунок у Invoices."
+          emptyMessage={t("customerLedger.listEmpty")}
         />
 
         {truncated ? (
           <StatusMessage>
-            Завантажено {invoices.length} з {listTotalCount} Issued (ліміт{" "}
-            {CUSTOMER_LEDGER_PAGE_SIZE}). Підсумок у межах завантаженого набору.
+            {t("customerLedger.listTruncated", {
+              loaded: invoices.length,
+              total: listTotalCount,
+              limit: CUSTOMER_LEDGER_PAGE_SIZE
+            })}
           </StatusMessage>
         ) : null}
 
         {!listError && summaries.length > 0 && visibleSummaries.length === 0 ? (
-          <StatusMessage>Немає контрагентів за обраним фільтром.</StatusMessage>
+          <StatusMessage>{t("customerLedger.listFilteredEmpty")}</StatusMessage>
         ) : null}
 
         {!listError && visibleSummaries.length > 0 ? (
@@ -483,12 +596,12 @@ export function CustomerLedgerView({
             <table>
               <thead>
                 <tr>
-                  <th>Контрагент</th>
-                  <th>Рахунки</th>
-                  <th>Сума</th>
-                  <th>Валюта</th>
-                  <th>Aging</th>
-                  <th>Прострочено</th>
+                  <th>{t("customerLedger.col.counterparty")}</th>
+                  <th>{t("customerLedger.col.invoices")}</th>
+                  <th>{t("customerLedger.col.amount")}</th>
+                  <th>{t("customerLedger.col.currency")}</th>
+                  <th>{t("customerLedger.col.aging")}</th>
+                  <th>{t("customerLedger.col.overdue")}</th>
                   <th />
                 </tr>
               </thead>
@@ -509,11 +622,17 @@ export function CustomerLedgerView({
                           row.currencies[0] ?? workspace.defaultCurrency
                         )}
                       </td>
-                      <td>{customerLedgerCurrencyLabel(row.currencies)}</td>
-                      <td>{formatCustomerLedgerAgingBadge(row)}</td>
+                      <td>
+                        {customerLedgerCurrencyLabel(row.currencies, emDash)}
+                      </td>
+                      <td>{localizeAgingBadge(row, t)}</td>
                       <td>
                         {row.overdueCount}
-                        {row.dueTodayCount > 0 ? ` · сьогодні ${row.dueTodayCount}` : ""}
+                        {row.dueTodayCount > 0
+                          ? t("customerLedger.dueTodaySuffix", {
+                              count: row.dueTodayCount
+                            })
+                          : ""}
                       </td>
                       <td>
                         <button
@@ -521,7 +640,7 @@ export function CustomerLedgerView({
                           className="button-secondary"
                           onClick={() => openCustomer(row.counterpartyReference)}
                         >
-                          Відкрити
+                          {t("open", { ns: "common" })}
                         </button>
                       </td>
                     </tr>
@@ -535,25 +654,27 @@ export function CustomerLedgerView({
 
       {selectedCounterparty && selectedSummary ? (
         <Panel
-          title={`Книга: ${selectedCounterparty}`}
+          title={t("customerLedger.detailTitleNamed", {
+            counterparty: selectedCounterparty
+          })}
           headingId="customer-ledger-detail-heading"
           actions={
             <button type="button" className="button-secondary" onClick={closeCustomer}>
-              Закрити
+              {t("close", { ns: "common" })}
             </button>
           }
         >
           <dl className="facts">
             <div>
-              <dt>Контрагент</dt>
+              <dt>{t("customerLedger.col.counterparty")}</dt>
               <dd className="mono">{selectedSummary.counterpartyReference}</dd>
             </div>
             <div>
-              <dt>Відкриті рахунки</dt>
+              <dt>{t("customerLedger.openInvoices")}</dt>
               <dd>{selectedSummary.invoiceCount}</dd>
             </div>
             <div>
-              <dt>Сума</dt>
+              <dt>{t("customerLedger.col.amount")}</dt>
               <dd>
                 {formatMoney(
                   selectedSummary.totalAmount,
@@ -562,8 +683,8 @@ export function CustomerLedgerView({
               </dd>
             </div>
             <div>
-              <dt>Aging</dt>
-              <dd>{formatCustomerLedgerAgingBadge(selectedSummary)}</dd>
+              <dt>{t("customerLedger.col.aging")}</dt>
+              <dd>{localizeAgingBadge(selectedSummary, t)}</dd>
             </div>
           </dl>
 
@@ -573,28 +694,31 @@ export function CustomerLedgerView({
                 type="button"
                 onClick={() => onOpenCollections(selectedCounterparty)}
               >
-                Збір оплат
+                {t("customerLedger.openCollections")}
               </button>
             ) : null}
           </div>
 
           {openItems.length === 0 ? (
-            <StatusMessage>Немає відкритих позицій за обраним aging фільтром.</StatusMessage>
+            <StatusMessage>{t("customerLedger.openItemsEmpty")}</StatusMessage>
           ) : (
             <div className="table-wrap">
               <table>
                 <thead>
                   <tr>
-                    <th>Документ</th>
-                    <th>Строк</th>
-                    <th>Aging</th>
-                    <th>Сума</th>
+                    <th>{t("customerLedger.col.document")}</th>
+                    <th>{t("customerLedger.col.due")}</th>
+                    <th>{t("customerLedger.col.aging")}</th>
+                    <th>{t("customerLedger.col.amount")}</th>
                     <th />
                   </tr>
                 </thead>
                 <tbody>
                   {openItems.map((row) => {
-                    const aging = classifyDueDateAging(row.dueDateUtc);
+                    const aging = localizeAgingPresentation(
+                      classifyDueDateAging(row.dueDateUtc),
+                      t
+                    );
                     const selected = row.id === selectedInvoiceId;
                     return (
                       <tr
@@ -603,10 +727,12 @@ export function CustomerLedgerView({
                         className={selected ? "row-highlight row-selected" : undefined}
                       >
                         <td className="mono cell-wrap">{row.documentNumber}</td>
-                        <td>{row.dueDateUtc ? formatDate(row.dueDateUtc) : "—"}</td>
+                        <td>
+                          {row.dueDateUtc ? formatDate(row.dueDateUtc) : emDash}
+                        </td>
                         <td>
                           {aging.label}
-                          {aging.dayOffsetLabel !== "—"
+                          {aging.dayOffsetLabel !== emDash
                             ? ` · ${aging.dayOffsetLabel}`
                             : ""}
                         </td>
@@ -617,7 +743,7 @@ export function CustomerLedgerView({
                             className="button-secondary"
                             onClick={() => openInvoiceRow(row.id)}
                           >
-                            Деталі
+                            {t("customerLedger.details")}
                           </button>
                         </td>
                       </tr>
@@ -629,14 +755,17 @@ export function CustomerLedgerView({
           )}
         </Panel>
       ) : (
-        <Panel title="Книга контрагента" headingId="customer-ledger-detail-empty-heading">
-          <StatusMessage>Оберіть контрагента у списку, щоб відкрити книгу.</StatusMessage>
+        <Panel
+          title={t("customerLedger.detailTitle")}
+          headingId="customer-ledger-detail-empty-heading"
+        >
+          <StatusMessage>{t("customerLedger.selectPrompt")}</StatusMessage>
         </Panel>
       )}
 
       {selectedInvoiceId ? (
         <Panel
-          title="Позиція customer ledger"
+          title={t("customerLedger.invoiceDetailTitle")}
           headingId="customer-ledger-invoice-heading"
           actions={
             <button
@@ -647,13 +776,13 @@ export function CustomerLedgerView({
                 onSelectedInvoiceIdChange?.(null);
               }}
             >
-              Закрити
+              {t("close", { ns: "common" })}
             </button>
           }
         >
           <ListLoadState
             loading={detailLoading && !detailInvoice}
-            loadingMessage="Завантаження рахунка…"
+            loadingMessage={t("customerLedger.detailLoading")}
             error={detailError}
             onRetry={() => void loadInvoiceDetail(workspace.id, selectedInvoiceId)}
             retryDisabled={detailLoading}
@@ -661,8 +790,13 @@ export function CustomerLedgerView({
             emptyMessage=""
           />
 
-          {createAccrualSuccess ? (
-            <StatusMessage tone="success">{createAccrualSuccess}</StatusMessage>
+          {createAccrualSuccessMeta ? (
+            <StatusMessage tone="success">
+              {t("customerLedger.createSuccess", {
+                id: createAccrualSuccessMeta.id,
+                status: localizeAccrualStatus(createAccrualSuccessMeta.status, t)
+              })}
+            </StatusMessage>
           ) : null}
           {createAccrualError && !createAccrualBaseline ? (
             <StatusMessage tone="error">{createAccrualError}</StatusMessage>
@@ -672,39 +806,51 @@ export function CustomerLedgerView({
             <>
               <dl className="facts">
                 <div>
-                  <dt>Документ</dt>
+                  <dt>{t("customerLedger.col.document")}</dt>
                   <dd className="mono">{detailInvoice.documentNumber}</dd>
                 </div>
                 <div>
-                  <dt>Контрагент</dt>
+                  <dt>{t("customerLedger.col.counterparty")}</dt>
                   <dd className="mono">{detailInvoice.counterpartyReference}</dd>
                 </div>
                 <div>
-                  <dt>Статус</dt>
-                  <dd>{detailInvoice.status}</dd>
+                  <dt>{t("customerLedger.col.status")}</dt>
+                  <dd>{localizeInvoiceStatus(detailInvoice.status, t)}</dd>
                 </div>
                 <div>
-                  <dt>Строк оплати</dt>
+                  <dt>{t("customerLedger.field.dueDate")}</dt>
                   <dd>
                     {detailInvoice.dueDateUtc
                       ? formatDate(detailInvoice.dueDateUtc)
-                      : "—"}
+                      : emDash}
                   </dd>
                 </div>
                 <div>
-                  <dt>Сума</dt>
+                  <dt>{t("customerLedger.col.amount")}</dt>
                   <dd>
                     {formatMoney(detailInvoice.totalAmount, detailInvoice.currency)}
                   </dd>
                 </div>
                 <div>
-                  <dt>Aging</dt>
-                  <dd>{classifyDueDateAging(detailInvoice.dueDateUtc).label}</dd>
+                  <dt>{t("customerLedger.col.aging")}</dt>
+                  <dd>
+                    {
+                      localizeAgingPresentation(
+                        classifyDueDateAging(detailInvoice.dueDateUtc),
+                        t
+                      ).label
+                    }
+                  </dd>
                 </div>
               </dl>
 
               <p className="meta">
-                {classifyDueDateAging(detailInvoice.dueDateUtc).explanation}
+                {
+                  localizeAgingPresentation(
+                    classifyDueDateAging(detailInvoice.dueDateUtc),
+                    t
+                  ).explanation
+                }
               </p>
 
               <div className="filter-actions">
@@ -714,7 +860,7 @@ export function CustomerLedgerView({
                     className="button-secondary"
                     onClick={() => onOpenInvoice(detailInvoice.id)}
                   >
-                    Відкрити в Invoices
+                    {t("customerLedger.openInInvoices")}
                   </button>
                 ) : null}
                 {canCreateAccrualFromInvoice(detailInvoice) ? (
@@ -723,7 +869,7 @@ export function CustomerLedgerView({
                     disabled={createAccrualBusy || Boolean(createAccrualBaseline)}
                     onClick={() => startCreateAccrual(detailInvoice)}
                   >
-                    Створити нарахування
+                    {t("customerLedger.createAccrual")}
                   </button>
                 ) : null}
               </div>
@@ -744,23 +890,23 @@ export function CustomerLedgerView({
               ) : null}
 
               <p className="meta">
-                <strong>Нарахування за рахунком</strong>
+                <strong>{t("customerLedger.linkedAccruals")}</strong>
               </p>
               {linkedAccrualsError ? (
                 <StatusMessage tone="error">{linkedAccrualsError}</StatusMessage>
               ) : null}
               {linkedAccruals.length === 0 && !linkedAccrualsError ? (
-                <StatusMessage>Пов’язаних нарахувань немає.</StatusMessage>
+                <StatusMessage>{t("customerLedger.linkedAccrualsEmpty")}</StatusMessage>
               ) : null}
               {linkedAccruals.length > 0 ? (
                 <div className="table-wrap">
                   <table>
                     <thead>
                       <tr>
-                        <th>Accrual</th>
-                        <th>Тип</th>
-                        <th>Статус</th>
-                        <th>Сума</th>
+                        <th>{t("customerLedger.col.accrual")}</th>
+                        <th>{t("customerLedger.col.type")}</th>
+                        <th>{t("customerLedger.col.status")}</th>
+                        <th>{t("customerLedger.col.amount")}</th>
                         <th />
                       </tr>
                     </thead>
@@ -768,8 +914,8 @@ export function CustomerLedgerView({
                       {linkedAccruals.map((accrual) => (
                         <tr key={accrual.id} data-row-id={accrual.id}>
                           <td className="mono cell-wrap">{accrual.id}</td>
-                          <td>{accrual.type}</td>
-                          <td>{accrual.status}</td>
+                          <td>{localizeAccrualType(accrual.type, t)}</td>
+                          <td>{localizeAccrualStatus(accrual.status, t)}</td>
                           <td>{formatMoney(accrual.amount, accrual.currency)}</td>
                           <td>
                             {onOpenAccrual ? (
@@ -778,7 +924,7 @@ export function CustomerLedgerView({
                                 className="button-secondary"
                                 onClick={() => onOpenAccrual(accrual.id)}
                               >
-                                Accrual
+                                {t("customerLedger.openAccrual")}
                               </button>
                             ) : null}
                           </td>

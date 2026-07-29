@@ -272,11 +272,13 @@ export function DashboardView({
             onClick={() => onNavigate("customer-ledger")}
             disabled={!workspace}
           >
-            <span className="nav-card-title">Customer ledger</span>
+            <span className="nav-card-title">
+              {t("nav.customerLedger", { ns: "common" })}
+            </span>
             <span className="nav-card-copy">
               {workspace
-                ? "Відкриті Issued рахунки за контрагентом"
-                : "Потрібен finance workspace"}
+                ? t("dashboard.customerLedgerCopy", { ns: "finance" })
+                : t("dashboard.needWorkspace", { ns: "finance" })}
             </span>
           </button>
         </div>

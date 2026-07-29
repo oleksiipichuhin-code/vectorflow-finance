@@ -17,5 +17,6 @@
   "language.en": "English",
   "emDash": "—",
   "nav.accounts": "Рахунки",
-  "nav.ledger": "Головна книга"
+  "nav.ledger": "Головна книга",
+  "nav.customerLedger": "Книга клієнта"
 }

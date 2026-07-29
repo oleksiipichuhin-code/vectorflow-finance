@@ -17,5 +17,6 @@
   "language.en": "English",
   "emDash": "—",
   "nav.accounts": "Accounts",
-  "nav.ledger": "Ledger"
+  "nav.ledger": "Ledger",
+  "nav.customerLedger": "Customer ledger"
 }

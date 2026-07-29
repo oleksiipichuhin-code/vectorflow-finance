@@ -1,4 +1,5 @@
 import { FormEvent, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   ACCRUAL_DESCRIPTION_MAX_LENGTH,
   ACCRUAL_TYPE_OPTIONS,
@@ -23,6 +24,7 @@ export function CreateAccrualFromInvoiceEditor({
   onSave,
   onCancel
 }: CreateAccrualFromInvoiceEditorProps) {
+  const { t } = useTranslation(["finance", "common"]);
   const [values, setValues] = useState<CreateAccrualFromInvoiceValues>(initialValues);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -34,17 +36,21 @@ export function CreateAccrualFromInvoiceEditor({
     onSave(values);
   }
 
+  function typeLabel(option: string): string {
+    const key = `type.${option}`;
+    const translated = t(key);
+    return translated === key ? option : translated;
+  }
+
   return (
     <form className="create-form issue-prepare-form" onSubmit={handleSubmit}>
       <p className="meta">
-        Створення нарахування з рахунка:{" "}
+        {t("createAccrualFromInvoice.intro")}{" "}
         <span className="mono">{documentNumberLabel}</span>
       </p>
-      <p className="meta">
-        Рахунок-джерело зафіксовано для цієї дії і передається в create Accrual.
-      </p>
+      <p className="meta">{t("createAccrualFromInvoice.sourceLocked")}</p>
       <label>
-        Тип
+        {t("createAccrualFromInvoice.type")}
         <select
           value={values.type}
           onChange={(event) =>
@@ -54,17 +60,17 @@ export function CreateAccrualFromInvoiceEditor({
             }))
           }
           disabled={busy}
-          aria-label="Тип нарахування"
+          aria-label={t("createAccrualFromInvoice.typeAria")}
         >
           {ACCRUAL_TYPE_OPTIONS.map((option) => (
             <option key={option} value={option}>
-              {option}
+              {typeLabel(option)}
             </option>
           ))}
         </select>
       </label>
       <label>
-        Сума
+        {t("createAccrualFromInvoice.amount")}
         <input
           value={values.amount}
           onChange={(event) =>
@@ -76,11 +82,11 @@ export function CreateAccrualFromInvoiceEditor({
           inputMode="decimal"
           required
           disabled={busy}
-          aria-label="Сума нарахування"
+          aria-label={t("createAccrualFromInvoice.amountAria")}
         />
       </label>
       <label>
-        Валюта
+        {t("createAccrualFromInvoice.currency")}
         <input
           value={values.currency}
           onChange={(event) =>
@@ -92,11 +98,11 @@ export function CreateAccrualFromInvoiceEditor({
           maxLength={3}
           required
           disabled={busy}
-          aria-label="Валюта нарахування"
+          aria-label={t("createAccrualFromInvoice.currencyAria")}
         />
       </label>
       <label>
-        Дата визнання
+        {t("createAccrualFromInvoice.recognitionDate")}
         <input
           type="date"
           value={values.recognitionDate}
@@ -108,11 +114,11 @@ export function CreateAccrualFromInvoiceEditor({
           }
           required
           disabled={busy}
-          aria-label="Дата визнання нарахування"
+          aria-label={t("createAccrualFromInvoice.recognitionDateAria")}
         />
       </label>
       <label>
-        Опис
+        {t("createAccrualFromInvoice.description")}
         <input
           value={values.description}
           onChange={(event) =>
@@ -124,13 +130,15 @@ export function CreateAccrualFromInvoiceEditor({
           maxLength={ACCRUAL_DESCRIPTION_MAX_LENGTH}
           required
           disabled={busy}
-          aria-label="Опис нарахування"
+          aria-label={t("createAccrualFromInvoice.descriptionAria")}
         />
       </label>
       {formError ? <StatusMessage tone="error">{formError}</StatusMessage> : null}
       <div className="filter-actions">
         <button type="submit" disabled={busy}>
-          {busy ? "Створення…" : "Створити нарахування"}
+          {busy
+            ? t("createAccrualFromInvoice.creating")
+            : t("createAccrualFromInvoice.submit")}
         </button>
         <button
           type="button"
@@ -138,7 +146,7 @@ export function CreateAccrualFromInvoiceEditor({
           disabled={busy}
           onClick={onCancel}
         >
-          Скасувати
+          {t("cancel", { ns: "common" })}
         </button>
       </div>
     </form>

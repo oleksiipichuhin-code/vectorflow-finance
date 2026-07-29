@@ -10,6 +10,8 @@ import {
 } from "./index.ts";
 import { formatDate, formatMoney, formatNumber } from "./format.ts";
 import i18n from "./index.ts";
+import financeEn from "./locales/en/finance.json" with { type: "json" };
+import financeUk from "./locales/uk/finance.json" with { type: "json" };
 
 function memoryStorage(initial: Record<string, string> = {}): Storage {
   const map = new Map<string, string>(Object.entries(initial));
@@ -175,6 +177,45 @@ describe("ledger finance catalogs", () => {
     await i18n.changeLanguage("en");
     assert.equal(i18n.t("ledger.openJournal", { ns: "finance" }), "Journal entry");
     assert.equal(i18n.t("ledger.detailLoaded", { ns: "finance" }), "Ledger posting loaded from the API.");
+  });
+});
+
+describe("customer ledger finance catalogs", () => {
+  beforeEach(async () => {
+    await i18n.changeLanguage("uk");
+  });
+
+  it("localizes customer ledger workflow chrome in Ukrainian and English", async () => {
+    assert.equal(i18n.t("customerLedger.title", { ns: "finance" }), "Книга клієнта");
+    assert.equal(i18n.t("customerLedger.listTitle", { ns: "finance" }), "Контрагенти");
+    assert.equal(i18n.t("nav.customerLedger", { ns: "common" }), "Книга клієнта");
+
+    await i18n.changeLanguage("en");
+    assert.equal(i18n.t("customerLedger.title", { ns: "finance" }), "Customer ledger");
+    assert.equal(i18n.t("customerLedger.listTitle", { ns: "finance" }), "Counterparties");
+    assert.equal(i18n.t("nav.customerLedger", { ns: "common" }), "Customer ledger");
+  });
+
+  it("keeps aging bucket wire ids while localizing labels", async () => {
+    assert.equal(i18n.t("customerLedger.agingBucket.8-30", { ns: "finance" }), "8–30 днів прострочки");
+    assert.equal("8-30", "8-30");
+    assert.equal("Issued", "Issued");
+
+    await i18n.changeLanguage("en");
+    assert.equal(i18n.t("customerLedger.agingBucket.8-30", { ns: "finance" }), "8–30 days overdue");
+    assert.equal(i18n.t("customerLedger.invoiceStatus.Issued", { ns: "finance" }), "Issued");
+  });
+
+  it("has matching customerLedger key structure in uk and en", async () => {
+    const ukKeys = Object.keys(financeUk).filter(
+      (key) =>
+        key.startsWith("customerLedger.") || key.startsWith("createAccrualFromInvoice.")
+    );
+    const enKeys = Object.keys(financeEn).filter(
+      (key) =>
+        key.startsWith("customerLedger.") || key.startsWith("createAccrualFromInvoice.")
+    );
+    assert.deepEqual(ukKeys.sort(), enKeys.sort());
   });
 });
 
