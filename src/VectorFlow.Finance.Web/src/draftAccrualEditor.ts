@@ -1,4 +1,5 @@
 import type { Accrual } from "./api";
+import i18n from "./i18n/index.ts";
 
 /** Mirrors Domain Accrual.DescriptionMaxLength. */
 export const ACCRUAL_DESCRIPTION_MAX_LENGTH = 500;
@@ -54,7 +55,7 @@ export function formatRecognitionDateInput(recognitionDateUtc: string): string {
 export function toRecognitionDateUtcIso(dateInput: string): string {
   const trimmed = dateInput.trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
-    throw new Error("Дата визнання має бути у форматі YYYY-MM-DD.");
+    throw new Error(i18n.t("accruals.error.recognitionDateFormat", { ns: "finance" }));
   }
 
   return new Date(`${trimmed}T00:00:00.000Z`).toISOString();
@@ -71,13 +72,16 @@ export function valuesFromAccrual(accrual: Accrual): DraftAccrualEditorValues {
 
 export function normalizeDraftDescription(raw: string): string {
   if (typeof raw !== "string" || !raw.trim()) {
-    throw new Error("Опис нарахування не може бути порожнім.");
+    throw new Error(i18n.t("accruals.error.descriptionRequired", { ns: "finance" }));
   }
 
   const normalized = raw.trim();
   if (normalized.length > ACCRUAL_DESCRIPTION_MAX_LENGTH) {
     throw new Error(
-      `Опис нарахування не може перевищувати ${ACCRUAL_DESCRIPTION_MAX_LENGTH} символів.`
+      i18n.t("accruals.error.descriptionTooLong", {
+        ns: "finance",
+        max: ACCRUAL_DESCRIPTION_MAX_LENGTH
+      })
     );
   }
 
@@ -86,7 +90,7 @@ export function normalizeDraftDescription(raw: string): string {
 
 export function normalizeDraftCurrency(raw: string): string {
   if (typeof raw !== "string" || !raw.trim()) {
-    throw new Error("Валюта не може бути порожньою.");
+    throw new Error(i18n.t("accruals.error.currencyRequired", { ns: "finance" }));
   }
 
   return raw.trim().toUpperCase();
@@ -98,7 +102,7 @@ export function normalizeDraftType(raw: string): AccrualTypeOption {
     return trimmed;
   }
 
-  throw new Error("Тип нарахування має бути Revenue або Expense.");
+  throw new Error(i18n.t("accruals.error.typeInvalid", { ns: "finance" }));
 }
 
 /**
@@ -114,7 +118,9 @@ export function validateDraftAccrualEditorValues(
     normalizeDraftType(draft.type);
     normalizeDraftCurrency(draft.currency);
   } catch (error) {
-    return error instanceof Error ? error.message : "Перевірте поля редактора.";
+    return error instanceof Error
+      ? error.message
+      : i18n.t("accruals.error.checkEditorFields", { ns: "finance" });
   }
 
   return null;
@@ -272,11 +278,13 @@ function asApiFailure(error: unknown): ApiFailureShape | null {
   };
 }
 
-const CONFLICT_OPERATOR_MESSAGE =
-  "Нарахування було змінено іншою дією. Список оновлено — відкрийте редагування знову з актуальними даними.";
+function conflictOperatorMessage(): string {
+  return i18n.t("accruals.error.editorConflict", { ns: "finance" });
+}
 
-const NOT_FOUND_OPERATOR_MESSAGE =
-  "Нарахування не знайдено. Список оновлено з сервера.";
+function notFoundOperatorMessage(): string {
+  return i18n.t("accruals.error.notFoundRefreshed", { ns: "finance" });
+}
 
 /**
  * Map Finance API / network failures for draft details editor.
@@ -290,7 +298,7 @@ export function interpretDraftAccrualEditorError(
   if (apiFailure) {
     if (apiFailure.status === 409 || apiFailure.errorKind === "Conflict") {
       return {
-        message: CONFLICT_OPERATOR_MESSAGE,
+        message: conflictOperatorMessage(),
         keepEditorOpen: false,
         refreshList: true
       };
@@ -298,7 +306,7 @@ export function interpretDraftAccrualEditorError(
 
     if (apiFailure.status === 404 || apiFailure.errorKind === "NotFound") {
       return {
-        message: NOT_FOUND_OPERATOR_MESSAGE,
+        message: notFoundOperatorMessage(),
         keepEditorOpen: false,
         refreshList: true
       };
@@ -328,7 +336,7 @@ export function interpretDraftAccrualEditorError(
   }
 
   return {
-    message: "Не вдалося змінити деталі нарахування.",
+    message: i18n.t("accruals.error.detailsEditFailed", { ns: "finance" }),
     keepEditorOpen: true,
     refreshList: false
   };

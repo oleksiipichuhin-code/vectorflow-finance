@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { listAccrualsPaged, listInvoicesPaged, type FinanceWorkspace } from "./api";
 import { ListLoadState } from "./components/ListLoadState";
 import { Panel } from "./components/Panel";
@@ -20,6 +21,7 @@ export function WorkspaceSummary({
   onNavigate,
   onTotalsChange
 }: WorkspaceSummaryProps) {
+  const { t } = useTranslation(["finance", "common"]);
   const [totals, setTotals] = useState<WorkspaceTotals | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -124,7 +126,7 @@ export function WorkspaceSummary({
             onClick={() => onNavigate("invoices")}
           >
             <span className="metric-value">{totals.invoiceCount}</span>
-            <span className="metric-label">Рахунків</span>
+            <span className="metric-label">{t("workspaceSummary.invoicesMetric")}</span>
           </button>
           <button
             type="button"
@@ -132,7 +134,7 @@ export function WorkspaceSummary({
             onClick={() => onNavigate("accruals")}
           >
             <span className="metric-value">{totals.accrualCount}</span>
-            <span className="metric-label">Нарахувань</span>
+            <span className="metric-label">{t("workspaceSummary.accrualsMetric")}</span>
           </button>
         </div>
       ) : null}

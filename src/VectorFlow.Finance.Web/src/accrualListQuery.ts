@@ -1,3 +1,5 @@
+import i18n from "./i18n/index.ts";
+
 export type AccrualStatusFilter = "" | "Draft" | "Recognized" | "Reversed";
 
 export type AccrualListFilters = {
@@ -41,7 +43,7 @@ export function validateRecognitionDateRange(
   }
 
   if (fromDate > toDate) {
-    return "Дата «з» не може бути пізніше за дату «по».";
+    return i18n.t("accruals.error.dateRangeInvalid", { ns: "finance" });
   }
 
   return null;

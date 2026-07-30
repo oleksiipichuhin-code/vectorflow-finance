@@ -1,4 +1,5 @@
 import type { Accrual } from "./api";
+import i18n from "./i18n/index.ts";
 
 /** Mirrors Domain Accrual.ReversalReasonMaxLength. */
 export const REVERSAL_REASON_MAX_LENGTH = 500;
@@ -18,12 +19,15 @@ export function canReverseAccrual(accrual: Pick<Accrual, "status">): boolean {
 export function normalizeReversalReason(reason: string): string {
   const normalized = reason.trim();
   if (!normalized) {
-    throw new Error("Вкажіть причину сторнування.");
+    throw new Error(i18n.t("accruals.error.reversalReasonRequired", { ns: "finance" }));
   }
 
   if (normalized.length > REVERSAL_REASON_MAX_LENGTH) {
     throw new Error(
-      `Причина сторнування не може перевищувати ${REVERSAL_REASON_MAX_LENGTH} символів.`
+      i18n.t("accruals.error.reversalReasonTooLong", {
+        ns: "finance",
+        max: REVERSAL_REASON_MAX_LENGTH
+      })
     );
   }
 
@@ -63,11 +67,13 @@ function asApiFailure(error: unknown): ApiFailureShape | null {
   };
 }
 
-const CONFLICT_OPERATOR_MESSAGE =
-  "Нарахування було змінено іншою дією. Список оновлено — відкрийте сторнування знову з актуальними даними.";
+function conflictOperatorMessage(): string {
+  return i18n.t("accruals.error.reverseConflict", { ns: "finance" });
+}
 
-const NOT_FOUND_OPERATOR_MESSAGE =
-  "Нарахування не знайдено. Список оновлено з сервера.";
+function notFoundOperatorMessage(): string {
+  return i18n.t("accruals.error.notFoundRefreshed", { ns: "finance" });
+}
 
 /**
  * Map Finance API / network failures for reverse.
@@ -79,7 +85,7 @@ export function interpretAccrualReverseError(error: unknown): AccrualReverseFail
   if (apiFailure) {
     if (apiFailure.status === 409 || apiFailure.errorKind === "Conflict") {
       return {
-        message: CONFLICT_OPERATOR_MESSAGE,
+        message: conflictOperatorMessage(),
         keepEditorOpen: false,
         refreshList: true
       };
@@ -87,7 +93,7 @@ export function interpretAccrualReverseError(error: unknown): AccrualReverseFail
 
     if (apiFailure.status === 404 || apiFailure.errorKind === "NotFound") {
       return {
-        message: NOT_FOUND_OPERATOR_MESSAGE,
+        message: notFoundOperatorMessage(),
         keepEditorOpen: false,
         refreshList: true
       };
@@ -117,7 +123,7 @@ export function interpretAccrualReverseError(error: unknown): AccrualReverseFail
   }
 
   return {
-    message: "Не вдалося сторнувати нарахування.",
+    message: i18n.t("accruals.error.reverseFailed", { ns: "finance" }),
     keepEditorOpen: true,
     refreshList: false
   };

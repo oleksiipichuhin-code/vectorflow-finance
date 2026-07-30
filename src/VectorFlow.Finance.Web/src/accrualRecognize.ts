@@ -1,4 +1,5 @@
 import type { Accrual } from "./api";
+import i18n from "./i18n/index.ts";
 
 export function isDraftAccrual(accrual: Pick<Accrual, "status">): boolean {
   return accrual.status === "Draft";
@@ -40,11 +41,13 @@ function asApiFailure(error: unknown): ApiFailureShape | null {
   };
 }
 
-const CONFLICT_OPERATOR_MESSAGE =
-  "Нарахування було змінено іншою дією. Список оновлено — повторіть визнання з актуальними даними.";
+function conflictOperatorMessage(): string {
+  return i18n.t("accruals.error.recognizeConflict", { ns: "finance" });
+}
 
-const NOT_FOUND_OPERATOR_MESSAGE =
-  "Нарахування не знайдено. Список оновлено з сервера.";
+function notFoundOperatorMessage(): string {
+  return i18n.t("accruals.error.notFoundRefreshed", { ns: "finance" });
+}
 
 /**
  * Map Finance API / network failures for recognize.
@@ -55,14 +58,14 @@ export function interpretAccrualRecognizeError(error: unknown): AccrualRecognize
   if (apiFailure) {
     if (apiFailure.status === 409 || apiFailure.errorKind === "Conflict") {
       return {
-        message: CONFLICT_OPERATOR_MESSAGE,
+        message: conflictOperatorMessage(),
         refreshList: true
       };
     }
 
     if (apiFailure.status === 404 || apiFailure.errorKind === "NotFound") {
       return {
-        message: NOT_FOUND_OPERATOR_MESSAGE,
+        message: notFoundOperatorMessage(),
         refreshList: true
       };
     }
@@ -88,7 +91,7 @@ export function interpretAccrualRecognizeError(error: unknown): AccrualRecognize
   }
 
   return {
-    message: "Не вдалося визнати нарахування.",
+    message: i18n.t("accruals.error.recognizeFailed", { ns: "finance" }),
     refreshList: false
   };
 }

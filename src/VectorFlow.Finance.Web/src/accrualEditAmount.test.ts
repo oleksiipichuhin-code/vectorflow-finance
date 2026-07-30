@@ -8,6 +8,15 @@ import {
 } from "./accrualEditAmount.ts";
 import { canRecognizeAccrual } from "./accrualRecognize.ts";
 import { canReverseAccrual } from "./accrualReverse.ts";
+import i18n from "./i18n/index.ts";
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function expectedError(key: string): RegExp {
+  return new RegExp(escapeRegExp(i18n.t(key, { ns: "finance" })));
+}
 
 class FakeFinanceApiRequestError extends Error {
   readonly status: number;
@@ -53,11 +62,13 @@ describe("parseAccrualAmountInput", () => {
   });
 
   it("rejects blank, non-numeric, zero, and negative values without mutation", () => {
-    assert.throws(() => parseAccrualAmountInput(""), /числовим/);
-    assert.throws(() => parseAccrualAmountInput("abc"), /числовим/);
-    assert.throws(() => parseAccrualAmountInput("0"), /більшою за нуль/);
-    assert.throws(() => parseAccrualAmountInput("-1"), /числовим|більшою/);
-    assert.throws(() => parseAccrualAmountInput("12.34.56"), /числовим/);
+    const numeric = expectedError("accruals.error.amountNumeric");
+    const positive = expectedError("accruals.error.amountPositive");
+    assert.throws(() => parseAccrualAmountInput(""), numeric);
+    assert.throws(() => parseAccrualAmountInput("abc"), numeric);
+    assert.throws(() => parseAccrualAmountInput("0"), positive);
+    assert.throws(() => parseAccrualAmountInput("-1"), Error);
+    assert.throws(() => parseAccrualAmountInput("12.34.56"), numeric);
   });
 });
 
@@ -81,7 +92,10 @@ describe("interpretAccrualAmountEditError", () => {
     );
     assert.equal(failure.keepEditorOpen, false);
     assert.equal(failure.refreshList, true);
-    assert.match(failure.message, /не знайдено/i);
+    assert.equal(
+      failure.message,
+      i18n.t("accruals.error.notFoundRefreshed", { ns: "finance" })
+    );
   });
 
   it("maps Conflict to concurrency guidance, closes editor, and refreshes", () => {
@@ -94,8 +108,7 @@ describe("interpretAccrualAmountEditError", () => {
     );
     assert.equal(failure.keepEditorOpen, false);
     assert.equal(failure.refreshList, true);
-    assert.match(failure.message, /змінено іншою дією/i);
-    assert.match(failure.message, /актуальними даними/i);
+    assert.equal(failure.message, i18n.t("accruals.error.editorConflict", { ns: "finance" }));
   });
 
   it("keeps editor open for network-style errors without refresh", () => {

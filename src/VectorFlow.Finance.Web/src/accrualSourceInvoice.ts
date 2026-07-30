@@ -1,4 +1,6 @@
 import type { Accrual, Invoice, InvoiceListQueryOptions } from "./api";
+import i18n from "./i18n/index.ts";
+import { formatMoney } from "./i18n/format.ts";
 
 /** Server allows 1..100; keep picker pages small with explicit navigation. */
 export const SOURCE_INVOICE_PICKER_PAGE_SIZE = 10;
@@ -25,18 +27,23 @@ export function toInvoicePickerSummary(invoice: Invoice): InvoicePickerSummary {
   };
 }
 
-function formatInvoiceMoney(amount: number, currency: string): string {
-  return `${amount.toFixed(2)} ${currency}`;
+/** Presentation label for an Invoice status wire value; unknown values stay raw. */
+export function invoiceStatusLabel(status: string): string {
+  if (status !== "Draft" && status !== "Issued") {
+    return status;
+  }
+
+  return i18n.t(`invoiceStatus.${status}`, { ns: "finance" });
 }
 
 export function formatSourceInvoiceSelection(
   invoice: InvoicePickerSummary | null | undefined
 ): string {
   if (!invoice) {
-    return "Не вибрано";
+    return i18n.t("accruals.picker.noSelection", { ns: "finance" });
   }
 
-  return `${invoice.documentNumber} · ${invoice.status} · ${formatInvoiceMoney(
+  return `${invoice.documentNumber} · ${invoiceStatusLabel(invoice.status)} · ${formatMoney(
     invoice.totalAmount,
     invoice.currency
   )} · ${invoice.counterpartyReference}`;
@@ -61,7 +68,7 @@ export function buildSourceInvoicePickerQuery(
   if (safePage < 1) {
     return {
       query: { page: 1, pageSize: SOURCE_INVOICE_PICKER_PAGE_SIZE },
-      validationError: "Номер сторінки має бути не меншим за 1."
+      validationError: i18n.t("accruals.error.pickerPageInvalid", { ns: "finance" })
     };
   }
 
@@ -84,14 +91,17 @@ export type AccrualSourceInvoiceEditFailure = {
   refreshList: boolean;
 };
 
-const CONFLICT_OPERATOR_MESSAGE =
-  "Нарахування було змінено іншою дією. Список оновлено — відкрийте вибір рахунку знову з актуальними даними.";
+function conflictOperatorMessage(): string {
+  return i18n.t("accruals.error.sourceInvoiceConflict", { ns: "finance" });
+}
 
-const ACCRUAL_NOT_FOUND_MESSAGE =
-  "Нарахування не знайдено. Список оновлено з сервера.";
+function accrualNotFoundMessage(): string {
+  return i18n.t("accruals.error.notFoundRefreshed", { ns: "finance" });
+}
 
-const INVOICE_NOT_FOUND_MESSAGE =
-  "Рахунок більше недоступний у цьому workspace. Список оновлено з сервера.";
+function invoiceNotFoundMessage(): string {
+  return i18n.t("accruals.error.invoiceNotFoundEdit", { ns: "finance" });
+}
 
 type ApiFailureShape = {
   status: number;
@@ -131,7 +141,7 @@ export function interpretAccrualSourceInvoiceEditError(
   if (apiFailure) {
     if (apiFailure.status === 409 || apiFailure.errorKind === "Conflict") {
       return {
-        message: CONFLICT_OPERATOR_MESSAGE,
+        message: conflictOperatorMessage(),
         keepEditorOpen: false,
         refreshList: true
       };
@@ -140,7 +150,7 @@ export function interpretAccrualSourceInvoiceEditError(
     if (apiFailure.status === 404 || apiFailure.errorKind === "NotFound") {
       const invoiceMissing = /invoice/i.test(apiFailure.message);
       return {
-        message: invoiceMissing ? INVOICE_NOT_FOUND_MESSAGE : ACCRUAL_NOT_FOUND_MESSAGE,
+        message: invoiceMissing ? invoiceNotFoundMessage() : accrualNotFoundMessage(),
         keepEditorOpen: false,
         refreshList: true
       };
@@ -170,7 +180,7 @@ export function interpretAccrualSourceInvoiceEditError(
   }
 
   return {
-    message: "Не вдалося змінити рахунок-джерело нарахування.",
+    message: i18n.t("accruals.error.sourceInvoiceEditFailed", { ns: "finance" }),
     keepEditorOpen: true,
     refreshList: false
   };
@@ -181,12 +191,12 @@ export function formatAccrualSourceInvoiceListCell(
   cached: InvoicePickerSummary | null | undefined
 ): string {
   if (!sourceInvoiceId) {
-    return "—";
+    return i18n.t("emDash", { ns: "common" });
   }
 
   if (cached?.documentNumber) {
     return cached.documentNumber;
   }
 
-  return "Вибрано";
+  return i18n.t("accruals.picker.selected", { ns: "finance" });
 }

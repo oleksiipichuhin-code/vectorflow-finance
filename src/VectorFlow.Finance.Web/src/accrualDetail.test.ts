@@ -6,8 +6,8 @@ import {
   canManageAccrualLifecycleFromDetails,
   canOpenSourceInvoiceFromDetails,
   canViewAccrualDetails,
-  DETAIL_RELOAD_AFTER_MUTATION_FAILED_MESSAGE,
   detailEditActionsFor,
+  detailReloadAfterMutationFailedMessage,
   detailLifecycleActionsFor,
   interpretAccrualDetailLoadError,
   interpretSourceInvoiceDetailLoadError,
@@ -19,6 +19,7 @@ import {
   type BeginEditorOptions
 } from "./accrualDetail.ts";
 import type { Accrual, Invoice } from "./api.ts";
+import i18n from "./i18n/index.ts";
 import { canEditAccrualAmount } from "./accrualEditAmount.ts";
 import { canEditDraftAccrualDetails } from "./draftAccrualEditor.ts";
 import { canRecognizeAccrual } from "./accrualRecognize.ts";
@@ -78,7 +79,8 @@ describe("canViewAccrualDetails", () => {
 describe("buildAccrualDetailFields", () => {
   it("formats amount and currency without float transforms", () => {
     const fields = buildAccrualDetailFields(sampleAccrual({ amount: 100.1, currency: "EUR" }));
-    assert.equal(fields.amountDisplay, "100.10 EUR");
+    assert.match(fields.amountDisplay, /100\D10/);
+    assert.match(fields.amountDisplay, /EUR/);
     assert.equal(fields.currency, "EUR");
   });
 
@@ -141,7 +143,7 @@ describe("source invoice detail helpers", () => {
     const view = sourceInvoiceDetailNone();
     assert.equal(view.kind, "none");
     if (view.kind === "none") {
-      assert.equal(view.display, "Не вибрано");
+      assert.equal(view.display, i18n.t("accruals.picker.noSelection", { ns: "finance" }));
     }
   });
 
@@ -167,8 +169,9 @@ describe("source invoice detail helpers", () => {
     assert.equal(view.kind, "ready");
     if (view.kind === "ready") {
       assert.match(view.display, /INV-42/);
-      assert.match(view.display, /Issued/);
-      assert.match(view.display, /10\.00 UAH/);
+      assert.ok(view.display.includes(i18n.t("invoiceStatus.Issued", { ns: "finance" })));
+      assert.match(view.display, /10\D00/);
+      assert.match(view.display, /UAH/);
       assert.match(view.display, /ACME/);
     }
   });
@@ -215,7 +218,7 @@ describe("interpretAccrualDetailLoadError", () => {
     assert.equal(failure.kind, "not_found");
     assert.equal(failure.refreshList, true);
     assert.equal(failure.clearAccrualData, true);
-    assert.match(failure.message, /більше недоступне/);
+    assert.equal(failure.message, i18n.t("accruals.error.detailNotFound", { ns: "finance" }));
   });
 
   it("treats network failure as retryable without list refresh", () => {
@@ -242,7 +245,10 @@ describe("interpretSourceInvoiceDetailLoadError", () => {
       new FakeFinanceApiRequestError("Invoice was not found.", 404, "NotFound")
     );
     assert.equal(failure.kind, "not_found");
-    assert.match(failure.message, /Рахунок недоступний|Повʼязаний рахунок/);
+    assert.equal(
+      failure.message,
+      i18n.t("accruals.error.sourceInvoiceUnavailable", { ns: "finance" })
+    );
   });
 
   it("maps invoice network errors as retryable", () => {
@@ -333,8 +339,10 @@ describe("detail edit handoff coordination", () => {
   });
 
   it("exposes post-mutation detail reload failure message without implying re-mutation", () => {
-    assert.match(DETAIL_RELOAD_AFTER_MUTATION_FAILED_MESSAGE, /Зміни збережено/);
-    assert.match(DETAIL_RELOAD_AFTER_MUTATION_FAILED_MESSAGE, /Спробувати знову/);
+    assert.equal(
+      detailReloadAfterMutationFailedMessage(),
+      i18n.t("accruals.error.detailReloadFailed", { ns: "finance" })
+    );
   });
 
   it("duplicate open of the same editor target is a no-op contract at begin helpers", () => {
@@ -434,8 +442,12 @@ describe("detail lifecycle handoff coordination", () => {
   });
 
   it("post-mutation detail reload failure message does not imply re-mutation", () => {
-    assert.match(DETAIL_RELOAD_AFTER_MUTATION_FAILED_MESSAGE, /Зміни збережено/);
-    assert.match(DETAIL_RELOAD_AFTER_MUTATION_FAILED_MESSAGE, /Спробувати знову/);
+    const message = detailReloadAfterMutationFailedMessage();
+    assert.equal(
+      message,
+      i18n.t("accruals.error.detailReloadFailed", { ns: "finance" })
+    );
+    assert.ok(!/повторіть|retry the change/i.test(message));
   });
 
   it("lifecycle callbacks receive the open Accrual identity", () => {

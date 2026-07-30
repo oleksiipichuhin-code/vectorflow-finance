@@ -11,6 +11,7 @@ import {
   normalizePickerDocumentNumber,
   toInvoicePickerSummary
 } from "./accrualSourceInvoice.ts";
+import i18n from "./i18n/index.ts";
 import { canEditAccrualAmount } from "./accrualEditAmount.ts";
 import { canRecognizeAccrual } from "./accrualRecognize.ts";
 import { canReverseAccrual } from "./accrualReverse.ts";
@@ -45,8 +46,14 @@ describe("canChangeAccrualSourceInvoice", () => {
 
 describe("source invoice selection display", () => {
   it("shows no-selection state", () => {
-    assert.equal(formatSourceInvoiceSelection(null), "Не вибрано");
-    assert.equal(formatAccrualSourceInvoiceListCell(null, null), "—");
+    assert.equal(
+      formatSourceInvoiceSelection(null),
+      i18n.t("accruals.picker.noSelection", { ns: "finance" })
+    );
+    assert.equal(
+      formatAccrualSourceInvoiceListCell(null, null),
+      i18n.t("emDash", { ns: "common" })
+    );
   });
 
   it("shows current selection from invoice summary fields only", () => {
@@ -64,13 +71,19 @@ describe("source invoice selection display", () => {
       issuedAtUtc: "2026-01-02T00:00:00.000Z"
     });
 
+    const display = formatSourceInvoiceSelection(summary);
     assert.equal(summary.documentNumber, "INV-100");
-    assert.match(formatSourceInvoiceSelection(summary), /INV-100/);
-    assert.match(formatSourceInvoiceSelection(summary), /Issued/);
-    assert.match(formatSourceInvoiceSelection(summary), /50\.00 UAH/);
-    assert.match(formatSourceInvoiceSelection(summary), /cp-a/);
+    assert.equal(summary.status, "Issued");
+    assert.match(display, /INV-100/);
+    assert.ok(display.includes(i18n.t("invoiceStatus.Issued", { ns: "finance" })));
+    assert.match(display, /50\D00/);
+    assert.match(display, /UAH/);
+    assert.match(display, /cp-a/);
     assert.equal(formatAccrualSourceInvoiceListCell("inv-1", summary), "INV-100");
-    assert.equal(formatAccrualSourceInvoiceListCell("inv-1", null), "Вибрано");
+    assert.equal(
+      formatAccrualSourceInvoiceListCell("inv-1", null),
+      i18n.t("accruals.picker.selected", { ns: "finance" })
+    );
   });
 });
 
@@ -95,7 +108,10 @@ describe("buildSourceInvoicePickerQuery", () => {
     });
 
     const invalidPage = buildSourceInvoicePickerQuery(0, "INV");
-    assert.match(invalidPage.validationError ?? "", /сторінки/);
+    assert.equal(
+      invalidPage.validationError,
+      i18n.t("accruals.error.pickerPageInvalid", { ns: "finance" })
+    );
   });
 
   it("normalizes picker document number by trim only", () => {
@@ -129,7 +145,10 @@ describe("interpretAccrualSourceInvoiceEditError", () => {
     );
     assert.equal(failure.keepEditorOpen, false);
     assert.equal(failure.refreshList, true);
-    assert.match(failure.message, /Нарахування не знайдено/);
+    assert.equal(
+      failure.message,
+      i18n.t("accruals.error.notFoundRefreshed", { ns: "finance" })
+    );
   });
 
   it("maps Invoice NotFound to closed editor and refresh", () => {
@@ -138,7 +157,10 @@ describe("interpretAccrualSourceInvoiceEditError", () => {
     );
     assert.equal(failure.keepEditorOpen, false);
     assert.equal(failure.refreshList, true);
-    assert.match(failure.message, /Рахунок більше недоступний/);
+    assert.equal(
+      failure.message,
+      i18n.t("accruals.error.invoiceNotFoundEdit", { ns: "finance" })
+    );
   });
 
   it("maps Conflict to concurrency guidance with refresh", () => {
@@ -151,7 +173,10 @@ describe("interpretAccrualSourceInvoiceEditError", () => {
     );
     assert.equal(failure.keepEditorOpen, false);
     assert.equal(failure.refreshList, true);
-    assert.match(failure.message, /змінено іншою дією/i);
+    assert.equal(
+      failure.message,
+      i18n.t("accruals.error.sourceInvoiceConflict", { ns: "finance" })
+    );
   });
 
   it("keeps editor open for network errors without refresh", () => {

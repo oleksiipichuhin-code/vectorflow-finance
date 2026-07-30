@@ -5,6 +5,7 @@ import {
   interpretAccrualRecognizeError,
   isDraftAccrual
 } from "./accrualRecognize.ts";
+import i18n from "./i18n/index.ts";
 
 class FakeFinanceApiRequestError extends Error {
   readonly status: number;
@@ -45,7 +46,10 @@ describe("interpretAccrualRecognizeError", () => {
     const failure = interpretAccrualRecognizeError(
       new FakeFinanceApiRequestError("Missing", 404, "NotFound")
     );
-    assert.match(failure.message, /не знайдено/i);
+    assert.equal(
+      failure.message,
+      i18n.t("accruals.error.notFoundRefreshed", { ns: "finance" })
+    );
     assert.equal(failure.refreshList, true);
   });
 
@@ -53,7 +57,10 @@ describe("interpretAccrualRecognizeError", () => {
     const failure = interpretAccrualRecognizeError(
       new FakeFinanceApiRequestError("Conflict", 409, "Conflict")
     );
-    assert.match(failure.message, /змінено іншою дією/);
+    assert.equal(
+      failure.message,
+      i18n.t("accruals.error.recognizeConflict", { ns: "finance" })
+    );
     assert.equal(failure.refreshList, true);
   });
 

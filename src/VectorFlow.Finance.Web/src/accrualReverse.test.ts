@@ -7,6 +7,7 @@ import {
   isRecognizedAccrual,
   normalizeReversalReason
 } from "./accrualReverse.ts";
+import i18n from "./i18n/index.ts";
 
 class FakeFinanceApiRequestError extends Error {
   readonly status: number;
@@ -18,6 +19,10 @@ class FakeFinanceApiRequestError extends Error {
     this.status = status;
     this.errorKind = errorKind;
   }
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 describe("accrualReverse", () => {
@@ -38,8 +43,11 @@ describe("accrualReverse", () => {
   });
 
   it("rejects blank or whitespace-only reasons", () => {
-    assert.throws(() => normalizeReversalReason(""), /причину/);
-    assert.throws(() => normalizeReversalReason("   "), /причину/);
+    const expected = new RegExp(
+      escapeRegExp(i18n.t("accruals.error.reversalReasonRequired", { ns: "finance" }))
+    );
+    assert.throws(() => normalizeReversalReason(""), expected);
+    assert.throws(() => normalizeReversalReason("   "), expected);
   });
 
   it("rejects reasons longer than domain max length", () => {
@@ -67,7 +75,10 @@ describe("interpretAccrualReverseError", () => {
     const failure = interpretAccrualReverseError(
       new FakeFinanceApiRequestError("Missing", 404, "NotFound")
     );
-    assert.match(failure.message, /не знайдено/i);
+    assert.equal(
+      failure.message,
+      i18n.t("accruals.error.notFoundRefreshed", { ns: "finance" })
+    );
     assert.equal(failure.keepEditorOpen, false);
     assert.equal(failure.refreshList, true);
   });
@@ -76,7 +87,7 @@ describe("interpretAccrualReverseError", () => {
     const failure = interpretAccrualReverseError(
       new FakeFinanceApiRequestError("Conflict", 409, "Conflict")
     );
-    assert.match(failure.message, /змінено іншою дією/);
+    assert.equal(failure.message, i18n.t("accruals.error.reverseConflict", { ns: "finance" }));
     assert.equal(failure.keepEditorOpen, false);
     assert.equal(failure.refreshList, true);
   });

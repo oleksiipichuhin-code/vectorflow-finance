@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { interpretCreateAccrualError } from "./accrualCreate.ts";
 import { formatSourceInvoiceSelection } from "./accrualSourceInvoice.ts";
+import i18n from "./i18n/index.ts";
 
 class FakeFinanceApiRequestError extends Error {
   readonly status: number;
@@ -17,7 +18,10 @@ class FakeFinanceApiRequestError extends Error {
 
 describe("create accrual Source Invoice UX helpers", () => {
   it("defaults optional Source Invoice section to no selection", () => {
-    assert.equal(formatSourceInvoiceSelection(null), "Не вибрано");
+    assert.equal(
+      formatSourceInvoiceSelection(null),
+      i18n.t("accruals.picker.noSelection", { ns: "finance" })
+    );
   });
 });
 
@@ -41,7 +45,10 @@ describe("interpretCreateAccrualError", () => {
     );
     assert.equal(failure.keepFormOpen, true);
     assert.equal(failure.clearSourceInvoiceSelection, true);
-    assert.match(failure.message, /рахунок/i);
+    assert.equal(
+      failure.message,
+      i18n.t("accruals.error.invoiceNotFoundCreate", { ns: "finance" })
+    );
   });
 
   it("maps workspace 404 without clearing Source Invoice selection", () => {
@@ -50,7 +57,10 @@ describe("interpretCreateAccrualError", () => {
     );
     assert.equal(failure.keepFormOpen, true);
     assert.equal(failure.clearSourceInvoiceSelection, false);
-    assert.match(failure.message, /простір/i);
+    assert.equal(
+      failure.message,
+      i18n.t("accruals.error.workspaceNotFound", { ns: "finance" })
+    );
   });
 
   it("maps 409 conflict without auto-retry and keeps form open", () => {
@@ -59,7 +69,7 @@ describe("interpretCreateAccrualError", () => {
     );
     assert.equal(failure.keepFormOpen, true);
     assert.equal(failure.clearSourceInvoiceSelection, false);
-    assert.match(failure.message, /конфлікт/i);
+    assert.equal(failure.message, i18n.t("accruals.error.createConflict", { ns: "finance" }));
   });
 
   it("keeps form and selection for network failures", () => {

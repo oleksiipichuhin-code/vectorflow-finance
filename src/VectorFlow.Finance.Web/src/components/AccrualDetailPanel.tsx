@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import type { Accrual } from "../api";
 import {
   buildAccrualDetailFields,
@@ -53,6 +54,7 @@ export function AccrualDetailPanel({
   onReverse,
   onOpenInvoice
 }: AccrualDetailPanelProps) {
+  const { t } = useTranslation(["finance", "common"]);
   const fields = accrual ? buildAccrualDetailFields(accrual) : null;
   const showEditActions =
     accrual !== null &&
@@ -77,31 +79,47 @@ export function AccrualDetailPanel({
     Boolean(onOpenInvoice);
   const showActions = showEditActions || showRecognize || showReverse;
 
+  function statusLabel(status: string): string {
+    if (status === "Draft" || status === "Recognized" || status === "Reversed") {
+      return t(`accrualStatus.${status}`);
+    }
+
+    return status;
+  }
+
+  function typeLabel(type: string): string {
+    if (type === "Revenue" || type === "Expense") {
+      return t(`type.${type}`);
+    }
+
+    return type;
+  }
+
   return (
     <section
       className="issue-prepare-form accrual-detail-panel"
       aria-labelledby="accrual-detail-heading"
     >
       <div className="panel-header">
-        <h3 id="accrual-detail-heading">Деталі нарахування</h3>
+        <h3 id="accrual-detail-heading">{t("accruals.detail.title")}</h3>
         <button
           type="button"
           className="button-secondary"
           onClick={onClose}
           disabled={editActionsDisabled}
         >
-          Закрити
+          {t("close", { ns: "common" })}
         </button>
       </div>
 
-      {loading ? <StatusMessage>Завантаження деталей…</StatusMessage> : null}
+      {loading ? <StatusMessage>{t("accruals.detail.loading")}</StatusMessage> : null}
 
       {!loading && error ? (
         <div className="state-actions" role="alert">
           <StatusMessage tone="error">{error}</StatusMessage>
           {errorRetryable ? (
             <button type="button" onClick={onRetry}>
-              Спробувати знову
+              {t("retry", { ns: "common" })}
             </button>
           ) : null}
         </div>
@@ -112,30 +130,30 @@ export function AccrualDetailPanel({
           <p className="meta cell-wrap">{fields.description}</p>
           <dl className="facts">
             <div>
-              <dt>Статус</dt>
-              <dd>{fields.status}</dd>
+              <dt>{t("accruals.detail.field.status")}</dt>
+              <dd>{statusLabel(fields.status)}</dd>
             </div>
             <div>
-              <dt>Тип</dt>
-              <dd>{fields.type}</dd>
+              <dt>{t("accruals.detail.field.type")}</dt>
+              <dd>{typeLabel(fields.type)}</dd>
             </div>
             <div>
-              <dt>Сума</dt>
+              <dt>{t("accruals.detail.field.amount")}</dt>
               <dd>{fields.amountDisplay}</dd>
             </div>
             <div>
-              <dt>Валюта</dt>
+              <dt>{t("accruals.detail.field.currency")}</dt>
               <dd>{fields.currency}</dd>
             </div>
             <div>
-              <dt>Дата визнання</dt>
+              <dt>{t("accruals.detail.field.recognitionDate")}</dt>
               <dd>{fields.recognitionDateDisplay}</dd>
             </div>
             <div>
-              <dt>Рахунок-джерело</dt>
+              <dt>{t("accruals.detail.field.sourceInvoice")}</dt>
               <dd className="cell-wrap">
                 {sourceInvoice.kind === "none" ? sourceInvoice.display : null}
-                {sourceInvoice.kind === "loading" ? "Завантаження…" : null}
+                {sourceInvoice.kind === "loading" ? t("loading", { ns: "common" }) : null}
                 {sourceInvoice.kind === "ready" ? sourceInvoice.display : null}
                 {sourceInvoice.kind === "unavailable" ? sourceInvoice.message : null}
                 {sourceInvoice.kind === "error" ? (
@@ -146,7 +164,7 @@ export function AccrualDetailPanel({
                       className="button-secondary"
                       onClick={onRetrySourceInvoice}
                     >
-                      Спробувати знову
+                      {t("retry", { ns: "common" })}
                     </button>
                   </span>
                 ) : null}
@@ -158,41 +176,41 @@ export function AccrualDetailPanel({
                       disabled={editActionsDisabled}
                       onClick={() => onOpenInvoice?.(openSourceInvoiceId)}
                     >
-                      Відкрити рахунок
+                      {t("accruals.detail.openInvoice")}
                     </button>
                   </span>
                 ) : null}
               </dd>
             </div>
             <div>
-              <dt>Створено</dt>
+              <dt>{t("accruals.detail.field.created")}</dt>
               <dd>{fields.createdAtDisplay}</dd>
             </div>
             <div>
-              <dt>Оновлено</dt>
+              <dt>{t("accruals.detail.field.updated")}</dt>
               <dd>{fields.updatedAtDisplay}</dd>
             </div>
             <div>
-              <dt>Визнано</dt>
+              <dt>{t("accruals.detail.field.recognized")}</dt>
               <dd>{fields.recognizedAtDisplay}</dd>
             </div>
             <div>
-              <dt>Сторновано</dt>
+              <dt>{t("accruals.detail.field.reversed")}</dt>
               <dd>{fields.reversedAtDisplay}</dd>
             </div>
             <div>
-              <dt>Причина сторно</dt>
+              <dt>{t("accruals.detail.field.reversalReason")}</dt>
               <dd className="cell-wrap">{fields.reversalReasonDisplay}</dd>
             </div>
             <div>
-              <dt>Id</dt>
+              <dt>{t("accruals.detail.field.id")}</dt>
               <dd className="mono">{fields.accrualId}</dd>
             </div>
           </dl>
 
           {showActions ? (
             <div className="filter-actions accrual-detail-actions">
-              <p className="meta">Дії</p>
+              <p className="meta">{t("accruals.detail.actionsTitle")}</p>
               {showEditActions ? (
                 <>
                   <button
@@ -201,7 +219,7 @@ export function AccrualDetailPanel({
                     disabled={editActionsDisabled}
                     onClick={() => onEditDetails?.(accrual)}
                   >
-                    Редагувати реквізити
+                    {t("accruals.detail.editDetails")}
                   </button>
                   <button
                     type="button"
@@ -209,7 +227,7 @@ export function AccrualDetailPanel({
                     disabled={editActionsDisabled}
                     onClick={() => onEditAmount?.(accrual)}
                   >
-                    Змінити суму
+                    {t("accruals.editAmountAction")}
                   </button>
                   <button
                     type="button"
@@ -217,7 +235,7 @@ export function AccrualDetailPanel({
                     disabled={editActionsDisabled}
                     onClick={() => onEditSourceInvoice?.(accrual)}
                   >
-                    Змінити рахунок
+                    {t("accruals.editSourceInvoiceAction")}
                   </button>
                 </>
               ) : null}
@@ -228,7 +246,9 @@ export function AccrualDetailPanel({
                   disabled={editActionsDisabled || recognizeBusy}
                   onClick={() => onRecognize?.(accrual)}
                 >
-                  {recognizeBusy ? "Визнання…" : "Визнати"}
+                  {recognizeBusy
+                    ? t("accruals.recognizingAction")
+                    : t("accruals.recognizeAction")}
                 </button>
               ) : null}
               {showReverse ? (
@@ -238,7 +258,7 @@ export function AccrualDetailPanel({
                   disabled={editActionsDisabled || reverseBusy || reverseOpen}
                   onClick={() => onReverse?.(accrual)}
                 >
-                  {reverseBusy ? "Сторнування…" : "Сторнувати"}
+                  {reverseBusy ? t("accruals.reversingAction") : t("accruals.reverseAction")}
                 </button>
               ) : null}
             </div>

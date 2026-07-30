@@ -26,5 +26,6 @@
   "nav.accountStatement": "Account statement",
   "nav.customerLedger": "Customer ledger",
   "nav.journals": "Journals",
-  "nav.invoices": "Invoices"
+  "nav.invoices": "Invoices",
+  "nav.accruals": "Accruals"
 }

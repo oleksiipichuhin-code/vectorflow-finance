@@ -741,7 +741,9 @@ export default function App() {
                         ? t("nav.journals")
                         : item.id === "invoices"
                           ? t("nav.invoices")
-                          : item.label}
+                          : item.id === "accruals"
+                            ? t("nav.accruals")
+                            : item.label}
           </button>
         ))}
       </nav>

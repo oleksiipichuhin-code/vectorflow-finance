@@ -1,4 +1,5 @@
 import type { Accrual } from "./api";
+import i18n from "./i18n/index.ts";
 
 export function canEditAccrualAmount(accrual: Pick<Accrual, "status">): boolean {
   return accrual.status === "Draft";
@@ -18,23 +19,25 @@ export function formatAccrualAmountInput(amount: number): string {
  * Comma decimal separator is accepted; no float multiply/divide transforms.
  */
 export function parseAccrualAmountInput(raw: string): number {
+  const numericMessage = () => i18n.t("accruals.error.amountNumeric", { ns: "finance" });
+
   const trimmed = raw.trim();
   if (!trimmed) {
-    throw new Error("Сума має бути числовим значенням.");
+    throw new Error(numericMessage());
   }
 
   const normalized = trimmed.replace(",", ".");
   if (!/^(?:0|[1-9]\d*)(?:\.\d+)?$|^\.\d+$/.test(normalized)) {
-    throw new Error("Сума має бути числовим значенням.");
+    throw new Error(numericMessage());
   }
 
   const amount = Number(normalized);
   if (!Number.isFinite(amount)) {
-    throw new Error("Сума має бути числовим значенням.");
+    throw new Error(numericMessage());
   }
 
   if (amount <= 0) {
-    throw new Error("Сума має бути більшою за нуль.");
+    throw new Error(i18n.t("accruals.error.amountPositive", { ns: "finance" }));
   }
 
   return amount;
@@ -75,11 +78,13 @@ function asApiFailure(error: unknown): ApiFailureShape | null {
   };
 }
 
-const CONFLICT_OPERATOR_MESSAGE =
-  "Нарахування було змінено іншою дією. Список оновлено — відкрийте редагування знову з актуальними даними.";
+function conflictOperatorMessage(): string {
+  return i18n.t("accruals.error.editorConflict", { ns: "finance" });
+}
 
-const NOT_FOUND_OPERATOR_MESSAGE =
-  "Нарахування не знайдено. Список оновлено з сервера.";
+function notFoundOperatorMessage(): string {
+  return i18n.t("accruals.error.notFoundRefreshed", { ns: "finance" });
+}
 
 /**
  * Map Finance API / network failures for draft amount edit.
@@ -91,7 +96,7 @@ export function interpretAccrualAmountEditError(error: unknown): AccrualAmountEd
   if (apiFailure) {
     if (apiFailure.status === 409 || apiFailure.errorKind === "Conflict") {
       return {
-        message: CONFLICT_OPERATOR_MESSAGE,
+        message: conflictOperatorMessage(),
         keepEditorOpen: false,
         refreshList: true
       };
@@ -99,7 +104,7 @@ export function interpretAccrualAmountEditError(error: unknown): AccrualAmountEd
 
     if (apiFailure.status === 404 || apiFailure.errorKind === "NotFound") {
       return {
-        message: NOT_FOUND_OPERATOR_MESSAGE,
+        message: notFoundOperatorMessage(),
         keepEditorOpen: false,
         refreshList: true
       };
@@ -129,7 +134,7 @@ export function interpretAccrualAmountEditError(error: unknown): AccrualAmountEd
   }
 
   return {
-    message: "Не вдалося змінити суму нарахування.",
+    message: i18n.t("accruals.error.amountEditFailed", { ns: "finance" }),
     keepEditorOpen: true,
     refreshList: false
   };

@@ -44,21 +44,25 @@ function invoiceCardCopy(
   return t("dashboard.invoicesCount", { ns: "finance", count });
 }
 
-function accrualCardCopy(workspace: FinanceWorkspace | null, totals: WorkspaceTotals | null): string {
+function accrualCardCopy(
+  workspace: FinanceWorkspace | null,
+  totals: WorkspaceTotals | null,
+  t: (key: string, options?: Record<string, unknown>) => string
+): string {
   if (!workspace) {
-    return "Список нарахувань обраного workspace";
+    return t("dashboard.accrualsCopy", { ns: "finance" });
   }
 
   if (!totals) {
-    return "Підрахунок нарахувань…";
+    return t("dashboard.accrualsCounting", { ns: "finance" });
   }
 
   const count = totals.accrualCount;
   if (count === 1) {
-    return "1 нарахування у workspace";
+    return t("dashboard.accrualsCountOne", { ns: "finance" });
   }
 
-  return `${count} нарахувань у workspace`;
+  return t("dashboard.accrualsCount", { ns: "finance", count });
 }
 
 export function DashboardView({
@@ -199,13 +203,15 @@ export function DashboardView({
             onClick={() => onNavigate("accruals")}
             disabled={!workspace}
           >
-            <span className="nav-card-title">Accruals</span>
+            <span className="nav-card-title">{t("nav.accruals", { ns: "common" })}</span>
             {workspace && totals ? (
               <span className="nav-card-metric" aria-hidden="true">
                 {totals.accrualCount}
               </span>
             ) : null}
-            <span className="nav-card-copy">{accrualCardCopy(workspace, workspace ? totals : null)}</span>
+            <span className="nav-card-copy">
+              {accrualCardCopy(workspace, workspace ? totals : null, t)}
+            </span>
           </button>
           <button
             type="button"

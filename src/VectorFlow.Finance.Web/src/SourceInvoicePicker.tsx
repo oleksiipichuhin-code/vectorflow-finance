@@ -1,4 +1,5 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { getInvoice, listInvoicesPaged, type Invoice } from "./api";
 import {
   SOURCE_INVOICE_PICKER_PAGE_SIZE,
@@ -12,7 +13,7 @@ import {
 import { totalPages } from "./invoiceListQuery";
 import { ListLoadState } from "./components/ListLoadState";
 import { StatusMessage } from "./components/Panel";
-import { formatMoney } from "./format";
+import { formatMoney } from "./i18n/format";
 
 type SourceInvoicePickerProps = {
   workspaceId: string;
@@ -23,11 +24,11 @@ type SourceInvoicePickerProps = {
   formError: string | null;
   onSave: (sourceInvoiceId: string | null, selected: InvoicePickerSummary | null) => void;
   onCancel: () => void;
-  /** Optional heading prefix; default "Рахунок-джерело". */
+  /** Optional heading prefix; defaults to the source-invoice label. */
   headingPrefix?: string;
-  /** Confirm button idle label; default "Зберегти". */
+  /** Confirm button idle label; defaults to Save. */
   confirmLabel?: string;
-  /** Confirm button busy label; default "Збереження…". */
+  /** Confirm button busy label; defaults to Saving…. */
   confirmBusyLabel?: string;
 };
 
@@ -39,10 +40,11 @@ export function SourceInvoicePicker({
   formError,
   onSave,
   onCancel,
-  headingPrefix = "Рахунок-джерело",
-  confirmLabel = "Зберегти",
-  confirmBusyLabel = "Збереження…"
+  headingPrefix,
+  confirmLabel,
+  confirmBusyLabel
 }: SourceInvoicePickerProps) {
+  const { t } = useTranslation(["finance", "common"]);
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(baselineInvoiceId);
   const [selectedDisplay, setSelectedDisplay] = useState<InvoicePickerSummary | null>(null);
   const [currentLookupPending, setCurrentLookupPending] = useState(Boolean(baselineInvoiceId));
@@ -100,7 +102,9 @@ export function SourceInvoicePicker({
         setInvoices([]);
         setTotalCount(0);
         setListError(
-          loadError instanceof Error ? loadError.message : "Не вдалося завантажити рахунки."
+          loadError instanceof Error
+            ? loadError.message
+            : t("accruals.error.invoiceListLoadFailed")
         );
       } finally {
         if (seq === requestSeq.current) {
@@ -108,7 +112,7 @@ export function SourceInvoicePicker({
         }
       }
     },
-    [workspaceId]
+    [workspaceId, t]
   );
 
   useEffect(() => {
@@ -152,14 +156,14 @@ export function SourceInvoicePicker({
         setCurrentLookupError(
           error instanceof Error
             ? error.message
-            : "Не вдалося завантажити поточний рахунок-джерело."
+            : t("accruals.error.currentInvoiceLoadFailed")
         );
       });
 
     return () => {
       controller.abort();
     };
-  }, [workspaceId, baselineInvoiceId]);
+  }, [workspaceId, baselineInvoiceId, t]);
 
   useEffect(() => {
     void loadPickerPage(page, appliedDocumentNumber);
@@ -214,42 +218,46 @@ export function SourceInvoicePicker({
     onSave(selectedInvoiceId, selectedDisplay);
   }
 
+  function invoiceStatusLabel(status: string): string {
+    return status === "Draft" || status === "Issued" ? t(`invoiceStatus.${status}`) : status;
+  }
+
   const pages = totalPages(totalCount, pageSize);
   const canGoPrevious = page > 1 && !loading && !busy;
   const canGoNext = page < pages && !loading && !busy;
   const dirty = hasSourceInvoiceSelectionChanged(baselineInvoiceId, selectedInvoiceId);
   const selectionLabel = currentLookupPending
-    ? "Завантаження поточного рахунку…"
+    ? t("accruals.picker.currentLoading")
     : formatSourceInvoiceSelection(selectedDisplay);
+  const heading = headingPrefix ?? t("accruals.picker.headingPrefix");
 
   return (
     <div className="create-form issue-prepare-form">
       <p className="meta">
-        {headingPrefix}: <span className="cell-wrap">{accrualDescription}</span>
+        {heading}: <span className="cell-wrap">{accrualDescription}</span>
       </p>
       <p className="meta">
-        Поточний вибір: <span className="cell-wrap">{selectionLabel}</span>
+        {t("accruals.picker.currentSelection")}{" "}
+        <span className="cell-wrap">{selectionLabel}</span>
       </p>
       {currentLookupError ? (
-        <StatusMessage tone="error">
-          Поточний звʼязок недоступний для відображення. Можна очистити або вибрати інший рахунок.
-        </StatusMessage>
+        <StatusMessage tone="error">{t("accruals.picker.currentUnavailable")}</StatusMessage>
       ) : null}
 
       <form className="filter-form" onSubmit={applyDocumentNumberFilter}>
         <label>
-          Номер документа
+          {t("accruals.picker.documentNumber")}
           <input
             value={documentNumberDraft}
             onChange={(event) => setDocumentNumberDraft(event.target.value)}
-            placeholder="Точний номер (не частковий пошук)"
+            placeholder={t("accruals.picker.documentNumberPlaceholder")}
             autoComplete="off"
             disabled={busy}
           />
         </label>
         <div className="filter-actions">
           <button type="submit" disabled={busy || loading}>
-            Знайти
+            {t("accruals.picker.findAction")}
           </button>
           <button
             type="button"
@@ -257,7 +265,7 @@ export function SourceInvoicePicker({
             disabled={busy || loading}
             onClick={clearDocumentNumberFilter}
           >
-            Скинути фільтр
+            {t("accruals.picker.resetFilter")}
           </button>
           <button
             type="button"
@@ -265,7 +273,7 @@ export function SourceInvoicePicker({
             disabled={busy || selectedInvoiceId === null}
             onClick={clearSelection}
           >
-            Очистити вибір
+            {t("accruals.clearSelection")}
           </button>
         </div>
       </form>
@@ -274,21 +282,20 @@ export function SourceInvoicePicker({
         <StatusMessage tone="error">{filterValidationError}</StatusMessage>
       ) : null}
       <p className="meta">
-        Рахунки поточного workspace · сторінка {SOURCE_INVOICE_PICKER_PAGE_SIZE} записів · статус не
-        обмежується клієнтом.
+        {t("accruals.picker.listMeta", { pageSize: SOURCE_INVOICE_PICKER_PAGE_SIZE })}
       </p>
 
       <ListLoadState
         loading={loading}
-        loadingMessage="Завантаження рахунків…"
+        loadingMessage={t("accruals.picker.listLoading")}
         error={listError}
         onRetry={() => void loadPickerPage(page, appliedDocumentNumber)}
         retryDisabled={loading || busy}
         empty={!loading && !listError && invoices.length === 0}
         emptyMessage={
           appliedDocumentNumber
-            ? "За точним номером документа рахунків немає."
-            : "У цьому workspace ще немає рахунків."
+            ? t("accruals.picker.listEmptyFiltered")
+            : t("accruals.picker.listEmpty")
         }
       />
 
@@ -298,11 +305,11 @@ export function SourceInvoicePicker({
             <table>
               <thead>
                 <tr>
-                  <th>Номер</th>
-                  <th>Статус</th>
-                  <th>Контрагент</th>
-                  <th>Сума</th>
-                  <th>Вибір</th>
+                  <th>{t("accruals.picker.col.number")}</th>
+                  <th>{t("accruals.picker.col.status")}</th>
+                  <th>{t("accruals.picker.col.counterparty")}</th>
+                  <th>{t("accruals.picker.col.amount")}</th>
+                  <th>{t("accruals.picker.col.selection")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -311,7 +318,7 @@ export function SourceInvoicePicker({
                   return (
                     <tr key={invoice.id} className={selected ? "row-highlight" : undefined}>
                       <td className="mono">{invoice.documentNumber}</td>
-                      <td>{invoice.status}</td>
+                      <td>{invoiceStatusLabel(invoice.status)}</td>
                       <td className="cell-wrap">{invoice.counterpartyReference}</td>
                       <td>{formatMoney(invoice.totalAmount, invoice.currency)}</td>
                       <td>
@@ -321,7 +328,9 @@ export function SourceInvoicePicker({
                           disabled={busy || loading}
                           onClick={() => selectInvoice(invoice)}
                         >
-                          {selected ? "Вибрано" : "Вибрати"}
+                          {selected
+                            ? t("accruals.picker.selected")
+                            : t("accruals.picker.select")}
                         </button>
                       </td>
                     </tr>
@@ -330,23 +339,27 @@ export function SourceInvoicePicker({
               </tbody>
             </table>
           </div>
-          <div className="pagination" role="navigation" aria-label="Сторінки рахунків-джерел">
+          <div
+            className="pagination"
+            role="navigation"
+            aria-label={t("accruals.picker.paginationAria")}
+          >
             <button
               type="button"
               disabled={!canGoPrevious}
               onClick={() => setPage((current) => Math.max(1, current - 1))}
             >
-              Назад
+              {t("back", { ns: "common" })}
             </button>
             <span className="meta">
-              {page} / {pages} · усього {totalCount}
+              {t("accruals.picker.pageMeta", { page, pages, total: totalCount })}
             </span>
             <button
               type="button"
               disabled={!canGoNext}
               onClick={() => setPage((current) => current + 1)}
             >
-              Далі
+              {t("next", { ns: "common" })}
             </button>
           </div>
         </>
@@ -360,10 +373,12 @@ export function SourceInvoicePicker({
           disabled={busy || !dirty || currentLookupPending}
           onClick={handleSave}
         >
-          {busy ? confirmBusyLabel : confirmLabel}
+          {busy
+            ? (confirmBusyLabel ?? t("saving", { ns: "common" }))
+            : (confirmLabel ?? t("save", { ns: "common" }))}
         </button>
         <button type="button" className="button-secondary" disabled={busy} onClick={onCancel}>
-          Скасувати
+          {t("cancel", { ns: "common" })}
         </button>
       </div>
     </div>

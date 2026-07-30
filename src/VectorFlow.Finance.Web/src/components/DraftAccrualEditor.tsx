@@ -1,4 +1,5 @@
 import { FormEvent, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   ACCRUAL_DESCRIPTION_MAX_LENGTH,
   ACCRUAL_TYPE_OPTIONS,
@@ -23,6 +24,7 @@ export function DraftAccrualEditor({
   onSave,
   onCancel
 }: DraftAccrualEditorProps) {
+  const { t } = useTranslation(["finance", "common"]);
   const [values, setValues] = useState<DraftAccrualEditorValues>(initialValues);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -34,30 +36,35 @@ export function DraftAccrualEditor({
     onSave(values);
   }
 
+  function typeLabel(option: string): string {
+    return option === "Revenue" || option === "Expense" ? t(`type.${option}`) : option;
+  }
+
   return (
     <form className="create-form create-form-accrual issue-prepare-form" onSubmit={handleSubmit}>
       <p className="meta">
-        Редагування деталей: <span className="cell-wrap">{accrualDescription}</span>
+        {t("accruals.draftEditor.intro")}{" "}
+        <span className="cell-wrap">{accrualDescription}</span>
       </p>
       <label>
-        Тип
+        {t("accruals.field.type")}
         <select
           value={values.type}
           onChange={(event) =>
             setValues((current) => ({ ...current, type: event.target.value }))
           }
           disabled={busy}
-          aria-label="Тип нарахування"
+          aria-label={t("accruals.draftEditor.typeAria")}
         >
           {ACCRUAL_TYPE_OPTIONS.map((type) => (
             <option key={type} value={type}>
-              {type}
+              {typeLabel(type)}
             </option>
           ))}
         </select>
       </label>
       <label>
-        Валюта
+        {t("accruals.field.currency")}
         <input
           value={values.currency}
           onChange={(event) =>
@@ -69,11 +76,11 @@ export function DraftAccrualEditor({
           maxLength={3}
           required
           disabled={busy}
-          aria-label="Валюта нарахування"
+          aria-label={t("accruals.draftEditor.currencyAria")}
         />
       </label>
       <label>
-        Дата визнання
+        {t("accruals.field.recognitionDate")}
         <input
           type="date"
           value={values.recognitionDate}
@@ -85,11 +92,11 @@ export function DraftAccrualEditor({
           }
           required
           disabled={busy}
-          aria-label="Дата визнання нарахування"
+          aria-label={t("accruals.draftEditor.recognitionDateAria")}
         />
       </label>
       <label>
-        Опис
+        {t("accruals.field.description")}
         <input
           value={values.description}
           onChange={(event) =>
@@ -101,13 +108,13 @@ export function DraftAccrualEditor({
           maxLength={ACCRUAL_DESCRIPTION_MAX_LENGTH}
           required
           disabled={busy}
-          aria-label="Опис нарахування"
+          aria-label={t("accruals.draftEditor.descriptionAria")}
         />
       </label>
       {formError ? <StatusMessage tone="error">{formError}</StatusMessage> : null}
       <div className="filter-actions">
         <button type="submit" disabled={busy}>
-          {busy ? "Збереження…" : "Зберегти"}
+          {busy ? t("saving", { ns: "common" }) : t("save", { ns: "common" })}
         </button>
         <button
           type="button"
@@ -115,7 +122,7 @@ export function DraftAccrualEditor({
           disabled={busy}
           onClick={onCancel}
         >
-          Скасувати
+          {t("cancel", { ns: "common" })}
         </button>
       </div>
     </form>

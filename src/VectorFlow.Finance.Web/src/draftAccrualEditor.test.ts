@@ -17,6 +17,11 @@ import {
   type DraftAccrualEditorValues
 } from "./draftAccrualEditor.ts";
 import type { Accrual } from "./api.ts";
+import i18n from "./i18n/index.ts";
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 
 class FakeFinanceApiRequestError extends Error {
   readonly status: number;
@@ -160,21 +165,21 @@ describe("detectDraftAccrualEditorChanges", () => {
 
 describe("validateDraftAccrualEditorValues", () => {
   it("rejects blank description, currency, invalid type, and bad date", () => {
-    assert.match(
-      validateDraftAccrualEditorValues(sampleValues({ description: "   " })) ?? "",
-      /порожнім/
+    assert.equal(
+      validateDraftAccrualEditorValues(sampleValues({ description: "   " })),
+      i18n.t("accruals.error.descriptionRequired", { ns: "finance" })
     );
-    assert.match(
-      validateDraftAccrualEditorValues(sampleValues({ currency: "  " })) ?? "",
-      /Валюта/
+    assert.equal(
+      validateDraftAccrualEditorValues(sampleValues({ currency: "  " })),
+      i18n.t("accruals.error.currencyRequired", { ns: "finance" })
     );
-    assert.match(
-      validateDraftAccrualEditorValues(sampleValues({ type: "Payroll" })) ?? "",
-      /Revenue або Expense/
+    assert.equal(
+      validateDraftAccrualEditorValues(sampleValues({ type: "Payroll" })),
+      i18n.t("accruals.error.typeInvalid", { ns: "finance" })
     );
-    assert.match(
-      validateDraftAccrualEditorValues(sampleValues({ recognitionDate: "bad" })) ?? "",
-      /YYYY-MM-DD/
+    assert.equal(
+      validateDraftAccrualEditorValues(sampleValues({ recognitionDate: "bad" })),
+      i18n.t("accruals.error.recognitionDateFormat", { ns: "finance" })
     );
   });
 });
@@ -386,7 +391,7 @@ describe("applyDraftAccrualEditorChanges", () => {
             changeCurrency: async () => sampleAccrual()
           }
         ),
-      /порожнім/
+      new RegExp(escapeRegExp(i18n.t("accruals.error.descriptionRequired", { ns: "finance" })))
     );
     assert.deepEqual(calls, []);
   });
@@ -412,7 +417,10 @@ describe("interpretDraftAccrualEditorError", () => {
     );
     assert.equal(failure.keepEditorOpen, false);
     assert.equal(failure.refreshList, true);
-    assert.match(failure.message, /не знайдено/i);
+    assert.equal(
+      failure.message,
+      i18n.t("accruals.error.notFoundRefreshed", { ns: "finance" })
+    );
   });
 
   it("maps 409 conflict to closed editor, refresh, and no auto-retry guidance", () => {
@@ -425,7 +433,7 @@ describe("interpretDraftAccrualEditorError", () => {
     );
     assert.equal(failure.keepEditorOpen, false);
     assert.equal(failure.refreshList, true);
-    assert.match(failure.message, /змінено іншою дією/i);
+    assert.equal(failure.message, i18n.t("accruals.error.editorConflict", { ns: "finance" }));
   });
 
   it("keeps editor open for network-style errors without refresh", () => {

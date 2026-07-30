@@ -6,7 +6,8 @@ import {
   toInvoicePickerSummary,
   type InvoicePickerSummary
 } from "./accrualSourceInvoice.ts";
-import { formatDate, formatMoney } from "./format.ts";
+import i18n from "./i18n/index.ts";
+import { formatDate, formatMoney } from "./i18n/format.ts";
 
 const VIEWABLE_STATUSES = new Set(["Draft", "Recognized", "Reversed"]);
 
@@ -63,8 +64,10 @@ export type BeginEditorOptions = {
   preserveDetail?: boolean;
 };
 
-export const DETAIL_RELOAD_AFTER_MUTATION_FAILED_MESSAGE =
-  "Зміни збережено, але не вдалося оновити деталі. Натисніть «Спробувати знову».";
+/** Localized at call time so a language switch does not strand stale copy. */
+export function detailReloadAfterMutationFailedMessage(): string {
+  return i18n.t("accruals.error.detailReloadFailed", { ns: "finance" });
+}
 
 /**
  * After a successful Draft mutation, refresh list always and reload detail
@@ -116,14 +119,21 @@ function asApiFailure(error: unknown): ApiFailureShape | null {
   };
 }
 
-const ACCRUAL_NOT_FOUND_MESSAGE =
-  "Нарахування більше недоступне. Список оновлено з сервера.";
+function accrualNotFoundMessage(): string {
+  return i18n.t("accruals.error.detailNotFound", { ns: "finance" });
+}
 
-const ACCRUAL_LOAD_FAILED_MESSAGE = "Не вдалося завантажити нарахування.";
+function accrualLoadFailedMessage(): string {
+  return i18n.t("accruals.error.detailLoadFailed", { ns: "finance" });
+}
 
-const INVOICE_NOT_FOUND_MESSAGE = "Повʼязаний рахунок недоступний.";
+function invoiceNotFoundMessage(): string {
+  return i18n.t("accruals.error.sourceInvoiceUnavailable", { ns: "finance" });
+}
 
-const INVOICE_LOAD_FAILED_MESSAGE = "Не вдалося завантажити рахунок-джерело.";
+function invoiceLoadFailedMessage(): string {
+  return i18n.t("accruals.error.sourceInvoiceLoadFailed", { ns: "finance" });
+}
 
 /**
  * Map Accrual GET-by-id failures for the read-only detail panel.
@@ -136,7 +146,7 @@ export function interpretAccrualDetailLoadError(error: unknown): AccrualDetailLo
     if (apiFailure.status === 404 || apiFailure.errorKind === "NotFound") {
       return {
         kind: "not_found",
-        message: ACCRUAL_NOT_FOUND_MESSAGE,
+        message: accrualNotFoundMessage(),
         refreshList: true,
         clearAccrualData: true
       };
@@ -144,7 +154,7 @@ export function interpretAccrualDetailLoadError(error: unknown): AccrualDetailLo
 
     return {
       kind: "retryable",
-      message: apiFailure.message || ACCRUAL_LOAD_FAILED_MESSAGE,
+      message: apiFailure.message || accrualLoadFailedMessage(),
       refreshList: false,
       clearAccrualData: true
     };
@@ -153,7 +163,7 @@ export function interpretAccrualDetailLoadError(error: unknown): AccrualDetailLo
   if (error instanceof Error) {
     return {
       kind: "retryable",
-      message: error.message || ACCRUAL_LOAD_FAILED_MESSAGE,
+      message: error.message || accrualLoadFailedMessage(),
       refreshList: false,
       clearAccrualData: true
     };
@@ -161,7 +171,7 @@ export function interpretAccrualDetailLoadError(error: unknown): AccrualDetailLo
 
   return {
     kind: "retryable",
-    message: ACCRUAL_LOAD_FAILED_MESSAGE,
+    message: accrualLoadFailedMessage(),
     refreshList: false,
     clearAccrualData: true
   };
@@ -179,26 +189,26 @@ export function interpretSourceInvoiceDetailLoadError(
     if (apiFailure.status === 404 || apiFailure.errorKind === "NotFound") {
       return {
         kind: "not_found",
-        message: INVOICE_NOT_FOUND_MESSAGE
+        message: invoiceNotFoundMessage()
       };
     }
 
     return {
       kind: "retryable",
-      message: apiFailure.message || INVOICE_LOAD_FAILED_MESSAGE
+      message: apiFailure.message || invoiceLoadFailedMessage()
     };
   }
 
   if (error instanceof Error) {
     return {
       kind: "retryable",
-      message: error.message || INVOICE_LOAD_FAILED_MESSAGE
+      message: error.message || invoiceLoadFailedMessage()
     };
   }
 
   return {
     kind: "retryable",
-    message: INVOICE_LOAD_FAILED_MESSAGE
+    message: invoiceLoadFailedMessage()
   };
 }
 
@@ -230,7 +240,9 @@ export function buildAccrualDetailFields(accrual: Accrual): AccrualDetailFieldVi
     updatedAtDisplay: formatDate(accrual.updatedAtUtc),
     recognizedAtDisplay: formatDate(accrual.recognizedAtUtc),
     reversedAtDisplay: formatDate(accrual.reversedAtUtc),
-    reversalReasonDisplay: accrual.reversalReason?.trim() ? accrual.reversalReason : "—",
+    reversalReasonDisplay: accrual.reversalReason?.trim()
+      ? accrual.reversalReason
+      : i18n.t("emDash", { ns: "common" }),
     accrualId: accrual.id
   };
 }

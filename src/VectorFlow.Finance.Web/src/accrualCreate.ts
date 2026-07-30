@@ -2,6 +2,7 @@
  * Create Accrual helpers for optional Source Invoice selection.
  * Create uses a single POST; no post-create change-source-invoice.
  */
+import i18n from "./i18n/index.ts";
 
 export type CreateAccrualFailure = {
   message: string;
@@ -37,14 +38,17 @@ function asApiFailure(error: unknown): ApiFailureShape | null {
   };
 }
 
-const INVOICE_NOT_FOUND_MESSAGE =
-  "Вибраний рахунок більше недоступний у цьому workspace. Очистіть вибір або виберіть інший рахунок.";
+function invoiceNotFoundMessage(): string {
+  return i18n.t("accruals.error.invoiceNotFoundCreate", { ns: "finance" });
+}
 
-const WORKSPACE_NOT_FOUND_MESSAGE =
-  "Фінансовий простір не знайдено. Перезавантажте сторінку та спробуйте знову.";
+function workspaceNotFoundMessage(): string {
+  return i18n.t("accruals.error.workspaceNotFound", { ns: "finance" });
+}
 
-const CONFLICT_MESSAGE =
-  "Не вдалося створити нарахування через конфлікт даних. Перевірте введені значення та спробуйте знову.";
+function conflictMessage(): string {
+  return i18n.t("accruals.error.createConflict", { ns: "finance" });
+}
 
 /**
  * Map Finance API / network failures for Create Accrual.
@@ -58,9 +62,9 @@ export function interpretCreateAccrualError(error: unknown): CreateAccrualFailur
       const workspaceMissing = /workspace/i.test(apiFailure.message);
       return {
         message: invoiceMissing
-          ? INVOICE_NOT_FOUND_MESSAGE
+          ? invoiceNotFoundMessage()
           : workspaceMissing
-            ? WORKSPACE_NOT_FOUND_MESSAGE
+            ? workspaceNotFoundMessage()
             : apiFailure.message,
         keepFormOpen: true,
         clearSourceInvoiceSelection: invoiceMissing
@@ -69,7 +73,7 @@ export function interpretCreateAccrualError(error: unknown): CreateAccrualFailur
 
     if (apiFailure.status === 409 || apiFailure.errorKind === "Conflict") {
       return {
-        message: CONFLICT_MESSAGE,
+        message: conflictMessage(),
         keepFormOpen: true,
         clearSourceInvoiceSelection: false
       };
@@ -99,7 +103,7 @@ export function interpretCreateAccrualError(error: unknown): CreateAccrualFailur
   }
 
   return {
-    message: "Не вдалося створити нарахування.",
+    message: i18n.t("accruals.error.createFailed", { ns: "finance" }),
     keepFormOpen: true,
     clearSourceInvoiceSelection: false
   };

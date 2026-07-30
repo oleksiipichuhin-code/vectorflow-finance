@@ -1,4 +1,5 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   changeAccrualAmount,
   changeAccrualCurrency,
@@ -17,7 +18,7 @@ import {
 } from "./api";
 import {
   canViewAccrualDetails,
-  DETAIL_RELOAD_AFTER_MUTATION_FAILED_MESSAGE,
+  detailReloadAfterMutationFailedMessage,
   interpretAccrualDetailLoadError,
   interpretSourceInvoiceDetailLoadError,
   shouldLoadSourceInvoice,
@@ -72,7 +73,8 @@ import { AccrualDetailPanel } from "./components/AccrualDetailPanel";
 import { ListLoadState } from "./components/ListLoadState";
 import { Panel, StatusMessage } from "./components/Panel";
 import { DraftAccrualEditor } from "./components/DraftAccrualEditor";
-import { formatDate, formatMoney } from "./format";
+import i18n from "./i18n";
+import { formatDate, formatMoney } from "./i18n/format";
 import { SourceInvoicePicker } from "./SourceInvoicePicker";
 
 type AccrualIdChangeOptions = {
@@ -109,6 +111,27 @@ export function AccrualsView({
   onSelectedAccrualIdChange,
   onOpenInvoice
 }: AccrualsViewProps) {
+  const { t } = useTranslation(["finance", "common"]);
+  const statusLabel = useCallback(
+    (status: string) => {
+      if (status === "Draft" || status === "Recognized" || status === "Reversed") {
+        return t(`accrualStatus.${status}`);
+      }
+
+      return status;
+    },
+    [t]
+  );
+  const typeLabel = useCallback(
+    (type: string) => {
+      if (type === "Revenue" || type === "Expense") {
+        return t(`type.${type}`);
+      }
+
+      return type;
+    },
+    [t]
+  );
   const [draftFilters, setDraftFilters] = useState<AccrualListFilters>(() => ({
     ...emptyFilters,
     ...initialFilters
@@ -131,7 +154,9 @@ export function AccrualsView({
   const [accrualAmount, setAccrualAmount] = useState("100.00");
   const [accrualCurrency, setAccrualCurrency] = useState("UAH");
   const [accrualRecognitionDate, setAccrualRecognitionDate] = useState(todayDateInputValue);
-  const [accrualDescription, setAccrualDescription] = useState("Демонстраційне нарахування");
+  const [accrualDescription, setAccrualDescription] = useState(() =>
+    i18n.t("accruals.defaultDescription", { ns: "finance" })
+  );
   const [createBusy, setCreateBusy] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [createSuccess, setCreateSuccess] = useState<string | null>(null);
@@ -300,7 +325,9 @@ export function AccrualsView({
         setAccruals([]);
         setTotalCount(0);
         setError(
-          loadError instanceof Error ? loadError.message : "Не вдалося завантажити нарахування."
+          loadError instanceof Error
+            ? loadError.message
+            : i18n.t("accruals.error.listLoadFailed", { ns: "finance" })
         );
       } finally {
         if (seq === requestSeq.current) {
@@ -353,7 +380,7 @@ export function AccrualsView({
 
     const amount = Number(accrualAmount.replace(",", "."));
     if (!Number.isFinite(amount)) {
-      setCreateError("Сума має бути числовим значенням.");
+      setCreateError(t("accruals.error.amountNumeric"));
       return;
     }
 
@@ -404,8 +431,8 @@ export function AccrualsView({
       setCreateSourceInvoiceDisplay(null);
       setCreateSuccess(
         created.sourceInvoiceId
-          ? `Чернетку нарахування «${created.description}» створено з рахунком-джерелом.`
-          : `Чернетку нарахування «${created.description}» створено. Запис показано у списку нижче.`
+          ? t("accruals.createSuccessWithSource", { description: created.description })
+          : t("accruals.createSuccess", { description: created.description })
       );
       await loadPage(workspace.id, page, appliedFilters);
     } catch (createErr) {
@@ -517,7 +544,10 @@ export function AccrualsView({
       const recognized = await recognizeAccrual(workspace.id, accrual.id);
       setHighlightedId(recognized.id);
       setRecognizeSuccess(
-        `Нарахування «${recognized.description}» визнано. Статус: ${recognized.status}.`
+        t("accruals.recognizeSuccess", {
+          description: recognized.description,
+          status: statusLabel(recognized.status)
+        })
       );
       await loadPage(workspace.id, page, appliedFilters);
       await refreshDetailAfterMutation(recognized.id);
@@ -953,7 +983,7 @@ export function AccrualsView({
 
       setDetailLoading(false);
       if (options.afterSuccessfulMutation && failure.kind === "retryable") {
-        setDetailError(DETAIL_RELOAD_AFTER_MUTATION_FAILED_MESSAGE);
+        setDetailError(detailReloadAfterMutationFailedMessage());
         setDetailErrorRetryable(true);
       } else {
         setDetailError(failure.message);
@@ -1076,7 +1106,7 @@ export function AccrualsView({
 
       setHighlightedId(updated.id);
       setDraftDetailsSuccess(
-        `Деталі нарахування «${updated.description}» оновлено.`
+        t("accruals.detailsUpdateSuccess", { description: updated.description })
       );
       await loadPage(workspace.id, page, appliedFilters);
       await refreshDetailAfterMutation(updated.id);
@@ -1146,11 +1176,14 @@ export function AccrualsView({
           return next;
         });
         setSourceInvoiceSuccess(
-          `Рахунок-джерело нарахування «${updated.description}» змінено на ${selected.documentNumber}.`
+          t("accruals.sourceInvoiceUpdateSuccess", {
+            description: updated.description,
+            document: selected.documentNumber
+          })
         );
       } else {
         setSourceInvoiceSuccess(
-          `Рахунок-джерело нарахування «${updated.description}» очищено.`
+          t("accruals.sourceInvoiceClearedSuccess", { description: updated.description })
         );
       }
       await loadPage(workspace.id, page, appliedFilters);
@@ -1193,7 +1226,7 @@ export function AccrualsView({
       setEditAmountError(
         validationErr instanceof Error
           ? validationErr.message
-          : "Перевірте суму нарахування."
+          : t("accruals.error.checkAmount")
       );
       return;
     }
@@ -1222,7 +1255,10 @@ export function AccrualsView({
       setEditAmountValue("");
       setHighlightedId(updated.id);
       setEditAmountSuccess(
-        `Суму нарахування «${updated.description}» змінено на ${formatMoney(updated.amount, updated.currency)}.`
+        t("accruals.amountUpdateSuccess", {
+          description: updated.description,
+          amount: formatMoney(updated.amount, updated.currency)
+        })
       );
       await loadPage(workspace.id, page, appliedFilters);
       await refreshDetailAfterMutation(updated.id);
@@ -1265,7 +1301,7 @@ export function AccrualsView({
       setReverseError(
         validationErr instanceof Error
           ? validationErr.message
-          : "Перевірте причину сторнування."
+          : t("accruals.error.checkReversalReason")
       );
       return;
     }
@@ -1296,7 +1332,10 @@ export function AccrualsView({
       setReverseReason("");
       setHighlightedId(reversed.id);
       setReverseSuccess(
-        `Нарахування «${reversed.description}» сторновано. Статус: ${reversed.status}.`
+        t("accruals.reverseSuccess", {
+          description: reversed.description,
+          status: statusLabel(reversed.status)
+        })
       );
       await loadPage(workspace.id, page, appliedFilters);
       await refreshDetailAfterMutation(reversed.id);
@@ -1351,15 +1390,12 @@ export function AccrualsView({
     <>
       <header className="hero">
         <p className="eyebrow">VectorFlow Finance</p>
-        <h1>Accruals</h1>
-        <p className="lede">
-          Нарахування обраного фінансового простору з реального Finance API: фільтри та
-          посторінковий перегляд.
-        </p>
+        <h1>{t("accruals.title")}</h1>
+        <p className="lede">{t("accruals.lede")}</p>
       </header>
 
       <Panel
-        title="Нарахування"
+        title={t("accruals.panelTitle")}
         headingId="accruals-heading"
         actions={
           <button
@@ -1367,21 +1403,22 @@ export function AccrualsView({
             onClick={() => workspace && void loadPage(workspace.id, page, appliedFilters)}
             disabled={!workspace || loading}
           >
-            Оновити
+            {t("refresh", { ns: "common" })}
           </button>
         }
       >
         {!workspace ? (
-          <StatusMessage>Спочатку завантажте Workspace.</StatusMessage>
+          <StatusMessage>{t("accruals.needWorkspace")}</StatusMessage>
         ) : (
           <>
             <p className="meta">
-              Workspace: {workspace.name} · <span className="mono">{workspace.id}</span>
+              {t("accruals.workspaceMeta", { name: workspace.name })} ·{" "}
+              <span className="mono">{workspace.id}</span>
             </p>
 
             <form className="filter-form" onSubmit={applyFilters}>
               <label>
-                Префікс опису
+                {t("accruals.field.descriptionPrefix")}
                 <input
                   value={draftFilters.descriptionPrefix ?? ""}
                   onChange={(event) =>
@@ -1390,12 +1427,12 @@ export function AccrualsView({
                       descriptionPrefix: event.target.value
                     }))
                   }
-                  placeholder="наприклад: Demo"
+                  placeholder={t("accruals.descriptionPrefixPlaceholder")}
                   autoComplete="off"
                 />
               </label>
               <label>
-                Статус
+                {t("accruals.field.status")}
                 <select
                   value={draftFilters.status ?? ""}
                   onChange={(event) =>
@@ -1405,16 +1442,16 @@ export function AccrualsView({
                     }))
                   }
                 >
-                  <option value="">Усі</option>
+                  <option value="">{t("all", { ns: "common" })}</option>
                   {ACCRUAL_STATUS_OPTIONS.map((status) => (
                     <option key={status} value={status}>
-                      {status}
+                      {statusLabel(status)}
                     </option>
                   ))}
                 </select>
               </label>
               <label>
-                Дата визнання з
+                {t("accruals.field.recognitionFrom")}
                 <input
                   type="date"
                   value={draftFilters.recognitionFromDate ?? ""}
@@ -1427,7 +1464,7 @@ export function AccrualsView({
                 />
               </label>
               <label>
-                Дата визнання по
+                {t("accruals.field.recognitionTo")}
                 <input
                   type="date"
                   value={draftFilters.recognitionToDate ?? ""}
@@ -1441,10 +1478,10 @@ export function AccrualsView({
               </label>
               <div className="filter-actions">
                 <button type="submit" disabled={loading}>
-                  Застосувати
+                  {t("accruals.applyAction")}
                 </button>
                 <button type="button" onClick={clearFilters} disabled={loading}>
-                  Скинути
+                  {t("clearFilter", { ns: "common" })}
                 </button>
               </div>
             </form>
@@ -1454,40 +1491,48 @@ export function AccrualsView({
             ) : null}
             {filtersActive ? (
               <p className="meta">
-                Активні фільтри:
+                {t("accruals.filter.activePrefix")}
                 {appliedFilters.descriptionPrefix?.trim()
-                  ? ` опис «${appliedFilters.descriptionPrefix.trim()}»`
+                  ? t("accruals.filter.activeDescription", {
+                      value: appliedFilters.descriptionPrefix.trim()
+                    })
                   : ""}
                 {appliedFilters.status === "Draft" ||
                 appliedFilters.status === "Recognized" ||
                 appliedFilters.status === "Reversed"
-                  ? ` статус ${appliedFilters.status}`
+                  ? t("accruals.filter.activeStatus", {
+                      value: statusLabel(appliedFilters.status)
+                    })
                   : ""}
                 {appliedFilters.recognitionFromDate
-                  ? ` з ${appliedFilters.recognitionFromDate}`
+                  ? t("accruals.filter.activeRecognitionFrom", {
+                      value: appliedFilters.recognitionFromDate
+                    })
                   : ""}
                 {appliedFilters.recognitionToDate
-                  ? ` по ${appliedFilters.recognitionToDate}`
+                  ? t("accruals.filter.activeRecognitionTo", {
+                      value: appliedFilters.recognitionToDate
+                    })
                   : ""}
               </p>
             ) : (
-              <p className="meta">Фільтри не застосовані.</p>
+              <p className="meta">{t("accruals.filter.none")}</p>
             )}
 
             <form className="create-form create-form-accrual" onSubmit={(event) => void handleCreateAccrual(event)}>
               <label>
-                Тип
+                {t("accruals.field.type")}
                 <select
                   value={accrualType}
                   onChange={(event) => setAccrualType(event.target.value)}
                   disabled={createBusy || createSourceInvoicePickerOpen}
                 >
-                  <option value="Revenue">Revenue</option>
-                  <option value="Expense">Expense</option>
+                  <option value="Revenue">{t("type.Revenue")}</option>
+                  <option value="Expense">{t("type.Expense")}</option>
                 </select>
               </label>
               <label>
-                Сума
+                {t("accruals.field.amount")}
                 <input
                   value={accrualAmount}
                   onChange={(event) => setAccrualAmount(event.target.value)}
@@ -1497,7 +1542,7 @@ export function AccrualsView({
                 />
               </label>
               <label>
-                Валюта
+                {t("accruals.field.currency")}
                 <input
                   value={accrualCurrency}
                   onChange={(event) => setAccrualCurrency(event.target.value.toUpperCase())}
@@ -1507,7 +1552,7 @@ export function AccrualsView({
                 />
               </label>
               <label>
-                Дата визнання
+                {t("accruals.field.recognitionDate")}
                 <input
                   type="date"
                   value={accrualRecognitionDate}
@@ -1517,7 +1562,7 @@ export function AccrualsView({
                 />
               </label>
               <label>
-                Опис
+                {t("accruals.field.description")}
                 <input
                   value={accrualDescription}
                   onChange={(event) => setAccrualDescription(event.target.value)}
@@ -1527,7 +1572,7 @@ export function AccrualsView({
               </label>
               <div className="create-source-invoice">
                 <p className="meta">
-                  Рахунок-джерело (необовʼязково):{" "}
+                  {t("accruals.sourceInvoiceOptional")}{" "}
                   <span className="cell-wrap">
                     {formatSourceInvoiceSelection(createSourceInvoiceDisplay)}
                   </span>
@@ -1539,7 +1584,7 @@ export function AccrualsView({
                     disabled={createBusy || createSourceInvoicePickerOpen}
                     onClick={beginCreateSourceInvoicePicker}
                   >
-                    Вибрати рахунок
+                    {t("accruals.selectInvoice")}
                   </button>
                   <button
                     type="button"
@@ -1551,12 +1596,12 @@ export function AccrualsView({
                     }
                     onClick={clearCreateSourceInvoiceSelection}
                   >
-                    Очистити вибір
+                    {t("accruals.clearSelection")}
                   </button>
                 </div>
               </div>
               <button type="submit" disabled={createBusy || createSourceInvoicePickerOpen}>
-                {createBusy ? "Створення…" : "Створити чернетку"}
+                {createBusy ? t("creating", { ns: "common" }) : t("accruals.createDraft")}
               </button>
             </form>
           </>
@@ -1590,13 +1635,15 @@ export function AccrualsView({
         {workspace && createSourceInvoicePickerOpen ? (
           <SourceInvoicePicker
             workspaceId={workspace.id}
-            accrualDescription={accrualDescription.trim() || "Нове нарахування"}
+            accrualDescription={
+              accrualDescription.trim() || t("accruals.newAccrualFallback")
+            }
             baselineInvoiceId={createSourceInvoiceId}
             busy={createBusy}
             formError={null}
-            headingPrefix="Вибір рахунку-джерела"
-            confirmLabel="Підтвердити вибір"
-            confirmBusyLabel="Підтвердження…"
+            headingPrefix={t("accruals.picker.createHeadingPrefix")}
+            confirmLabel={t("accruals.picker.confirmLabel")}
+            confirmBusyLabel={t("accruals.picker.confirmBusyLabel")}
             onSave={confirmCreateSourceInvoiceSelection}
             onCancel={cancelCreateSourceInvoicePicker}
           />
@@ -1608,20 +1655,20 @@ export function AccrualsView({
             onSubmit={(event) => void handleEditAmount(event)}
           >
             <p className="meta">
-              Редагування суми:{" "}
+              {t("accruals.amountEditor.intro")}{" "}
               <span className="cell-wrap">{editAmountTarget.description}</span>
               {" · "}
               {editAmountTarget.currency}
             </p>
             <label>
-              Сума
+              {t("accruals.field.amount")}
               <input
                 value={editAmountValue}
                 onChange={(event) => setEditAmountValue(event.target.value)}
                 inputMode="decimal"
                 required
                 disabled={editingAmountIds.has(editAmountTarget.id)}
-                aria-label="Нова сума нарахування"
+                aria-label={t("accruals.amountEditor.amountAria")}
               />
             </label>
             <div className="filter-actions">
@@ -1629,7 +1676,9 @@ export function AccrualsView({
                 type="submit"
                 disabled={editingAmountIds.has(editAmountTarget.id) || loading}
               >
-                {editingAmountIds.has(editAmountTarget.id) ? "Збереження…" : "Зберегти"}
+                {editingAmountIds.has(editAmountTarget.id)
+                  ? t("saving", { ns: "common" })
+                  : t("save", { ns: "common" })}
               </button>
               <button
                 type="button"
@@ -1637,7 +1686,7 @@ export function AccrualsView({
                 disabled={editingAmountIds.has(editAmountTarget.id)}
                 onClick={cancelEditAmount}
               >
-                Скасувати
+                {t("cancel", { ns: "common" })}
               </button>
             </div>
           </form>
@@ -1675,22 +1724,25 @@ export function AccrualsView({
             onSubmit={(event) => void handleReverseAccrual(event)}
           >
             <p className="meta">
-              Сторнування: <span className="cell-wrap">{reverseTarget.description}</span>
+              {t("accruals.reverseEditor.intro")}{" "}
+              <span className="cell-wrap">{reverseTarget.description}</span>
             </p>
             <label>
-              Причина сторнування
+              {t("accruals.field.reversalReason")}
               <input
                 value={reverseReason}
                 onChange={(event) => setReverseReason(event.target.value)}
                 maxLength={REVERSAL_REASON_MAX_LENGTH}
                 required
                 disabled={reversingIds.has(reverseTarget.id)}
-                placeholder="Обов’язкова причина"
+                placeholder={t("accruals.reverseEditor.reasonPlaceholder")}
               />
             </label>
             <div className="filter-actions">
               <button type="submit" disabled={reversingIds.has(reverseTarget.id) || loading}>
-                {reversingIds.has(reverseTarget.id) ? "Сторнування…" : "Сторнувати"}
+                {reversingIds.has(reverseTarget.id)
+                  ? t("accruals.reversingAction")
+                  : t("accruals.reverseAction")}
               </button>
               <button
                 type="button"
@@ -1698,7 +1750,7 @@ export function AccrualsView({
                 disabled={reversingIds.has(reverseTarget.id)}
                 onClick={cancelReverse}
               >
-                Скасувати
+                {t("cancel", { ns: "common" })}
               </button>
             </div>
           </form>
@@ -1739,15 +1791,13 @@ export function AccrualsView({
         {workspace ? (
           <ListLoadState
             loading={loading}
-            loadingMessage="Завантаження нарахувань…"
+            loadingMessage={t("accruals.listLoading")}
             error={error}
             onRetry={() => void loadPage(workspace.id, page, appliedFilters)}
             retryDisabled={loading}
             empty={accruals.length === 0}
             emptyMessage={
-              filtersActive
-                ? "За поточними фільтрами нарахувань немає."
-                : "Нарахувань ще немає. Створіть чернетку або натисніть Оновити."
+              filtersActive ? t("accruals.listEmptyFiltered") : t("accruals.listEmpty")
             }
           />
         ) : null}
@@ -1755,22 +1805,26 @@ export function AccrualsView({
         {accruals.length > 0 ? (
           <>
             <p className="meta">
-              Сторінка {page} · показано {accruals.length} · усього {totalCount}
+              {t("accruals.pageMeta", {
+                page,
+                shown: accruals.length,
+                total: totalCount
+              })}
             </p>
             <div className="table-wrap">
               <table>
                 <thead>
                   <tr>
-                    <th>Тип</th>
-                    <th>Статус</th>
-                    <th>Опис</th>
-                    <th>Сума</th>
-                    <th>Рахунок</th>
-                    <th>Дата визнання</th>
-                    <th>Визнано</th>
-                    <th>Сторновано</th>
-                    <th>Причина сторно</th>
-                    <th>Дія</th>
+                    <th>{t("accruals.col.type")}</th>
+                    <th>{t("accruals.col.status")}</th>
+                    <th>{t("accruals.col.description")}</th>
+                    <th>{t("accruals.col.amount")}</th>
+                    <th>{t("accruals.col.invoice")}</th>
+                    <th>{t("accruals.col.recognitionDate")}</th>
+                    <th>{t("accruals.col.recognizedAt")}</th>
+                    <th>{t("accruals.col.reversedAt")}</th>
+                    <th>{t("accruals.col.reversalReason")}</th>
+                    <th>{t("accruals.col.action")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1804,8 +1858,8 @@ export function AccrualsView({
                       data-row-id={accrual.id}
                       className={accrual.id === highlightedId ? "row-highlight" : undefined}
                     >
-                      <td>{accrual.type}</td>
-                      <td>{accrual.status}</td>
+                      <td>{typeLabel(accrual.type)}</td>
+                      <td>{statusLabel(accrual.status)}</td>
                       <td className="cell-wrap">{accrual.description}</td>
                       <td>{formatMoney(accrual.amount, accrual.currency)}</td>
                       <td className="cell-wrap">{sourceInvoiceLabel}</td>
@@ -1833,8 +1887,8 @@ export function AccrualsView({
                                 onClick={() => beginViewAccrualDetails(accrual)}
                               >
                                 {detailLoading && detailTargetId === accrual.id
-                                  ? "Завантаження…"
-                                  : "Деталі"}
+                                  ? t("loading", { ns: "common" })
+                                  : t("details", { ns: "common" })}
                               </button>
                             ) : null}
                             {showEditDraftDetails ? (
@@ -1848,7 +1902,9 @@ export function AccrualsView({
                                 }
                                 onClick={() => beginEditDraftDetails(accrual)}
                               >
-                                {draftDetailsBusy ? "Збереження…" : "Редагувати"}
+                                {draftDetailsBusy
+                                  ? t("saving", { ns: "common" })
+                                  : t("accruals.editAction")}
                               </button>
                             ) : null}
                             {showEditAmount ? (
@@ -1862,7 +1918,9 @@ export function AccrualsView({
                                 }
                                 onClick={() => beginEditAmount(accrual)}
                               >
-                                {editAmountBusy ? "Збереження…" : "Змінити суму"}
+                                {editAmountBusy
+                                  ? t("saving", { ns: "common" })
+                                  : t("accruals.editAmountAction")}
                               </button>
                             ) : null}
                             {showSourceInvoice ? (
@@ -1876,7 +1934,9 @@ export function AccrualsView({
                                 }
                                 onClick={() => beginChangeSourceInvoice(accrual)}
                               >
-                                {sourceInvoiceBusy ? "Збереження…" : "Змінити рахунок"}
+                                {sourceInvoiceBusy
+                                  ? t("saving", { ns: "common" })
+                                  : t("accruals.editSourceInvoiceAction")}
                               </button>
                             ) : null}
                             {showRecognize ? (
@@ -1886,7 +1946,9 @@ export function AccrualsView({
                                 disabled={rowBusy || loading}
                                 onClick={() => void handleRecognizeAccrual(accrual)}
                               >
-                                {recognizeBusy ? "Визнання…" : "Визнати"}
+                                {recognizeBusy
+                                  ? t("accruals.recognizingAction")
+                                  : t("accruals.recognizeAction")}
                               </button>
                             ) : null}
                             {showReverse ? (
@@ -1898,7 +1960,9 @@ export function AccrualsView({
                                 }
                                 onClick={() => beginReverse(accrual)}
                               >
-                                {reverseBusy ? "Сторнування…" : "Сторнувати"}
+                                {reverseBusy
+                                  ? t("accruals.reversingAction")
+                                  : t("accruals.reverseAction")}
                               </button>
                             ) : null}
                           </div>
@@ -1912,7 +1976,11 @@ export function AccrualsView({
                 </tbody>
               </table>
             </div>
-            <div className="pagination" role="navigation" aria-label="Сторінки нарахувань">
+            <div
+              className="pagination"
+              role="navigation"
+              aria-label={t("accruals.paginationAria")}
+            >
               <button
                 type="button"
                 disabled={!canGoPrevious}
@@ -1922,7 +1990,7 @@ export function AccrualsView({
                   onDiscoveryChange?.(nextPage, appliedFilters);
                 }}
               >
-                Назад
+                {t("back", { ns: "common" })}
               </button>
               <span className="meta">
                 {page} / {pages}
@@ -1936,7 +2004,7 @@ export function AccrualsView({
                   onDiscoveryChange?.(nextPage, appliedFilters);
                 }}
               >
-                Далі
+                {t("next", { ns: "common" })}
               </button>
             </div>
           </>

@@ -470,6 +470,128 @@ describe("invoices finance catalogs", () => {
   });
 });
 
+describe("accruals finance catalogs", () => {
+  const accrualPrefixes = ["accruals.", "accrualStatus."];
+
+  function accrualKeys(catalog: Record<string, string>): string[] {
+    return Object.keys(catalog).filter(
+      (key) =>
+        accrualPrefixes.some((prefix) => key.startsWith(prefix)) ||
+        key.startsWith("dashboard.accruals") ||
+        key === "workspaceSummary.accrualsMetric"
+    );
+  }
+
+  beforeEach(async () => {
+    await i18n.changeLanguage("uk");
+  });
+
+  it("localizes accruals workflow chrome in Ukrainian and English", async () => {
+    assert.equal(i18n.t("accruals.panelTitle", { ns: "finance" }), "Нарахування");
+    assert.equal(i18n.t("accruals.createDraft", { ns: "finance" }), "Створити чернетку");
+    assert.equal(i18n.t("accruals.recognizeAction", { ns: "finance" }), "Визнати");
+    assert.equal(i18n.t("accruals.reverseAction", { ns: "finance" }), "Сторнувати");
+    assert.equal(
+      i18n.t("dashboard.accrualsCopy", { ns: "finance" }),
+      "Список нарахувань обраного workspace"
+    );
+    assert.equal(i18n.t("nav.accruals", { ns: "common" }), "Нарахування");
+
+    await i18n.changeLanguage("en");
+    assert.equal(i18n.t("accruals.panelTitle", { ns: "finance" }), "Accruals");
+    assert.equal(i18n.t("accruals.createDraft", { ns: "finance" }), "Create draft");
+    assert.equal(i18n.t("accruals.recognizeAction", { ns: "finance" }), "Recognize");
+    assert.equal(i18n.t("accruals.reverseAction", { ns: "finance" }), "Reverse");
+    assert.equal(
+      i18n.t("dashboard.accrualsCopy", { ns: "finance" }),
+      "Accrual list for the selected workspace"
+    );
+    assert.equal(i18n.t("nav.accruals", { ns: "common" }), "Accruals");
+  });
+
+  it("preserves accrual status and type wire values while localizing labels", async () => {
+    assert.equal(i18n.t("accrualStatus.Draft", { ns: "finance" }), "Чернетка");
+    assert.equal(i18n.t("accrualStatus.Recognized", { ns: "finance" }), "Визнано");
+    assert.equal(i18n.t("accrualStatus.Reversed", { ns: "finance" }), "Сторновано");
+    for (const status of ["Draft", "Recognized", "Reversed"]) {
+      assert.equal(
+        i18n.t(`accrualStatus.${status}`, { ns: "finance" }),
+        i18n.t(`customerLedger.accrualStatus.${status}`, { ns: "finance" })
+      );
+    }
+    assert.equal(i18n.t("type.Revenue", { ns: "finance" }), "Дохід");
+    assert.equal(i18n.t("type.Expense", { ns: "finance" }), "Витрата");
+    assert.equal("Draft", "Draft");
+    assert.equal("Recognized", "Recognized");
+    assert.equal("Reversed", "Reversed");
+    assert.equal("Revenue", "Revenue");
+    assert.equal("Expense", "Expense");
+
+    await i18n.changeLanguage("en");
+    assert.equal(i18n.t("accrualStatus.Draft", { ns: "finance" }), "Draft");
+    assert.equal(i18n.t("accrualStatus.Recognized", { ns: "finance" }), "Recognized");
+    assert.equal(i18n.t("accrualStatus.Reversed", { ns: "finance" }), "Reversed");
+    assert.equal(i18n.t("type.Revenue", { ns: "finance" }), "Revenue");
+    assert.equal(i18n.t("type.Expense", { ns: "finance" }), "Expense");
+  });
+
+  it("localizes accrual editors, source invoice picker, and errors", async () => {
+    assert.equal(
+      i18n.t("accruals.amountEditor.intro", { ns: "finance" }),
+      "Редагування суми:"
+    );
+    assert.equal(i18n.t("accruals.picker.noSelection", { ns: "finance" }), "Не вибрано");
+    assert.equal(
+      i18n.t("accruals.error.reversalReasonRequired", { ns: "finance" }),
+      "Вкажіть причину сторнування."
+    );
+
+    await i18n.changeLanguage("en");
+    assert.equal(i18n.t("accruals.amountEditor.intro", { ns: "finance" }), "Editing amount:");
+    assert.equal(i18n.t("accruals.picker.noSelection", { ns: "finance" }), "Not selected");
+    assert.equal(
+      i18n.t("accruals.error.reversalReasonRequired", { ns: "finance" }),
+      "Provide the reversal reason."
+    );
+  });
+
+  it("interpolates accrual counts, page metadata, and limits", async () => {
+    assert.equal(
+      i18n.t("accruals.pageMeta", { ns: "finance", page: 3, shown: 4, total: 25 }),
+      "Сторінка 3 · показано 4 · усього 25"
+    );
+    assert.equal(
+      i18n.t("dashboard.accrualsCount", { ns: "finance", count: 7 }),
+      "7 нарахувань у workspace"
+    );
+    assert.equal(
+      i18n.t("accruals.error.reversalReasonTooLong", { ns: "finance", max: 512 }),
+      "Причина сторнування не може перевищувати 512 символів."
+    );
+
+    await i18n.changeLanguage("en");
+    assert.equal(
+      i18n.t("accruals.pageMeta", { ns: "finance", page: 3, shown: 4, total: 25 }),
+      "Page 3 · showing 4 · 25 total"
+    );
+    assert.equal(
+      i18n.t("dashboard.accrualsCount", { ns: "finance", count: 7 }),
+      "7 accruals in the workspace"
+    );
+    assert.equal(
+      i18n.t("accruals.error.reversalReasonTooLong", { ns: "finance", max: 512 }),
+      "The reversal reason cannot exceed 512 characters."
+    );
+  });
+
+  it("has matching accruals key structure in uk and en", () => {
+    const ukKeys = accrualKeys(financeUk as Record<string, string>);
+    const enKeys = accrualKeys(financeEn as Record<string, string>);
+    assert.ok(ukKeys.length > 0);
+    assert.deepEqual(ukKeys.sort(), enKeys.sort());
+  });
+});
+
 describe("locale-aware formatting", () => {
   const sample = "2026-07-29T14:30:00.000Z";
 
