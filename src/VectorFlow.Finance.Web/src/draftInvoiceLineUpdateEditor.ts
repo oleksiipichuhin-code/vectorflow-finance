@@ -1,3 +1,4 @@
+import i18n from "./i18n/index.ts";
 import type { Invoice, InvoiceLine } from "./api.ts";
 import {
   INVOICE_LINE_DESCRIPTION_MAX_LENGTH,
@@ -47,10 +48,10 @@ function asApiFailure(error: unknown): ApiFailureShape | null {
 }
 
 const CONFLICT_OPERATOR_MESSAGE =
-  "Рахунок або рядок було змінено іншою дією. Список оновлено — відкрийте редагування знову з актуальними даними.";
+  i18n.t("invoices.error.invoiceChangedLineUpdate", { ns: "finance" });
 
 const NOT_FOUND_OPERATOR_MESSAGE =
-  "Рахунок не знайдено. Список оновлено з сервера.";
+  i18n.t("invoices.error.invoiceNotFound", { ns: "finance" });
 
 export function canUpdateDraftInvoiceLine(invoice: Pick<Invoice, "status">): boolean {
   return isDraftInvoice(invoice);
@@ -169,7 +170,7 @@ export function interpretDraftInvoiceLineUpdateError(
   }
 
   return {
-    message: "Не вдалося оновити рядок рахунка.",
+    message: i18n.t("invoices.error.lineUpdateFailed", { ns: "finance" }),
     keepEditorOpen: true,
     refreshList: false
   };

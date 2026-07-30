@@ -5,6 +5,7 @@
  * active open queue or is treated as settled for collector attention.
  */
 
+import i18n from "./i18n/index.ts";
 import {
   buildCollectionsQueue,
   buildCollectionsSummary,
@@ -57,13 +58,13 @@ export function collectionQueueSettlementLabel(
     return null;
   }
   if (record.resolution?.kind === "paid") {
-    return "Settled · Paid";
+    return i18n.t("collections.settlement.paid", { ns: "finance" });
   }
   if (record.status === "completed") {
-    return "Settled · Completed";
+    return i18n.t("collections.settlement.completed", { ns: "finance" });
   }
   if (record.resolution?.kind === "partially_paid") {
-    return "Partial payment";
+    return i18n.t("collections.settlement.partial", { ns: "finance" });
   }
   return null;
 }

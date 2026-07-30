@@ -4,6 +4,7 @@
  * Independent of contact nextFollowUpAt; operational collector tasks only.
  */
 
+import i18n from "./i18n/index.ts";
 import { calendarDayDiff, localCalendarDateString } from "./invoiceDueDateAging.ts";
 
 export type ReminderKind =
@@ -85,7 +86,9 @@ export function parseReminderKind(
 }
 
 export function reminderKindLabel(kind: ReminderKind): string {
-  return REMINDER_KIND_OPTIONS.find((option) => option.id === kind)?.label ?? kind;
+  return REMINDER_KIND_OPTIONS.some((option) => option.id === kind)
+    ? i18n.t(`promise.reminderKind.${kind}`, { ns: "finance" })
+    : kind;
 }
 
 export function reminderStatusLabel(status: ReminderStatus): string {
@@ -221,12 +224,12 @@ export function validateCollectionReminderInput(
 ): CollectionReminderValidationResult {
   const title = (input.title ?? "").trim();
   if (!title) {
-    return { ok: false, error: "Заголовок нагадування обовʼязковий." };
+    return { ok: false, error: i18n.t("reminder.error.titleRequired", { ns: "finance" }) };
   }
   if (title.length > TITLE_MAX) {
     return {
       ok: false,
-      error: `Заголовок занадто довгий (макс. ${TITLE_MAX} символів).`
+      error: i18n.t("reminder.error.titleTooLong", { ns: "finance", max: TITLE_MAX })
     };
   }
 
@@ -234,24 +237,24 @@ export function validateCollectionReminderInput(
   if (note.length > NOTE_MAX) {
     return {
       ok: false,
-      error: `Нотатка нагадування занадто довга (макс. ${NOTE_MAX} символів).`
+      error: i18n.t("reminder.error.noteTooLong", { ns: "finance", max: NOTE_MAX })
     };
   }
 
   const kindRaw = input.kind ?? "";
   const kind = kindRaw === "" ? null : parseReminderKind(String(kindRaw));
   if (!kind) {
-    return { ok: false, error: "Оберіть тип нагадування." };
+    return { ok: false, error: i18n.t("reminder.error.kindRequired", { ns: "finance" }) };
   }
 
   const dueDate = (input.dueDate ?? "").trim();
   if (!dueDate) {
-    return { ok: false, error: "Дата нагадування обовʼязкова." };
+    return { ok: false, error: i18n.t("reminder.error.dueDateRequired", { ns: "finance" }) };
   }
   if (!isValidReminderDate(dueDate)) {
     return {
       ok: false,
-      error: "Некоректна дата нагадування. Використовуйте формат РРРР-ММ-ДД."
+      error: i18n.t("reminder.error.dueDateFormat", { ns: "finance" })
     };
   }
 

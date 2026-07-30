@@ -1,3 +1,4 @@
+import i18n from "./i18n/index.ts";
 import type { Invoice } from "./api.ts";
 import { isDraftInvoice } from "./invoiceIssue.ts";
 
@@ -38,13 +39,16 @@ export function valuesFromInvoice(
 
 export function normalizeDocumentNumber(raw: string): string {
   if (typeof raw !== "string" || !raw.trim()) {
-    throw new Error("Номер документа не може бути порожнім.");
+    throw new Error(i18n.t("invoices.error.documentNumberRequired", { ns: "finance" }));
   }
 
   const normalized = raw.trim();
   if (normalized.length > INVOICE_DOCUMENT_NUMBER_MAX_LENGTH) {
     throw new Error(
-      `Номер документа не може перевищувати ${INVOICE_DOCUMENT_NUMBER_MAX_LENGTH} символів.`
+      i18n.t("invoices.error.documentNumberTooLong", {
+        ns: "finance",
+        max: INVOICE_DOCUMENT_NUMBER_MAX_LENGTH
+      })
     );
   }
 
@@ -53,13 +57,16 @@ export function normalizeDocumentNumber(raw: string): string {
 
 export function normalizeCounterpartyReference(raw: string): string {
   if (typeof raw !== "string" || !raw.trim()) {
-    throw new Error("Контрагент не може бути порожнім.");
+    throw new Error(i18n.t("invoices.error.counterpartyRequired", { ns: "finance" }));
   }
 
   const normalized = raw.trim();
   if (normalized.length > INVOICE_COUNTERPARTY_REFERENCE_MAX_LENGTH) {
     throw new Error(
-      `Контрагент не може перевищувати ${INVOICE_COUNTERPARTY_REFERENCE_MAX_LENGTH} символів.`
+      i18n.t("invoices.error.counterpartyTooLong", {
+        ns: "finance",
+        max: INVOICE_COUNTERPARTY_REFERENCE_MAX_LENGTH
+      })
     );
   }
 
@@ -68,7 +75,7 @@ export function normalizeCounterpartyReference(raw: string): string {
 
 export function normalizeInvoiceCurrency(raw: string): string {
   if (typeof raw !== "string" || !raw.trim()) {
-    throw new Error("Валюта не може бути порожньою.");
+    throw new Error(i18n.t("invoices.error.currencyRequired", { ns: "finance" }));
   }
 
   return raw.trim().toUpperCase();
@@ -86,7 +93,7 @@ export function validateDraftInvoiceHeaderEditorValues(
     normalizeCounterpartyReference(draft.counterpartyReference);
     normalizeInvoiceCurrency(draft.currency);
   } catch (error) {
-    return error instanceof Error ? error.message : "Перевірте поля редактора.";
+    return error instanceof Error ? error.message : i18n.t("invoices.error.checkEditorFields", { ns: "finance" });
   }
 
   return null;
@@ -232,10 +239,10 @@ function asApiFailure(error: unknown): ApiFailureShape | null {
 }
 
 const CONFLICT_OPERATOR_MESSAGE =
-  "Рахунок було змінено іншою дією. Список оновлено — відкрийте редагування знову з актуальними даними.";
+  i18n.t("invoices.error.invoiceChangedHeader", { ns: "finance" });
 
 const NOT_FOUND_OPERATOR_MESSAGE =
-  "Рахунок не знайдено. Список оновлено з сервера.";
+  i18n.t("invoices.error.invoiceNotFound", { ns: "finance" });
 
 /**
  * Map Finance API / network failures for draft header editor.
@@ -287,7 +294,7 @@ export function interpretDraftInvoiceHeaderEditorError(
   }
 
   return {
-    message: "Не вдалося змінити реквізити рахунка.",
+    message: i18n.t("invoices.error.headerChangeFailed", { ns: "finance" }),
     keepEditorOpen: true,
     refreshList: false
   };

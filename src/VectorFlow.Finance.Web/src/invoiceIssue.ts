@@ -1,3 +1,4 @@
+import i18n from "./i18n/index.ts";
 import type { Invoice } from "./api";
 
 export type InvoiceIssueReadiness = {
@@ -40,10 +41,10 @@ function asApiFailure(error: unknown): ApiFailureShape | null {
 }
 
 const CONFLICT_OPERATOR_MESSAGE =
-  "Рахунок було змінено іншою дією. Список оновлено — повторіть виставлення з актуальними даними.";
+  i18n.t("invoices.error.invoiceChangedIssue", { ns: "finance" });
 
 const NOT_FOUND_OPERATOR_MESSAGE =
-  "Рахунок не знайдено. Список оновлено з сервера.";
+  i18n.t("invoices.error.invoiceNotFound", { ns: "finance" });
 
 /**
  * Map Finance API / network failures for issue.
@@ -93,7 +94,7 @@ export function interpretInvoiceIssueError(error: unknown): InvoiceIssueFailure 
   }
 
   return {
-    message: "Не вдалося виставити рахунок.",
+    message: i18n.t("invoices.error.issueFailed", { ns: "finance" }),
     keepEditorOpen: true,
     refreshList: false
   };
@@ -125,7 +126,7 @@ export function getInvoiceIssueReadiness(
 export function toDueDateUtcIso(dateInput: string): string {
   const trimmed = dateInput.trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
-    throw new Error("Дата оплати має бути у форматі YYYY-MM-DD.");
+    throw new Error(i18n.t("invoices.error.dueDateFormat", { ns: "finance" }));
   }
 
   return new Date(`${trimmed}T00:00:00.000Z`).toISOString();

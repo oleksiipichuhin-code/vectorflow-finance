@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import type { FinanceWorkspace } from "./api";
 import { LanguageSwitcher } from "./i18n/LanguageSwitcher.tsx";
 
@@ -22,6 +23,7 @@ export function WorkspaceContextBar({
   onShowIssuedInvoices,
   onShowOverdueIssuedInvoices
 }: WorkspaceContextBarProps) {
+  const { t } = useTranslation(["finance", "common"]);
   return (
     <div className="workspace-context" aria-live="polite">
       {workspace ? (
@@ -36,17 +38,17 @@ export function WorkspaceContextBar({
           <div className="workspace-context-actions">
             <LanguageSwitcher />
             <button type="button" className="button-secondary" onClick={onShowDraftInvoices}>
-              Чернетки
+              {t("invoices.shortcut.drafts")}
             </button>
             <button type="button" className="button-secondary" onClick={onShowIssuedInvoices}>
-              Виставлені
+              {t("invoices.shortcut.issued")}
             </button>
             <button
               type="button"
               className="button-secondary"
               onClick={onShowOverdueIssuedInvoices}
             >
-              Збір оплат
+              {t("invoices.shortcut.collections")}
             </button>
             <button type="button" className="button-secondary" onClick={onCopyLink}>
               Скопіювати посилання

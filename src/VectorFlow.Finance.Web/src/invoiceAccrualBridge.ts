@@ -1,3 +1,4 @@
+import i18n from "./i18n/index.ts";
 import type { Accrual, Invoice } from "./api.ts";
 import { interpretCreateAccrualError } from "./accrualCreate.ts";
 import { formatAccrualAmountInput, parseAccrualAmountInput } from "./accrualEditAmount.ts";
@@ -44,7 +45,10 @@ export function todayRecognitionDateInputValue(now = new Date()): string {
 export function defaultDescriptionFromInvoice(
   invoice: Pick<Invoice, "documentNumber">
 ): string {
-  const label = `Нарахування за ${invoice.documentNumber.trim()}`;
+  const label = i18n.t("invoices.accrualDescriptionDefault", {
+    ns: "finance",
+    document: invoice.documentNumber.trim()
+  });
   if (label.length <= ACCRUAL_DESCRIPTION_MAX_LENGTH) {
     return label;
   }
@@ -75,7 +79,7 @@ export function initialCreateAccrualFromInvoiceValues(
 export function recognitionDateInputToUtcIso(dateInput: string): string {
   const trimmed = dateInput.trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
-    throw new Error("Дата визнання має бути у форматі РРРР-ММ-ДД.");
+    throw new Error(i18n.t("invoices.error.recognitionDateFormat", { ns: "finance" }));
   }
 
   return new Date(`${trimmed}T00:00:00.000Z`).toISOString();
@@ -83,7 +87,7 @@ export function recognitionDateInputToUtcIso(dateInput: string): string {
 
 export function normalizeAccrualCurrency(raw: string): string {
   if (typeof raw !== "string" || !raw.trim()) {
-    throw new Error("Валюта не може бути порожньою.");
+    throw new Error(i18n.t("invoices.error.currencyRequired", { ns: "finance" }));
   }
 
   return raw.trim().toUpperCase();
@@ -91,13 +95,16 @@ export function normalizeAccrualCurrency(raw: string): string {
 
 export function normalizeAccrualDescription(raw: string): string {
   if (typeof raw !== "string" || !raw.trim()) {
-    throw new Error("Опис не може бути порожнім.");
+    throw new Error(i18n.t("invoices.error.descriptionRequired", { ns: "finance" }));
   }
 
   const normalized = raw.trim();
   if (normalized.length > ACCRUAL_DESCRIPTION_MAX_LENGTH) {
     throw new Error(
-      `Опис не може перевищувати ${ACCRUAL_DESCRIPTION_MAX_LENGTH} символів.`
+      i18n.t("invoices.error.accrualDescriptionTooLong", {
+        ns: "finance",
+        max: ACCRUAL_DESCRIPTION_MAX_LENGTH
+      })
     );
   }
 
@@ -109,7 +116,7 @@ export function normalizeAccrualType(raw: string): AccrualTypeOption {
     return raw;
   }
 
-  throw new Error("Тип нарахування має бути Revenue або Expense.");
+  throw new Error(i18n.t("invoices.error.accrualTypeInvalid", { ns: "finance" }));
 }
 
 /**
@@ -135,7 +142,7 @@ export function validateCreateAccrualFromInvoiceValues(
   try {
     parseCreateAccrualFromInvoiceValues(values, "00000000-0000-0000-0000-000000000001");
   } catch (error) {
-    return error instanceof Error ? error.message : "Перевірте поля форми.";
+    return error instanceof Error ? error.message : i18n.t("invoices.error.checkFormFields", { ns: "finance" });
   }
 
   return null;
@@ -195,7 +202,7 @@ export type RelatedAccrualsLoadFailure = {
 };
 
 const RELATED_ACCRUALS_LOAD_FAILED_MESSAGE =
-  "Не вдалося завантажити повʼязані нарахування.";
+  i18n.t("invoices.error.relatedAccrualsLoadFailed", { ns: "finance" });
 
 export function interpretRelatedAccrualsLoadError(
   error: unknown

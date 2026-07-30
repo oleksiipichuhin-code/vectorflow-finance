@@ -1,4 +1,5 @@
 import { FormEvent, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   INVOICE_COUNTERPARTY_REFERENCE_MAX_LENGTH,
   INVOICE_DOCUMENT_NUMBER_MAX_LENGTH,
@@ -23,6 +24,7 @@ export function DraftInvoiceHeaderEditor({
   onSave,
   onCancel
 }: DraftInvoiceHeaderEditorProps) {
+  const { t } = useTranslation(["finance", "common"]);
   const [values, setValues] = useState<DraftInvoiceHeaderEditorValues>(initialValues);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -37,10 +39,11 @@ export function DraftInvoiceHeaderEditor({
   return (
     <form className="create-form issue-prepare-form" onSubmit={handleSubmit}>
       <p className="meta">
-        Редагування реквізитів: <span className="mono">{documentNumberLabel}</span>
+        {t("invoices.headerEditor.intro")}{" "}
+        <span className="mono">{documentNumberLabel}</span>
       </p>
       <label>
-        Номер документа
+        {t("invoices.field.documentNumber")}
         <input
           value={values.documentNumber}
           onChange={(event) =>
@@ -52,11 +55,11 @@ export function DraftInvoiceHeaderEditor({
           maxLength={INVOICE_DOCUMENT_NUMBER_MAX_LENGTH}
           required
           disabled={busy}
-          aria-label="Номер документа рахунка"
+          aria-label={t("invoices.headerEditor.documentNumberAria")}
         />
       </label>
       <label>
-        Контрагент
+        {t("invoices.field.counterparty")}
         <input
           value={values.counterpartyReference}
           onChange={(event) =>
@@ -68,11 +71,11 @@ export function DraftInvoiceHeaderEditor({
           maxLength={INVOICE_COUNTERPARTY_REFERENCE_MAX_LENGTH}
           required
           disabled={busy}
-          aria-label="Контрагент рахунка"
+          aria-label={t("invoices.headerEditor.counterpartyAria")}
         />
       </label>
       <label>
-        Валюта
+        {t("invoices.field.currency")}
         <input
           value={values.currency}
           onChange={(event) =>
@@ -84,13 +87,15 @@ export function DraftInvoiceHeaderEditor({
           maxLength={3}
           required
           disabled={busy}
-          aria-label="Валюта рахунка"
+          aria-label={t("invoices.headerEditor.currencyAria")}
         />
       </label>
       {formError ? <StatusMessage tone="error">{formError}</StatusMessage> : null}
       <div className="filter-actions">
         <button type="submit" disabled={busy}>
-          {busy ? "Збереження…" : "Зберегти реквізити"}
+          {busy
+            ? t("saving", { ns: "common" })
+            : t("invoices.headerEditor.submit")}
         </button>
         <button
           type="button"
@@ -98,7 +103,7 @@ export function DraftInvoiceHeaderEditor({
           disabled={busy}
           onClick={onCancel}
         >
-          Скасувати
+          {t("cancel", { ns: "common" })}
         </button>
       </div>
     </form>

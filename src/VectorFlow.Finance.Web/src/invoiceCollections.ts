@@ -4,6 +4,7 @@
  * never payment/settlement status). Amounts are invoice totals from the API.
  */
 
+import i18n from "./i18n/index.ts";
 import {
   classifyDueDateAging,
   dueDateCalendarString
@@ -31,12 +32,12 @@ export type AgingBucketOption = {
 };
 
 export const AGING_BUCKET_OPTIONS: readonly AgingBucketOption[] = [
-  { id: "", label: "Усі до уваги", shortLabel: "Усі" },
-  { id: "1-7", label: "1–7 днів прострочки", shortLabel: "1–7" },
-  { id: "8-30", label: "8–30 днів прострочки", shortLabel: "8–30" },
-  { id: "31-60", label: "31–60 днів прострочки", shortLabel: "31–60" },
-  { id: "61-90", label: "61–90 днів прострочки", shortLabel: "61–90" },
-  { id: "90+", label: "90+ днів прострочки", shortLabel: "90+" }
+  { id: "", label: "All attention", shortLabel: "All" },
+  { id: "1-7", label: "1–7 days overdue", shortLabel: "1–7" },
+  { id: "8-30", label: "8–30 days overdue", shortLabel: "8–30" },
+  { id: "31-60", label: "31–60 days overdue", shortLabel: "31–60" },
+  { id: "61-90", label: "61–90 days overdue", shortLabel: "61–90" },
+  { id: "90+", label: "90+ days overdue", shortLabel: "90+" }
 ];
 
 export type CollectionsInvoiceLike = {
@@ -86,9 +87,20 @@ export function parseAgingBucketParam(value: string | null | undefined): AgingBu
     : "";
 }
 
+/** Catalog key for an aging bucket id; `""` means "all attention". */
+export function agingBucketKey(bucket: AgingBucketFilter): string {
+  return bucket
+    ? `customerLedger.agingBucket.${bucket}`
+    : "customerLedger.agingBucket.all";
+}
+
+export function agingBucketShortKey(bucket: AgingBucketFilter): string {
+  return bucket ? `collections.agingShort.${bucket}` : "collections.agingShort.all";
+}
+
 export function agingBucketLabel(bucket: AgingBucketFilter): string {
   const found = AGING_BUCKET_OPTIONS.find((option) => option.id === bucket);
-  return found?.label ?? "Усі до уваги";
+  return i18n.t(agingBucketKey(found?.id ?? ""), { ns: "finance" });
 }
 
 export function overdueDaysForInvoice(
@@ -306,7 +318,11 @@ export function collectionsQueuePosition(
   return {
     index: index + 1,
     total,
-    label: `${index + 1} з ${total}`,
+    label: i18n.t("collections.queuePositionLabel", {
+      ns: "finance",
+      index: index + 1,
+      total
+    }),
     nextId: isLast ? null : orderedIds[index + 1]!,
     isLast
   };

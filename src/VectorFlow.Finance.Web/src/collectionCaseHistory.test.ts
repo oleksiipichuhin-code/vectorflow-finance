@@ -5,6 +5,7 @@ import {
   buildCaseHistorySummary,
   buildCaseHistoryView,
   buildCaseTimeline,
+  contactChannelLabel,
   createActivityEvent,
   filterCaseTimeline,
   parseHistoryEventTypeParam,
@@ -272,7 +273,10 @@ describe("collectionCaseHistory events", () => {
     assert.equal(timeline[0]?.contactChannel, "phone");
     assert.equal(timeline[0]?.contactResult, "left_message");
     assert.equal(timeline[0]?.followUpAt, "2026-08-03");
-    assert.match(timeline[0]?.description ?? "", /Phone/i);
+    assert.match(
+      timeline[0]?.description ?? "",
+      new RegExp(contactChannelLabel("phone"), "i")
+    );
     assert.ok(timeline.some((event) => event.type === "promise_created"));
 
     const ordered = timeline.map((event) => event.atUtc);

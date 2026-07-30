@@ -739,7 +739,9 @@ export default function App() {
                       ? t("nav.customerLedger")
                       : item.id === "journals"
                         ? t("nav.journals")
-                        : item.label}
+                        : item.id === "invoices"
+                          ? t("nav.invoices")
+                          : item.label}
           </button>
         ))}
       </nav>

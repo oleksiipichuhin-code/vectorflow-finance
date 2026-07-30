@@ -3,6 +3,7 @@
  * Builds on promise follow-up + resolution records (browser-local). No AI.
  */
 
+import i18n from "./i18n/index.ts";
 import type { CurrencyTotal } from "./invoiceCollections.ts";
 import {
   dueDateCalendarString,
@@ -12,6 +13,7 @@ import {
   buildPromiseFollowUpItems,
   comparePromiseFollowUpPriority,
   filterPromiseFollowUps,
+  readPromiseFromStorage,
   updatePromiseStatus,
   type PromiseFollowUpItem,
   type PromiseFollowUpStatus,
@@ -110,7 +112,7 @@ export const WORKBENCH_SECTION_IDS: readonly WorkbenchSectionId[] = [
 ];
 
 export const WORKBENCH_SECTION_OPTIONS: readonly WorkbenchSectionOption[] = [
-  { id: "", label: "Усі секції", shortLabel: "Усі" },
+  { id: "", label: "All sections", shortLabel: "All" },
   { id: "due_today", label: "Due Today", shortLabel: "Due Today" },
   { id: "broken", label: "Broken Promises", shortLabel: "Broken" },
   { id: "escalated", label: "Escalated", shortLabel: "Escalated" },
@@ -144,19 +146,19 @@ const SORT_SET: ReadonlySet<string> = new Set([
   "invoice_asc"
 ]);
 
-const NBA_LABELS: Record<NextBestActionId, string> = {
-  contact_customer: "Contact Customer",
-  wait: "Wait",
-  verify_payment: "Verify Payment",
-  review_escalation: "Review Escalation",
-  review_dispute: "Review Dispute",
-  track_payment_plan: "Track Payment Plan",
-  review_handoff: "Review Handoff Note",
-  complete_reminder: "Complete Reminder",
-  retry_contact: "Retry Contact",
-  follow_up: "Follow Up",
-  none: "—"
-};
+const NBA_IDS: ReadonlySet<string> = new Set<NextBestActionId>([
+  "contact_customer",
+  "wait",
+  "verify_payment",
+  "review_escalation",
+  "review_dispute",
+  "track_payment_plan",
+  "review_handoff",
+  "complete_reminder",
+  "retry_contact",
+  "follow_up",
+  "none"
+]);
 
 export function parseWorkbenchSectionParam(
   value: string | null | undefined
@@ -194,15 +196,28 @@ export function parseWorkbenchHideCompletedParam(
   return trimmed === "1" || trimmed === "true" || trimmed === "yes";
 }
 
+/** Catalog key for a workbench section id; `""` means "all sections". */
+export function workbenchSectionKey(section: WorkbenchSectionFilter): string {
+  return `workbench.section.${section || "all"}`;
+}
+
+export function workbenchSectionShortKey(section: WorkbenchSectionFilter): string {
+  return `workbench.sectionShort.${section || "all"}`;
+}
+
+export function workbenchSortKey(mode: WorkbenchSortMode): string {
+  return `workbench.sort.${mode}`;
+}
+
 export function workbenchSectionLabel(section: WorkbenchSectionFilter): string {
-  return (
-    WORKBENCH_SECTION_OPTIONS.find((option) => option.id === section)?.label ??
-    "Усі секції"
-  );
+  const found = WORKBENCH_SECTION_OPTIONS.find((option) => option.id === section);
+  return i18n.t(workbenchSectionKey(found?.id ?? ""), { ns: "finance" });
 }
 
 export function nextBestActionLabel(action: NextBestActionId): string {
-  return NBA_LABELS[action] ?? action;
+  return NBA_IDS.has(action)
+    ? i18n.t(`workbench.nba.${action}`, { ns: "finance" })
+    : action;
 }
 
 /**
@@ -515,17 +530,23 @@ export function applyWorkbenchMassAction(
     }
     seen.add(invoiceId.toLowerCase());
 
+    const storage = options?.storage === undefined ? undefined : options.storage;
+    const stored =
+      storage === undefined
+        ? readPromiseFromStorage(invoiceId)
+        : readPromiseFromStorage(invoiceId, storage);
+    if (!stored) {
+      skippedIds.push(invoiceId);
+      continue;
+    }
+
     const result = updatePromiseStatus(invoiceId, status, {
       storage: options?.storage,
       now: options?.now
     });
 
     if (!result.ok) {
-      if (/не знайдено/i.test(result.error)) {
-        skippedIds.push(invoiceId);
-      } else {
-        errorIds.push({ invoiceId, error: result.error });
-      }
+      errorIds.push({ invoiceId, error: result.error });
       continue;
     }
     okIds.push(invoiceId);

@@ -1,3 +1,4 @@
+import i18n from "./i18n/index.ts";
 import { collectionsQueueDueToDateInput } from "./invoiceDueDateAging.ts";
 
 export type InvoiceStatusFilter = "" | "Draft" | "Issued";
@@ -57,7 +58,7 @@ export function validateCreatedDateRange(fromDate: string, toDate: string): stri
   }
 
   if (fromDate > toDate) {
-    return "Дата «з» не може бути пізніше за дату «по».";
+    return i18n.t("invoices.dateRangeInvalid", { ns: "finance" });
   }
 
   return null;
@@ -70,7 +71,7 @@ export function validateIssuedDateRange(fromDate: string, toDate: string): strin
   }
 
   if (fromDate > toDate) {
-    return "Дата виставлення «з» не може бути пізніше за «по».";
+    return i18n.t("invoices.issuedRangeInvalid", { ns: "finance" });
   }
 
   return null;
@@ -83,7 +84,7 @@ export function validateDueDateRange(fromDate: string, toDate: string): string |
   }
 
   if (fromDate > toDate) {
-    return "Строк оплати «з» не може бути пізніше за «по».";
+    return i18n.t("invoices.dueRangeInvalid", { ns: "finance" });
   }
 
   return null;

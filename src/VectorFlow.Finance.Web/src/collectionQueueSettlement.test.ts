@@ -10,6 +10,7 @@ import {
   recordsByInvoiceId,
   resolveCollectionQueueSettlement
 } from "./collectionQueueSettlement.ts";
+import i18n from "./i18n/index.ts";
 import type { CollectionsInvoiceLike } from "./invoiceCollections.ts";
 import type { PromiseToPayRecord } from "./promiseToPay.ts";
 
@@ -115,7 +116,10 @@ describe("collection queue settlement classification", () => {
         note: ""
       }
     });
-    assert.equal(collectionQueueSettlementLabel(partial), "Partial payment");
+    assert.equal(
+      collectionQueueSettlementLabel(partial),
+      i18n.t("collections.settlement.partial", { ns: "finance" })
+    );
     assert.equal(collectionQueueOpenAmount(invoice({ id: "p", dueDateUtc: null }), partial), 75);
 
     const paid = record({
@@ -131,7 +135,10 @@ describe("collection queue settlement classification", () => {
         note: ""
       }
     });
-    assert.equal(collectionQueueSettlementLabel(paid), "Settled · Paid");
+    assert.equal(
+      collectionQueueSettlementLabel(paid),
+      i18n.t("collections.settlement.paid", { ns: "finance" })
+    );
     const info = resolveCollectionQueueSettlement(
       invoice({ id: "paid", dueDateUtc: null, totalAmount: 100 }),
       paid

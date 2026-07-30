@@ -1,4 +1,5 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   addInvoiceLine,
   changeInvoiceCounterparty,
@@ -46,6 +47,7 @@ import {
   COLLECTIONS_PAGE_SIZE,
   agingBucketForInvoice,
   agingBucketLabel,
+  agingBucketShortKey,
   buildCollectionsQueue,
   collectionsQueuePosition,
   overdueDaysForInvoice,
@@ -87,6 +89,10 @@ import {
   emptyInstallmentDraft,
   recordInstallmentPayment,
   readLastCollectionNoteAuthor,
+  promiseGroupKey,
+  promiseGroupShortKey,
+  promiseStatusLabel,
+  resolutionKindLabel,
   saveCollectionContact,
   savePromiseToPay,
   updateCollectionDispute,
@@ -113,6 +119,9 @@ import {
   buildWorkbenchKpi,
   buildWorkbenchSectionSummaries,
   filterWorkbenchCases,
+  workbenchSectionKey,
+  workbenchSectionShortKey,
+  workbenchSortKey,
   type WorkbenchMassActionId,
   type WorkbenchSectionFilter,
   type WorkbenchSortMode
@@ -200,7 +209,7 @@ import { DraftInvoiceHeaderEditor } from "./components/DraftInvoiceHeaderEditor"
 import { InvoiceDetailPanel } from "./components/InvoiceDetailPanel";
 import { ListLoadState } from "./components/ListLoadState";
 import { Panel, StatusMessage } from "./components/Panel";
-import { formatDate, formatMoney } from "./format";
+import { formatDate, formatMoney } from "./i18n/format";
 
 type InvoiceIdChangeOptions = {
   replace?: boolean;
@@ -284,6 +293,16 @@ export function InvoicesView({
   onShowOverdueIssuedInvoices,
   onOpenAccrual
 }: InvoicesViewProps) {
+  const { t } = useTranslation(["finance", "common"]);
+  const statusLabel = useCallback(
+    (status: string) => {
+      if (status === "Draft" || status === "Issued") {
+        return t(`invoiceStatus.${status}`);
+      }
+      return status;
+    },
+    [t]
+  );
   const [draftFilters, setDraftFilters] = useState<InvoiceListFilters>(() => ({
     ...emptyFilters,
     ...initialFilters
@@ -674,7 +693,7 @@ export function InvoicesView({
         setInvoices([]);
         setTotalCount(0);
         setError(
-          loadError instanceof Error ? loadError.message : "Не вдалося завантажити рахунки."
+          loadError instanceof Error ? loadError.message : t("invoices.listLoadFailed")
         );
       } finally {
         if (seq === requestSeq.current) {
@@ -976,13 +995,13 @@ export function InvoicesView({
       setHeaderEditTarget(null);
       setHeaderEditBaseline(null);
       setCreateSuccess(
-        `Чернетку рахунка «${created.documentNumber}» створено. Запис показано у списку нижче.`
+        t("invoices.createSuccess", { document: created.documentNumber })
       );
       onDiscoveryChange?.(1, emptyFilters, "", "");
       await loadPage(workspace.id, 1, emptyFilters, "");
     } catch (createErr) {
       setCreateError(
-        createErr instanceof Error ? createErr.message : "Не вдалося створити рахунок."
+        createErr instanceof Error ? createErr.message : t("invoices.createFailed")
       );
     } finally {
       setCreateBusy(false);
@@ -1731,7 +1750,7 @@ export function InvoicesView({
           !Number.isFinite(quantity) ||
           !Number.isFinite(unitPrice)
         ) {
-          throw new Error("Вкажіть кількість і ціну рядка перед виставленням.");
+          throw new Error(t("invoices.issueNeedsLine"));
         }
 
         await addInvoiceLine(workspace.id, invoice.id, {
@@ -1743,7 +1762,7 @@ export function InvoicesView({
 
       if (readiness.needsDueDate) {
         if (!preparation?.dueDateUtc) {
-          throw new Error("Вкажіть дату оплати перед виставленням.");
+          throw new Error(t("invoices.issueNeedsDueDate"));
         }
 
         await setInvoiceDueDate(workspace.id, invoice.id, preparation.dueDateUtc);
@@ -1753,7 +1772,10 @@ export function InvoicesView({
       setIssueTarget(null);
       setHighlightedId(issued.id);
       setIssueSuccess(
-        `Рахунок «${issued.documentNumber}» виставлено. Статус: ${issued.status}.`
+        t("invoices.issueSuccess", {
+          document: issued.documentNumber,
+          status: issued.status
+        })
       );
       await loadPage(workspace.id, page, appliedFilters, invoiceQueue);
       await refreshDetailAfterMutation(issued.id);
@@ -1800,20 +1822,20 @@ export function InvoicesView({
         quantity = Number(issueQuantity.replace(",", "."));
         unitPrice = Number(issueUnitPrice.replace(",", "."));
         if (!Number.isFinite(quantity) || quantity <= 0) {
-          throw new Error("Кількість має бути додатним числом.");
+          throw new Error(t("invoices.error.quantityPositive"));
         }
         if (!Number.isFinite(unitPrice) || unitPrice < 0) {
-          throw new Error("Ціна має бути невід’ємним числом.");
+          throw new Error(t("invoices.error.priceNonNegative"));
         }
         if (quantity * unitPrice <= 0) {
-          throw new Error("Сума рядка має бути додатною.");
+          throw new Error(t("invoices.error.lineAmountPositive"));
         }
       }
     } catch (validationErr) {
       setIssueError(
         validationErr instanceof Error
           ? validationErr.message
-          : "Перевірте дані підготовки рахунка."
+          : t("invoices.issuePrepareInvalid")
       );
       return;
     }
@@ -1870,7 +1892,7 @@ export function InvoicesView({
       setDueDateEditValue("");
       setHighlightedId(updated.id);
       setDueDateEditSuccess(
-        `Дату оплати рахунка «${updated.documentNumber}» оновлено.`
+        t("invoices.dueDateUpdateSuccess", { document: updated.documentNumber })
       );
       await loadPage(workspace.id, page, appliedFilters, invoiceQueue);
       await refreshDetailAfterMutation(updated.id);
@@ -1958,7 +1980,7 @@ export function InvoicesView({
 
       setHighlightedId(updated.id);
       setHeaderEditSuccess(
-        `Реквізити рахунка «${updated.documentNumber}» оновлено.`
+        t("invoices.headerUpdateSuccess", { document: updated.documentNumber })
       );
       await loadPage(workspace.id, page, appliedFilters, invoiceQueue);
       await refreshDetailAfterMutation(updated.id);
@@ -2042,7 +2064,10 @@ export function InvoicesView({
       setCreateAccrualBaseline(null);
       setCreatedAccrualId(created.id);
       setCreateAccrualSuccess(
-        `Чернетку нарахування «${created.description}» створено з рахунком «${target.documentNumber}».`
+        t("invoices.accrualCreateSuccess", {
+          description: created.description,
+          document: target.documentNumber
+        })
       );
       await refreshRelatedAccrualsAfterCreate(target.id);
     } catch (createErr) {
@@ -2116,7 +2141,7 @@ export function InvoicesView({
       setLineAddTarget(null);
       resetLineAddForm();
       setHighlightedId(updated.id);
-      setLineAddSuccess(`Рядок додано до рахунка «${updated.documentNumber}».`);
+      setLineAddSuccess(t("invoices.lineAddSuccess", { document: updated.documentNumber }));
       await loadPage(workspace.id, page, appliedFilters, invoiceQueue);
       await refreshDetailAfterMutation(updated.id);
     } catch (addErr) {
@@ -2192,7 +2217,7 @@ export function InvoicesView({
       );
       clearLineUpdateEditor();
       setHighlightedId(updated.id);
-      setLineUpdateSuccess(`Рядок оновлено в рахунку «${updated.documentNumber}».`);
+      setLineUpdateSuccess(t("invoices.lineUpdateSuccess", { document: updated.documentNumber }));
       await loadPage(workspace.id, page, appliedFilters, invoiceQueue);
       await refreshDetailAfterMutation(updated.id);
     } catch (updateErr) {
@@ -2261,7 +2286,7 @@ export function InvoicesView({
       );
       clearLineRemoveEditor();
       setHighlightedId(updated.id);
-      setLineRemoveSuccess(`Рядок видалено з рахунка «${updated.documentNumber}».`);
+      setLineRemoveSuccess(t("invoices.lineRemoveSuccess", { document: updated.documentNumber }));
       await loadPage(workspace.id, page, appliedFilters, invoiceQueue);
       await refreshDetailAfterMutation(updated.id);
     } catch (removeErr) {
@@ -2724,7 +2749,7 @@ export function InvoicesView({
   function runWorkbenchMassAction(action: WorkbenchMassActionId) {
     const selected = workbenchSelectedIds.filter((id) => workbenchVisibleIds.has(id));
     if (selected.length === 0) {
-      setWorkbenchMassMessage("Оберіть хоча б один кейс для масової дії.");
+      setWorkbenchMassMessage(t("workbench.massSelectNone"));
       return;
     }
 
@@ -2732,9 +2757,9 @@ export function InvoicesView({
     bumpPromiseRevision();
     setWorkbenchSelectedIds([]);
     const parts = [
-      `Оновлено: ${result.okIds.length}`,
-      result.skippedIds.length ? `пропущено: ${result.skippedIds.length}` : null,
-      result.errorIds.length ? `помилок: ${result.errorIds.length}` : null
+      t("workbench.massUpdated", { count: result.okIds.length }),
+      result.skippedIds.length ? t("workbench.massSkipped", { count: result.skippedIds.length }) : null,
+      result.errorIds.length ? t("workbench.massErrors", { count: result.errorIds.length }) : null
     ].filter(Boolean);
     setWorkbenchMassMessage(parts.join(" · "));
   }
@@ -3177,7 +3202,7 @@ export function InvoicesView({
       setPromiseFormError(result.error);
       return;
     }
-    setPromiseFormSuccess(notesEditId ? "Internal note updated." : "Internal note saved.");
+    setPromiseFormSuccess(notesEditId ? t("promise.msg.noteUpdated") : t("promise.msg.noteSaved"));
     closeNotesForm();
     bumpPromiseRevision();
   }
@@ -3195,7 +3220,7 @@ export function InvoicesView({
     if (notesEditId === noteId) {
       closeNotesForm();
     }
-    setPromiseFormSuccess("Internal note archived.");
+    setPromiseFormSuccess(t("promise.msg.noteArchived"));
     bumpPromiseRevision();
   }
 
@@ -3273,7 +3298,7 @@ export function InvoicesView({
       return;
     }
     setPromiseFormSuccess(
-      remindersEditId ? "Reminder updated." : "Reminder scheduled."
+      remindersEditId ? t("promise.msg.reminderUpdated") : t("promise.msg.reminderScheduled")
     );
     closeRemindersForm();
     bumpPromiseRevision();
@@ -3292,7 +3317,7 @@ export function InvoicesView({
     if (remindersEditId === reminderId) {
       closeRemindersForm();
     }
-    setPromiseFormSuccess("Reminder completed.");
+    setPromiseFormSuccess(t("promise.msg.reminderCompleted"));
     bumpPromiseRevision();
   }
 
@@ -3309,7 +3334,7 @@ export function InvoicesView({
     if (remindersEditId === reminderId) {
       closeRemindersForm();
     }
-    setPromiseFormSuccess("Reminder cancelled.");
+    setPromiseFormSuccess(t("promise.msg.reminderCancelled"));
     bumpPromiseRevision();
   }
 
@@ -3385,7 +3410,9 @@ export function InvoicesView({
     }
     if (file.size > ATTACHMENT_MAX_BYTES) {
       setPromiseFormError(
-        `Файл занадто великий (макс. ${(ATTACHMENT_MAX_BYTES / 1024).toFixed(0)} KB).`
+        t("promise.msg.attachmentTooLarge", {
+          size: (ATTACHMENT_MAX_BYTES / 1024).toFixed(0)
+        })
       );
       resetAttachmentFileFields();
       return;
@@ -3403,7 +3430,7 @@ export function InvoicesView({
     };
     reader.onerror = () => {
       setPromiseBusy(false);
-      setPromiseFormError("Не вдалося прочитати файл.");
+      setPromiseFormError(t("promise.msg.attachmentReadFailed"));
       resetAttachmentFileFields();
     };
     reader.readAsDataURL(file);
@@ -3435,7 +3462,7 @@ export function InvoicesView({
       return;
     }
     setPromiseFormSuccess(
-      attachmentsEditId ? "Attachment updated." : "Attachment saved."
+      attachmentsEditId ? t("promise.msg.attachmentUpdated") : t("promise.msg.attachmentSaved")
     );
     closeAttachmentsForm();
     bumpPromiseRevision();
@@ -3454,7 +3481,7 @@ export function InvoicesView({
     if (attachmentsEditId === attachmentId) {
       closeAttachmentsForm();
     }
-    setPromiseFormSuccess("Attachment archived.");
+    setPromiseFormSuccess(t("promise.msg.attachmentArchived"));
     bumpPromiseRevision();
   }
 
@@ -3573,8 +3600,11 @@ export function InvoicesView({
     }
     setPromiseFormSuccess(
       paymentPlanEditMode
-        ? "Payment plan updated."
-        : `Payment plan created · ${result.record.paymentPlan?.planAmount.toFixed(2)} ${result.record.paymentPlan?.currency}.`
+        ? t("promise.msg.planUpdated")
+        : t("promise.msg.planCreated", {
+              amount: result.record.paymentPlan?.planAmount.toFixed(2),
+              currency: result.record.paymentPlan?.currency
+            })
     );
     closePaymentPlanForm();
     bumpPromiseRevision();
@@ -3590,7 +3620,7 @@ export function InvoicesView({
       setPromiseFormError(result.error);
       return;
     }
-    setPromiseFormSuccess("Payment plan cancelled.");
+    setPromiseFormSuccess(t("promise.msg.planCancelled"));
     closePaymentPlanForm();
     bumpPromiseRevision();
   }
@@ -3612,8 +3642,8 @@ export function InvoicesView({
     const status = result.record.paymentPlan?.status;
     setPromiseFormSuccess(
       status === "Completed"
-        ? "Payment recorded for collection tracking. Payment plan completed."
-        : "Payment recorded for collection tracking."
+        ? t("promise.msg.paymentRecordedPlanCompleted")
+        : t("promise.msg.paymentRecorded")
     );
     closePaymentPlanForm();
     bumpPromiseRevision();
@@ -3633,7 +3663,7 @@ export function InvoicesView({
       setPromiseFormError(result.error);
       return;
     }
-    setPromiseFormSuccess(`Обіцянку збережено на ${result.record.promiseDate}.`);
+    setPromiseFormSuccess(t("promise.msg.promiseSaved", { date: result.record.promiseDate }));
     setPromiseFormOpen(false);
     bumpPromiseRevision();
   }
@@ -3648,13 +3678,13 @@ export function InvoicesView({
       setPromiseFormError(result.error);
       return;
     }
-    setPromiseFormSuccess(`Follow-up: ${result.record.status}.`);
+    setPromiseFormSuccess(t("promise.msg.followUpStatus", { status: promiseStatusLabel(result.record.status) }));
     bumpPromiseRevision();
   }
 
   function handleSaveResolution(invoiceId: string) {
     if (!resolutionKind) {
-      setPromiseFormError("Оберіть тип resolution.");
+      setPromiseFormError(t("promise.msg.selectResolutionKind"));
       return;
     }
     setPromiseBusy(true);
@@ -3674,7 +3704,11 @@ export function InvoicesView({
       setPromiseFormError(result.error);
       return;
     }
-    setPromiseFormSuccess(`Resolution збережено: ${result.record.resolution?.kind}.`);
+    setPromiseFormSuccess(t("promise.msg.resolutionSaved", {
+        kind: result.record.resolution
+          ? resolutionKindLabel(result.record.resolution.kind)
+          : ""
+      }));
     setResolutionOpen(false);
     bumpPromiseRevision();
   }
@@ -3696,8 +3730,10 @@ export function InvoicesView({
     }
     setPromiseFormSuccess(
       result.record.nextFollowUpAt
-        ? `Контакт збережено. Follow-up: ${result.record.nextFollowUpAt}.`
-        : "Контакт збережено."
+        ? t("promise.msg.contactSavedWithFollowUp", {
+            date: result.record.nextFollowUpAt
+          })
+        : t("promise.msg.contactSaved")
     );
     setContactOpen(false);
     setContactChannel("");
@@ -3708,7 +3744,7 @@ export function InvoicesView({
     if (result.needsPromise) {
       openPromiseForm(result.record);
       setPromiseFormSuccess(
-        "Контакт збережено. Вкажіть дату обіцянки в Promise to pay."
+        t("promise.msg.contactSavedNeedsPromise")
       );
     }
   }
@@ -3724,7 +3760,7 @@ export function InvoicesView({
       return;
     }
     setContactFollowUpAt("");
-    setPromiseFormSuccess("Follow-up очищено.");
+    setPromiseFormSuccess(t("promise.msg.followUpCleared"));
     bumpPromiseRevision();
   }
 
@@ -3748,10 +3784,12 @@ export function InvoicesView({
     }
     setPromiseFormSuccess(
       disputeEditMode
-        ? "Спір оновлено."
+        ? t("promise.msg.disputeUpdated")
         : result.record.dispute?.nextReviewAt
-          ? `Спір зареєстровано. Review: ${result.record.dispute.nextReviewAt}.`
-          : "Спір зареєстровано."
+          ? t("promise.msg.disputeRaisedWithReview", {
+              date: result.record.dispute.nextReviewAt
+            })
+          : t("promise.msg.disputeRaised")
     );
     setDisputeOpen(false);
     setDisputeEditMode(false);
@@ -3761,7 +3799,7 @@ export function InvoicesView({
 
   function handleConfirmCloseDispute(invoiceId: string) {
     if (!disputeCloseMode) {
-      setPromiseFormError("Оберіть Resolve або Reject.");
+      setPromiseFormError(t("promise.msg.selectResolveOrReject"));
       return;
     }
     setPromiseBusy(true);
@@ -3777,7 +3815,8 @@ export function InvoicesView({
       return;
     }
     setPromiseFormSuccess(
-      disputeCloseMode === "resolve" ? "Спір resolved." : "Спір rejected."
+      disputeCloseMode === "resolve" ? t("promise.msg.disputeResolved")
+        : t("promise.msg.disputeRejected")
     );
     setDisputeOpen(false);
     setDisputeCloseMode("");
@@ -3807,8 +3846,10 @@ export function InvoicesView({
     }
     setPromiseFormSuccess(
       escalationEditMode
-        ? "Ескалацію оновлено."
-        : `Ескалацію створено. Due: ${result.record.escalation?.dueDate}.`
+        ? t("promise.msg.escalationUpdated")
+        : t("promise.msg.escalationCreated", {
+            date: result.record.escalation?.dueDate
+          })
     );
     setEscalationOpen(false);
     setPaymentPlanOpen(false);
@@ -3829,7 +3870,7 @@ export function InvoicesView({
       setPromiseFormError(result.error);
       return;
     }
-    setPromiseFormSuccess("Ескалацію завершено.");
+    setPromiseFormSuccess(t("promise.msg.escalationCompleted"));
     setEscalationOpen(false);
     setPaymentPlanOpen(false);
     setEscalationCompleteMode(false);
@@ -3841,15 +3882,14 @@ export function InvoicesView({
     <>
       <header className="hero">
         <p className="eyebrow">VectorFlow Finance</p>
-        <h1>Invoices</h1>
+        <h1>{t("invoices.title")}</h1>
         <p className="lede">
-          Рахунки обраного фінансового простору з реального Finance API: фільтри за номером,
-          контрагентом, статусом, датами створення / виставлення / оплати; посторінковий перегляд.
+          {t("invoices.lede")}
         </p>
       </header>
 
       <Panel
-        title="Рахунки"
+        title={t("invoices.panelTitle")}
         headingId="invoices-heading"
         actions={
           <button
@@ -3857,12 +3897,12 @@ export function InvoicesView({
             onClick={() => workspace && void loadPage(workspace.id, page, appliedFilters, invoiceQueue)}
             disabled={!workspace || loading}
           >
-            Оновити
+            {t("refresh", { ns: "common" })}
           </button>
         }
       >
         {!workspace ? (
-          <StatusMessage>Спочатку завантажте Workspace.</StatusMessage>
+          <StatusMessage>{t("invoices.needWorkspace")}</StatusMessage>
         ) : (
           <>
             <p className="meta">
@@ -3872,9 +3912,9 @@ export function InvoicesView({
             <div
               className="list-shortcuts"
               role="group"
-              aria-label="Швидкі фільтри рахунків"
+              aria-label={t("invoices.quickFilterAria")}
             >
-              <p className="list-shortcuts-label">Швидкий фільтр</p>
+              <p className="list-shortcuts-label">{t("dashboard.quickFilterLabel")}</p>
               <div className="list-shortcuts-row">
                 <button
                   type="button"
@@ -3883,12 +3923,12 @@ export function InvoicesView({
                       ? "list-shortcut list-shortcut--active"
                       : "list-shortcut"
                   }
-                  title="status=Draft · page 1 · інші фільтри скинуто"
+                  title={t("invoices.shortcutTitle.drafts")}
                   aria-pressed={draftFilterActive}
                   disabled={loading}
                   onClick={applyDraftInvoicesFilter}
                 >
-                  Чернетки
+                  {t("invoices.shortcut.drafts")}
                 </button>
                 <button
                   type="button"
@@ -3897,12 +3937,12 @@ export function InvoicesView({
                       ? "list-shortcut list-shortcut--active"
                       : "list-shortcut"
                   }
-                  title="status=Issued · page 1 · інші фільтри скинуто · далі звузьте пошук"
+                  title={t("invoices.shortcutTitle.issued")}
                   aria-pressed={issuedFilterActive}
                   disabled={loading}
                   onClick={applyIssuedInvoicesFilter}
                 >
-                  Виставлені
+                  {t("invoices.shortcut.issued")}
                 </button>
                 <button
                   type="button"
@@ -3911,34 +3951,32 @@ export function InvoicesView({
                       ? "list-shortcut list-shortcut--attention list-shortcut--active"
                       : "list-shortcut list-shortcut--attention"
                   }
-                  title="status=Issued · queue=overdue · строк ≤ сьогодні · прострочені + строк сьогодні · не факт оплати"
+                  title={t("invoices.shortcutTitle.collections")}
                   aria-pressed={overdueFilterActive}
                   disabled={loading}
                   onClick={applyOverdueIssuedInvoicesFilter}
                 >
-                  Збір оплат
+                  {t("invoices.shortcut.collections")}
                 </button>
               </div>
               <p className="meta">
-                Чернетки — Draft. Виставлені — Issued. Збір оплат — Issued зі строком сьогодні
-                або раніше (класифікація строку, не оплати). Стан у URL.
+                {t("invoices.shortcutHelp")}
               </p>
             </div>
 
             {overdueQueueActive ? (
               <div className="queue-banner" role="status">
-                <p className="queue-banner-title">Payment collection workspace</p>
+                <p className="queue-banner-title">{t("collections.bannerTitle")}</p>
                 <p className="meta">
-                  Серверний фільтр: <span className="mono">status=Issued</span>, строк оплати по{" "}
-                  <span className="mono">{effectiveDueToForSummary}</span> (включно: прострочені та
-                  строк сьогодні). Сортування: прострочені спочатку → більше днів → більша сума.
-                  Settled (Paid / Completed) cases are hidden from the open queue by default —
-                  collection attention, not ledger payment status.
+                  {t("collections.serverFilterLabel")} <span className="mono">status=Issued</span>
+                  {t("collections.serverFilterDueTo")}{" "}
+                  <span className="mono">{effectiveDueToForSummary}</span>{" "}
+                  {t("collections.serverFilterNote")} {t("collections.settledHiddenNote")}
                 </p>
                 <div
                   className="aging-bucket-row"
                   role="group"
-                  aria-label="Collection workspace panels"
+                  aria-label={t("collections.panelsAria")}
                 >
                   <button
                     type="button"
@@ -3951,7 +3989,7 @@ export function InvoicesView({
                     disabled={loading}
                     onClick={() => applyCollectionPanel("")}
                   >
-                    Overdue queue
+                    {t("collections.panel.queue")}
                   </button>
                   <button
                     type="button"
@@ -3964,7 +4002,7 @@ export function InvoicesView({
                     disabled={loading}
                     onClick={() => applyCollectionPanel("workbench")}
                   >
-                    Collection Workbench
+                    {t("collections.panel.workbench")}
                   </button>
                   <button
                     type="button"
@@ -3977,14 +4015,14 @@ export function InvoicesView({
                     disabled={loading}
                     onClick={() => applyCollectionPanel("followups")}
                   >
-                    Promise Follow-ups
+                    {t("collections.panel.followups")}
                   </button>
                 </div>
                 {queueTableActive && collectionsSummary ? (
                   <>
                     <dl className="collections-summary facts collections-kpi">
                       <div>
-                        <dt>Open Attention</dt>
+                        <dt>{t("collections.kpi.openAttention")}</dt>
                         <dd>
                           {collectionsSummary.openCount}
                           <span className="collections-kpi-amount">
@@ -3993,7 +4031,7 @@ export function InvoicesView({
                         </dd>
                       </div>
                       <div>
-                        <dt>Settled In Queue</dt>
+                        <dt>{t("collections.kpi.settledInQueue")}</dt>
                         <dd>
                           {collectionsSummary.settledCount}
                           <span className="collections-kpi-amount">
@@ -4002,7 +4040,7 @@ export function InvoicesView({
                         </dd>
                       </div>
                       <div>
-                        <dt>Total Overdue</dt>
+                        <dt>{t("collections.kpi.totalOverdue")}</dt>
                         <dd>
                           {collectionsSummary.overdueCount}
                           <span className="collections-kpi-amount">
@@ -4011,7 +4049,7 @@ export function InvoicesView({
                         </dd>
                       </div>
                       <div>
-                        <dt>Total Due Today</dt>
+                        <dt>{t("collections.kpi.totalDueToday")}</dt>
                         <dd>
                           {collectionsSummary.dueTodayCount}
                           <span className="collections-kpi-amount">
@@ -4020,7 +4058,7 @@ export function InvoicesView({
                         </dd>
                       </div>
                       <div>
-                        <dt>Open Outstanding</dt>
+                        <dt>{t("collections.kpi.openOutstanding")}</dt>
                         <dd>
                           {formatTotals(collectionsSummary.outstandingTotalsByCurrency)}
                           {agingBucket ? (
@@ -4030,8 +4068,10 @@ export function InvoicesView({
                           ) : (
                             <span className="collections-kpi-amount">
                               {queueHideSettled
-                                ? `${collectionsSummary.openCount} open`
-                                : `${collectionsSummary.attentionCount} calendar`}
+                                ? t("collections.kpi.openCount", { count: collectionsSummary.openCount })
+                                : t("collections.kpi.calendarCount", {
+                            count: collectionsSummary.attentionCount
+                          })}
                             </span>
                           )}
                         </dd>
@@ -4040,7 +4080,7 @@ export function InvoicesView({
                     <div
                       className="aging-bucket-row"
                       role="group"
-                      aria-label="Settlement visibility"
+                      aria-label={t("collections.settlementAria")}
                     >
                       <button
                         type="button"
@@ -4053,7 +4093,7 @@ export function InvoicesView({
                         disabled={loading}
                         onClick={() => applyQueueHideSettled(true)}
                       >
-                        Hide settled
+                        {t("collections.hideSettled")}
                       </button>
                       <button
                         type="button"
@@ -4066,12 +4106,12 @@ export function InvoicesView({
                         disabled={loading}
                         onClick={() => applyQueueHideSettled(false)}
                       >
-                        Show settled
+                        {t("collections.showSettled")}
                       </button>
                       <span className="meta">
                         {queueHideSettled
-                          ? `Showing open attention (${collectionsSummary.openCount})`
-                          : `Showing open + settled (${collectionsSummary.bucketCount})`}
+                          ? t("collections.showingOpen", { count: collectionsSummary.openCount })
+                          : t("collections.showingAll", { count: collectionsSummary.bucketCount })}
                       </span>
                     </div>
                   </>
@@ -4079,43 +4119,43 @@ export function InvoicesView({
                 {workbenchPanelActive && workbenchKpi ? (
                   <dl className="collections-summary facts collections-kpi">
                     <div>
-                      <dt>Active Collection Cases</dt>
+                      <dt>{t("workbench.kpi.activeCases")}</dt>
                       <dd>{workbenchKpi.activeCollectionCases}</dd>
                     </div>
                     <div>
-                      <dt>Due Today</dt>
+                      <dt>{t("workbench.kpi.dueToday")}</dt>
                       <dd>{workbenchKpi.dueTodayCount}</dd>
                     </div>
                     <div>
-                      <dt>Broken Promises</dt>
+                      <dt>{t("workbench.kpi.broken")}</dt>
                       <dd>{workbenchKpi.brokenCount}</dd>
                     </div>
                     <div>
-                      <dt>Escalated</dt>
+                      <dt>{t("workbench.kpi.escalated")}</dt>
                       <dd>{workbenchKpi.escalatedCount}</dd>
                     </div>
                     <div>
-                      <dt>Disputed</dt>
+                      <dt>{t("workbench.kpi.disputed")}</dt>
                       <dd>{workbenchKpi.disputedCount}</dd>
                     </div>
                     <div>
-                      <dt>Payment plans</dt>
+                      <dt>{t("workbench.kpi.paymentPlans")}</dt>
                       <dd>{workbenchKpi.paymentPlanCount}</dd>
                     </div>
                     <div>
-                      <dt>Handoffs</dt>
+                      <dt>{t("workbench.kpi.handoffs")}</dt>
                       <dd>{workbenchKpi.handoffCount}</dd>
                     </div>
                     <div>
-                      <dt>Reminders due</dt>
+                      <dt>{t("workbench.kpi.remindersDue")}</dt>
                       <dd>{workbenchKpi.reminderDueCount}</dd>
                     </div>
                     <div>
-                      <dt>Evidence</dt>
+                      <dt>{t("workbench.kpi.evidence")}</dt>
                       <dd>{workbenchKpi.evidenceCount}</dd>
                     </div>
                     <div>
-                      <dt>Completed Today</dt>
+                      <dt>{t("workbench.kpi.completedToday")}</dt>
                       <dd>{workbenchKpi.completedTodayCount}</dd>
                     </div>
                   </dl>
@@ -4123,38 +4163,41 @@ export function InvoicesView({
                 {followUpsPanelActive && promiseSummary ? (
                   <dl className="collections-summary facts collections-kpi">
                     <div>
-                      <dt>Promises Completed</dt>
+                      <dt>{t("promise.kpi.completed")}</dt>
                       <dd>{promiseSummary.completedCount}</dd>
                     </div>
                     <div>
-                      <dt>Broken Promises</dt>
+                      <dt>{t("workbench.kpi.broken")}</dt>
                       <dd>{promiseSummary.brokenCount}</dd>
                     </div>
                     <div>
-                      <dt>Collections Resolved Today</dt>
+                      <dt>{t("promise.kpi.resolvedToday")}</dt>
                       <dd>{promiseSummary.resolvedTodayCount}</dd>
                     </div>
                     <div>
-                      <dt>Escalated Cases</dt>
+                      <dt>{t("promise.kpi.escalated")}</dt>
                       <dd>{promiseSummary.escalatedCount}</dd>
                     </div>
                     <div>
-                      <dt>Disputed Cases</dt>
+                      <dt>{t("promise.kpi.disputed")}</dt>
                       <dd>{promiseSummary.disputedCount}</dd>
                     </div>
                   </dl>
                 ) : null}
                 {totalCount > invoices.length ? (
                   <p className="meta">
-                    Завантажено {invoices.length} з {totalCount} за запитом (ліміт collections{" "}
-                    {COLLECTIONS_PAGE_SIZE}). Підсумок і Next — у межах завантаженого набору.
+                    {t("collections.loadedTruncated", {
+                      loaded: invoices.length,
+                      total: totalCount,
+                      limit: COLLECTIONS_PAGE_SIZE
+                    })}
                   </p>
                 ) : null}
                 {queueTableActive ? (
                   <div
                     className="aging-bucket-row"
                     role="group"
-                    aria-label="Фільтр днів прострочки"
+                    aria-label={t("collections.agingAria")}
                   >
                     {AGING_BUCKET_OPTIONS.map((option) => (
                       <button
@@ -4169,7 +4212,7 @@ export function InvoicesView({
                         disabled={loading}
                         onClick={() => applyAgingBucket(option.id)}
                       >
-                        {option.shortLabel}
+                        {t(agingBucketShortKey(option.id))}
                       </button>
                     ))}
                   </div>
@@ -4179,7 +4222,7 @@ export function InvoicesView({
                     <div
                       className="aging-bucket-row"
                       role="group"
-                      aria-label="Promise follow-up groups"
+                      aria-label={t("promise.groupsAria")}
                     >
                       {PROMISE_GROUP_OPTIONS.map((option) => (
                         <button
@@ -4194,23 +4237,23 @@ export function InvoicesView({
                           disabled={loading}
                           onClick={() => applyPromiseGroup(option.id)}
                         >
-                          {option.shortLabel}
+                          {t(promiseGroupShortKey(option.id))}
                         </button>
                       ))}
                     </div>
                     <form className="filter-form promise-search-form" onSubmit={applyPromiseSearch}>
                       <label>
-                        Пошук follow-up
+                        {t("promise.searchLabel")}
                         <input
                           value={promiseSearchDraft}
                           onChange={(event) => setPromiseSearchDraft(event.target.value)}
-                          placeholder="номер рахунку або контрагент"
+                          placeholder={t("promise.searchPlaceholder")}
                           autoComplete="off"
                         />
                       </label>
                       <div className="filter-actions">
                         <button type="submit" disabled={loading}>
-                          Знайти
+                          {t("invoices.findAction")}
                         </button>
                         <button
                           type="button"
@@ -4230,7 +4273,7 @@ export function InvoicesView({
                             );
                           }}
                         >
-                          Скинути пошук
+                          {t("invoices.resetSearch")}
                         </button>
                       </div>
                     </form>
@@ -4241,7 +4284,7 @@ export function InvoicesView({
                     <div
                       className="aging-bucket-row"
                       role="group"
-                      aria-label="Collection workbench sections"
+                      aria-label={t("workbench.sectionsAria")}
                     >
                       {WORKBENCH_SECTION_OPTIONS.map((option) => (
                         <button
@@ -4256,22 +4299,22 @@ export function InvoicesView({
                           disabled={loading}
                           onClick={() => applyWorkbenchSection(option.id)}
                         >
-                          {option.shortLabel}
+                          {t(workbenchSectionShortKey(option.id))}
                         </button>
                       ))}
                     </div>
                     <form className="filter-form promise-search-form" onSubmit={applyPromiseSearch}>
                       <label>
-                        Пошук workbench
+                        {t("workbench.searchLabel")}
                         <input
                           value={promiseSearchDraft}
                           onChange={(event) => setPromiseSearchDraft(event.target.value)}
-                          placeholder="номер рахунку, контрагент або next action"
+                          placeholder={t("workbench.searchPlaceholder")}
                           autoComplete="off"
                         />
                       </label>
                       <label>
-                        Сортування
+                        {t("workbench.sortLabel")}
                         <select
                           value={workbenchSort}
                           onChange={(event) =>
@@ -4280,14 +4323,14 @@ export function InvoicesView({
                         >
                           {WORKBENCH_SORT_OPTIONS.map((option) => (
                             <option key={option.id} value={option.id}>
-                              {option.label}
+                              {t(workbenchSortKey(option.id))}
                             </option>
                           ))}
                         </select>
                       </label>
                       <div className="filter-actions">
                         <button type="submit" disabled={loading}>
-                          Знайти
+                          {t("invoices.findAction")}
                         </button>
                         <button
                           type="button"
@@ -4310,7 +4353,7 @@ export function InvoicesView({
                             );
                           }}
                         >
-                          Скинути пошук
+                          {t("invoices.resetSearch")}
                         </button>
                         <button
                           type="button"
@@ -4323,14 +4366,14 @@ export function InvoicesView({
                           disabled={loading}
                           onClick={() => applyWorkbenchHideCompleted(!workbenchHideCompleted)}
                         >
-                          Hide Completed
+                          {t("workbench.hideCompleted")}
                         </button>
                       </div>
                     </form>
                     <div
                       className="aging-bucket-row workbench-mass-actions"
                       role="group"
-                      aria-label="Workbench mass actions"
+                      aria-label={t("workbench.massActionsAria")}
                     >
                       <button
                         type="button"
@@ -4338,7 +4381,7 @@ export function InvoicesView({
                         disabled={loading || workbenchSelectedIds.length === 0}
                         onClick={() => runWorkbenchMassAction("mark_contacted")}
                       >
-                        Mark Contacted
+                        {t("workbench.massAction.markContacted")}
                       </button>
                       <button
                         type="button"
@@ -4346,7 +4389,7 @@ export function InvoicesView({
                         disabled={loading || workbenchSelectedIds.length === 0}
                         onClick={() => runWorkbenchMassAction("mark_follow_up_required")}
                       >
-                        Mark Follow-up Required
+                        {t("workbench.massAction.markFollowUp")}
                       </button>
                       <button
                         type="button"
@@ -4354,7 +4397,7 @@ export function InvoicesView({
                         disabled={loading || workbenchSelectedIds.length === 0}
                         onClick={() => runWorkbenchMassAction("complete")}
                       >
-                        Complete
+                        {t("workbench.massAction.complete")}
                       </button>
                       <button
                         type="button"
@@ -4362,7 +4405,7 @@ export function InvoicesView({
                         disabled={loading}
                         onClick={() => applyWorkbenchHideCompleted(true)}
                       >
-                        Hide Completed
+                        {t("workbench.hideCompleted")}
                       </button>
                     </div>
                     {workbenchMassMessage ? (
@@ -4377,7 +4420,7 @@ export function InvoicesView({
 
             <form className="filter-form" onSubmit={applyFilters}>
               <label>
-                Номер документа
+                {t("invoices.field.documentNumber")}
                 <input
                   value={draftFilters.documentNumber ?? ""}
                   onChange={(event) =>
@@ -4391,7 +4434,7 @@ export function InvoicesView({
                 />
               </label>
               <label>
-                Контрагент
+                {t("invoices.field.counterparty")}
                 <input
                   value={draftFilters.counterpartyReference ?? ""}
                   onChange={(event) =>
@@ -4400,13 +4443,13 @@ export function InvoicesView({
                       counterpartyReference: event.target.value
                     }))
                   }
-                  placeholder="точне значення"
+                  placeholder={t("invoices.counterpartyPlaceholder")}
                   autoComplete="off"
-                  title="Точний збіг з посиланням контрагента в API"
+                  title={t("invoices.counterpartyTitle")}
                 />
               </label>
               <label>
-                Статус
+                {t("field.status")}
                 <select
                   value={draftFilters.status ?? ""}
                   onChange={(event) =>
@@ -4416,16 +4459,16 @@ export function InvoicesView({
                     }))
                   }
                 >
-                  <option value="">Усі</option>
+                  <option value="">{t("all", { ns: "common" })}</option>
                   {INVOICE_STATUS_OPTIONS.map((status) => (
                     <option key={status} value={status}>
-                      {status}
+                      {statusLabel(status)}
                     </option>
                   ))}
                 </select>
               </label>
               <label>
-                Створено з
+                {t("invoices.field.createdFrom")}
                 <input
                   type="date"
                   value={draftFilters.createdFromDate ?? ""}
@@ -4438,7 +4481,7 @@ export function InvoicesView({
                 />
               </label>
               <label>
-                Створено по
+                {t("invoices.field.createdTo")}
                 <input
                   type="date"
                   value={draftFilters.createdToDate ?? ""}
@@ -4451,7 +4494,7 @@ export function InvoicesView({
                 />
               </label>
               <label>
-                Виставлено з
+                {t("invoices.field.issuedFrom")}
                 <input
                   type="date"
                   value={draftFilters.issuedFromDate ?? ""}
@@ -4464,7 +4507,7 @@ export function InvoicesView({
                 />
               </label>
               <label>
-                Виставлено по
+                {t("invoices.field.issuedTo")}
                 <input
                   type="date"
                   value={draftFilters.issuedToDate ?? ""}
@@ -4477,7 +4520,7 @@ export function InvoicesView({
                 />
               </label>
               <label>
-                Строк оплати з
+                {t("invoices.field.dueFrom")}
                 <input
                   type="date"
                   value={draftFilters.dueFromDate ?? ""}
@@ -4490,7 +4533,7 @@ export function InvoicesView({
                 />
               </label>
               <label>
-                Строк оплати по
+                {t("invoices.field.dueTo")}
                 <input
                   type="date"
                   value={draftFilters.dueToDate ?? ""}
@@ -4504,10 +4547,10 @@ export function InvoicesView({
               </label>
               <div className="filter-actions">
                 <button type="submit" disabled={loading}>
-                  Застосувати
+                  {t("invoices.applyAction")}
                 </button>
                 <button type="button" onClick={clearFilters} disabled={loading}>
-                  {overdueQueueActive ? "Скинути чергу" : "Скинути"}
+                  {overdueQueueActive ? t("invoices.clearQueue") : t("clearFilter", { ns: "common" })}
                 </button>
               </div>
             </form>
@@ -4517,46 +4560,64 @@ export function InvoicesView({
             ) : null}
             {filtersActive ? (
               <p className="meta">
-                Активні фільтри:
-                {overdueQueueActive ? " черга collections" : ""}
+                {t("invoices.filter.activePrefix")}
+                {overdueQueueActive ? t("invoices.filter.activeQueue") : ""}
                 {overdueQueueActive && agingBucket
-                  ? ` · aging ${agingBucketLabel(agingBucket)}`
+                  ? t("invoices.filter.activeAging", {
+                        bucket: agingBucketLabel(agingBucket)
+                      })
                   : ""}
                 {appliedFilters.documentNumber?.trim()
-                  ? ` номер «${appliedFilters.documentNumber.trim()}»`
+                  ? t("invoices.filter.activeDocumentNumber", {
+                        value: appliedFilters.documentNumber.trim()
+                      })
                   : ""}
                 {appliedFilters.counterpartyReference?.trim()
-                  ? ` контрагент «${appliedFilters.counterpartyReference.trim()}»`
+                  ? t("invoices.filter.activeCounterparty", {
+                        value: appliedFilters.counterpartyReference.trim()
+                      })
                   : ""}
                 {appliedFilters.status === "Draft" || appliedFilters.status === "Issued"
-                  ? ` статус ${appliedFilters.status}`
+                  ? t("invoices.filter.activeStatus", {
+                        value: statusLabel(appliedFilters.status)
+                      })
                   : ""}
                 {appliedFilters.createdFromDate
-                  ? ` створено з ${appliedFilters.createdFromDate}`
+                  ? t("invoices.filter.activeCreatedFrom", {
+                        value: appliedFilters.createdFromDate
+                      })
                   : ""}
                 {appliedFilters.createdToDate
-                  ? ` створено по ${appliedFilters.createdToDate}`
+                  ? t("invoices.filter.activeCreatedTo", {
+                        value: appliedFilters.createdToDate
+                      })
                   : ""}
                 {appliedFilters.issuedFromDate
-                  ? ` виставлено з ${appliedFilters.issuedFromDate}`
+                  ? t("invoices.filter.activeIssuedFrom", {
+                        value: appliedFilters.issuedFromDate
+                      })
                   : ""}
                 {appliedFilters.issuedToDate
-                  ? ` виставлено по ${appliedFilters.issuedToDate}`
+                  ? t("invoices.filter.activeIssuedTo", {
+                        value: appliedFilters.issuedToDate
+                      })
                   : ""}
                 {appliedFilters.dueFromDate
-                  ? ` строк з ${appliedFilters.dueFromDate}`
+                  ? t("invoices.filter.activeDueFrom", {
+                        value: appliedFilters.dueFromDate
+                      })
                   : ""}
                 {effectiveDueToForSummary
-                  ? ` строк по ${effectiveDueToForSummary}`
+                  ? t("invoices.filter.activeDueTo", { value: effectiveDueToForSummary })
                   : ""}
               </p>
             ) : (
-              <p className="meta">Фільтри не застосовані.</p>
+              <p className="meta">{t("invoices.filter.none")}</p>
             )}
 
             <form className="create-form" onSubmit={(event) => void handleCreateInvoice(event)}>
               <label>
-                Номер документа
+                {t("invoices.field.documentNumber")}
                 <input
                   value={documentNumber}
                   onChange={(event) => {
@@ -4568,7 +4629,7 @@ export function InvoicesView({
                 />
               </label>
               <label>
-                Контрагент
+                {t("invoices.field.counterparty")}
                 <input
                   value={counterpartyReference}
                   onChange={(event) => {
@@ -4579,7 +4640,7 @@ export function InvoicesView({
                 />
               </label>
               <label>
-                Валюта
+                {t("invoices.field.currency")}
                 <input
                   value={currency}
                   onChange={(event) => {
@@ -4591,7 +4652,7 @@ export function InvoicesView({
                 />
               </label>
               <button type="submit" disabled={createBusy}>
-                Створити чернетку
+                {t("invoices.createDraft")}
               </button>
             </form>
           </>
@@ -4637,7 +4698,7 @@ export function InvoicesView({
                 className="button-secondary"
                 onClick={() => onOpenAccrual(createdAccrualId)}
               >
-                Відкрити нарахування
+                {t("invoices.openAccrual")}
               </button>
             ) : null}
           </div>
@@ -4675,10 +4736,10 @@ export function InvoicesView({
             onSubmit={(event) => void handleSaveLineAdd(event)}
           >
             <p className="meta">
-              Додавання рядка: <span className="mono">{lineAddTarget.documentNumber}</span>
+              {t("invoices.lineAdd.intro")} <span className="mono">{lineAddTarget.documentNumber}</span>
             </p>
             <label>
-              Кількість
+              {t("invoices.field.quantity")}
               <input
                 value={lineAddQuantity}
                 onChange={(event) => setLineAddQuantity(event.target.value)}
@@ -4688,7 +4749,7 @@ export function InvoicesView({
               />
             </label>
             <label>
-              Ціна
+              {t("invoices.field.price")}
               <input
                 value={lineAddUnitPrice}
                 onChange={(event) => setLineAddUnitPrice(event.target.value)}
@@ -4698,17 +4759,17 @@ export function InvoicesView({
               />
             </label>
             <label>
-              Опис рядка
+              {t("invoices.field.lineDescription")}
               <input
                 value={lineAddDescription}
                 onChange={(event) => setLineAddDescription(event.target.value)}
-                placeholder="Послуга або товар"
+                placeholder={t("invoices.lineDescriptionPlaceholder")}
                 disabled={lineAddBusy}
               />
             </label>
             <div className="filter-actions">
               <button type="submit" disabled={lineAddBusy || loading}>
-                {lineAddBusy ? "Збереження…" : "Додати рядок"}
+                {lineAddBusy ? t("saving", { ns: "common" }) : t("invoices.addLine")}
               </button>
               <button
                 type="button"
@@ -4716,7 +4777,7 @@ export function InvoicesView({
                 disabled={lineAddBusy}
                 onClick={cancelLineAdd}
               >
-                Скасувати
+                {t("promise.cancelAction")}
               </button>
             </div>
           </form>
@@ -4728,11 +4789,13 @@ export function InvoicesView({
             onSubmit={(event) => void handleSaveLineUpdate(event)}
           >
             <p className="meta">
-              Зміна рядка {draftInvoiceLineConfirmationLabel(lineUpdateTarget.line)}:{" "}
+              {t("invoices.lineUpdate.intro", {
+                line: draftInvoiceLineConfirmationLabel(lineUpdateTarget.line)
+              })}{" "}
               <span className="mono">{lineUpdateTarget.invoice.documentNumber}</span>
             </p>
             <label>
-              Кількість
+              {t("invoices.field.quantity")}
               <input
                 value={lineUpdateQuantity}
                 onChange={(event) => setLineUpdateQuantity(event.target.value)}
@@ -4742,7 +4805,7 @@ export function InvoicesView({
               />
             </label>
             <label>
-              Ціна
+              {t("invoices.field.price")}
               <input
                 value={lineUpdateUnitPrice}
                 onChange={(event) => setLineUpdateUnitPrice(event.target.value)}
@@ -4752,17 +4815,17 @@ export function InvoicesView({
               />
             </label>
             <label>
-              Опис рядка
+              {t("invoices.field.lineDescription")}
               <input
                 value={lineUpdateDescription}
                 onChange={(event) => setLineUpdateDescription(event.target.value)}
-                placeholder="Послуга або товар"
+                placeholder={t("invoices.lineDescriptionPlaceholder")}
                 disabled={lineUpdateBusy}
               />
             </label>
             <div className="filter-actions">
               <button type="submit" disabled={lineUpdateBusy || loading}>
-                {lineUpdateBusy ? "Збереження…" : "Зберегти рядок"}
+                {lineUpdateBusy ? t("saving", { ns: "common" }) : t("invoices.lineUpdate.submit")}
               </button>
               <button
                 type="button"
@@ -4770,16 +4833,18 @@ export function InvoicesView({
                 disabled={lineUpdateBusy}
                 onClick={cancelLineUpdate}
               >
-                Скасувати
+                {t("promise.cancelAction")}
               </button>
             </div>
           </form>
         ) : null}
 
         {workspace && lineRemoveTarget ? (
-          <div className="create-form issue-prepare-form" role="group" aria-label="Підтвердження видалення рядка">
+          <div className="create-form issue-prepare-form" role="group" aria-label={t("invoices.lineRemove.aria")}>
             <p className="meta">
-              Видалити рядок {draftInvoiceLineConfirmationLabel(lineRemoveTarget.line)} з рахунка{" "}
+              {t("invoices.lineRemove.prompt", {
+                line: draftInvoiceLineConfirmationLabel(lineRemoveTarget.line)
+              })}{" "}
               <span className="mono">{lineRemoveTarget.invoice.documentNumber}</span>?
             </p>
             <div className="filter-actions">
@@ -4788,7 +4853,7 @@ export function InvoicesView({
                 disabled={lineRemoveBusy || loading}
                 onClick={() => void handleConfirmLineRemove()}
               >
-                {lineRemoveBusy ? "Видалення…" : "Підтвердити видалення"}
+                {lineRemoveBusy ? t("invoices.removing") : t("invoices.lineRemove.confirm")}
               </button>
               <button
                 type="button"
@@ -4796,7 +4861,7 @@ export function InvoicesView({
                 disabled={lineRemoveBusy}
                 onClick={cancelLineRemove}
               >
-                Скасувати
+                {t("promise.cancelAction")}
               </button>
             </div>
           </div>
@@ -4808,11 +4873,11 @@ export function InvoicesView({
             onSubmit={(event) => void handleSaveDueDate(event)}
           >
             <p className="meta">
-              Зміна дати оплати:{" "}
+              {t("invoices.dueDateEdit.intro")}{" "}
               <span className="mono">{dueDateEditTarget.documentNumber}</span>
             </p>
             <label>
-              Дата оплати
+              {t("invoices.field.dueDate")}
               <input
                 type="date"
                 value={dueDateEditValue}
@@ -4823,7 +4888,7 @@ export function InvoicesView({
             </label>
             <div className="filter-actions">
               <button type="submit" disabled={dueDateEditBusy || loading}>
-                {dueDateEditBusy ? "Збереження…" : "Зберегти"}
+                {dueDateEditBusy ? t("saving", { ns: "common" }) : t("save", { ns: "common" })}
               </button>
               <button
                 type="button"
@@ -4831,7 +4896,7 @@ export function InvoicesView({
                 disabled={dueDateEditBusy}
                 onClick={cancelDueDateEdit}
               >
-                Скасувати
+                {t("promise.cancelAction")}
               </button>
             </div>
           </form>
@@ -4843,11 +4908,11 @@ export function InvoicesView({
             onSubmit={(event) => void handlePrepareAndIssue(event)}
           >
             <p className="meta">
-              Підготовка до виставлення: <span className="mono">{issueTarget.documentNumber}</span>
+              {t("invoices.issuePrepare.intro")} <span className="mono">{issueTarget.documentNumber}</span>
             </p>
             {getInvoiceIssueReadiness(issueTarget).needsDueDate ? (
               <label>
-                Дата оплати
+                {t("invoices.field.dueDate")}
                 <input
                   type="date"
                   value={issueDueDate}
@@ -4859,7 +4924,7 @@ export function InvoicesView({
             {getInvoiceIssueReadiness(issueTarget).needsLine ? (
               <>
                 <label>
-                  Кількість
+                  {t("invoices.field.quantity")}
                   <input
                     value={issueQuantity}
                     onChange={(event) => setIssueQuantity(event.target.value)}
@@ -4868,7 +4933,7 @@ export function InvoicesView({
                   />
                 </label>
                 <label>
-                  Ціна
+                  {t("invoices.field.price")}
                   <input
                     value={issueUnitPrice}
                     onChange={(event) => setIssueUnitPrice(event.target.value)}
@@ -4877,18 +4942,18 @@ export function InvoicesView({
                   />
                 </label>
                 <label>
-                  Опис рядка
+                  {t("invoices.field.lineDescription")}
                   <input
                     value={issueLineDescription}
                     onChange={(event) => setIssueLineDescription(event.target.value)}
-                    placeholder="Послуга або товар"
+                    placeholder={t("invoices.lineDescriptionPlaceholder")}
                   />
                 </label>
               </>
             ) : null}
             <div className="filter-actions">
               <button type="submit" disabled={issueBusy}>
-                Підготувати й виставити
+                {t("invoices.issuePrepare.submit")}
               </button>
               <button
                 type="button"
@@ -4896,7 +4961,7 @@ export function InvoicesView({
                 disabled={issueBusy}
                 onClick={cancelIssuePrepare}
               >
-                Скасувати
+                {t("promise.cancelAction")}
               </button>
             </div>
           </form>
@@ -5231,7 +5296,7 @@ export function InvoicesView({
         {workspace ? (
           <ListLoadState
             loading={loading}
-            loadingMessage="Завантаження рахунків…"
+            loadingMessage={t("invoices.listLoading")}
             error={error}
             onRetry={() => void loadPage(workspace.id, page, appliedFilters, invoiceQueue)}
             retryDisabled={loading}
@@ -5239,25 +5304,30 @@ export function InvoicesView({
             emptyMessage={
               workbenchPanelActive
                 ? workbenchSection || promiseSearch || workbenchHideCompleted
-                  ? "За поточними workbench фільтрами кейсів немає."
-                  : "Немає відкритих collection cases для завантажених рахунків."
+                  ? t("workbench.emptyFiltered")
+                  : t("workbench.empty")
                 : followUpsPanelActive
                   ? promiseGroup || promiseSearch
-                    ? "За поточними follow-up фільтрами обіцянок немає."
-                    : "Немає збережених promise-to-pay follow-ups для завантажених рахунків."
+                    ? t("promise.emptyFiltered")
+                    : t("promise.empty")
                   : overdueQueueActive
                     ? agingBucket
-                      ? `У bucket «${agingBucketLabel(agingBucket)}» немає ${
-                          queueHideSettled ? "відкритих " : ""
-                        }прострочених рахунків у завантаженому наборі.`
+                      ? t(
+                        queueHideSettled
+                          ? "collections.queueEmptyBucketOpen"
+                          : "collections.queueEmptyBucketAll",
+                        { bucket: agingBucketLabel(agingBucket) }
+                      )
                       : queueHideSettled &&
                           collectionsSummary &&
                           collectionsSummary.settledCount > 0
-                        ? `Немає відкритих рахунків до збору (${collectionsSummary.settledCount} settled hidden). Увімкніть Show settled, щоб переглянути.`
-                        : "Немає рахунків до збору оплат (прострочені або строк сьогодні)."
+                        ? t("collections.queueEmptySettledHidden", {
+                          count: collectionsSummary.settledCount
+                        })
+                        : t("collections.queueEmpty")
                     : filtersActive
-                      ? "За поточними фільтрами рахунків немає."
-                      : "Рахунків ще немає. Створіть чернетку через форму вище."
+                      ? t("invoices.listEmptyFiltered")
+                      : t("invoices.listEmpty")
             }
           />
         ) : null}
@@ -5265,23 +5335,29 @@ export function InvoicesView({
         {workbenchPanelActive && workbenchFilteredCases.length > 0 ? (
           <>
             <p className="meta">
-              Collection Workbench · показано {workbenchFilteredCases.length}
+              {t("workbench.summary", { count: workbenchFilteredCases.length })}
               {workbenchSection
-                ? ` · ${WORKBENCH_SECTION_OPTIONS.find((o) => o.id === workbenchSection)?.label}`
+                ? t("workbench.summarySection", {
+                    section: t(workbenchSectionKey(workbenchSection))
+                  })
                 : ""}
-              {promiseSearch ? ` · пошук «${promiseSearch}»` : ""}
-              {workbenchHideCompleted ? " · completed hidden" : ""}
+              {promiseSearch
+                ? t("workbench.summarySearch", { search: promiseSearch })
+                : ""}
+              {workbenchHideCompleted ? t("workbench.summaryCompletedHidden") : ""}
               {workbenchSelectedIds.length > 0
-                ? ` · вибрано ${workbenchSelectedIds.length}`
+                ? t("workbench.summarySelected", { count: workbenchSelectedIds.length })
                 : ""}
             </p>
             {workbenchSections.map((section) => (
               <div key={section.id} className="promise-group-section workbench-section">
                 <h4 className="promise-group-title">
-                  {section.label}
+                  {t(workbenchSectionKey(section.id))}
                   <span className="meta">
-                    {" "}
-                    · {section.count} · {formatTotals(section.totalsByCurrency)}
+                    {t("workbench.sectionMeta", {
+                      count: section.count,
+                      totals: formatTotals(section.totalsByCurrency)
+                    })}
                   </span>
                 </h4>
                 <div className="table-wrap">
@@ -5308,16 +5384,18 @@ export function InvoicesView({
                                   : [...new Set([...current, ...ids])]
                               );
                             }}
-                            aria-label={`Select ${section.label}`}
+                            aria-label={t("workbench.selectSectionAria", {
+                              section: t(workbenchSectionKey(section.id))
+                            })}
                           />
                         </th>
-                        <th>Invoice Number</th>
-                        <th>Customer</th>
-                        <th>Amount</th>
-                        <th>Next action date</th>
-                        <th>Next Best Action</th>
-                        <th>Status</th>
-                        <th>Дія</th>
+                        <th>{t("workbench.col.invoiceNumber")}</th>
+                        <th>{t("workbench.col.customer")}</th>
+                        <th>{t("workbench.col.amount")}</th>
+                        <th>{t("workbench.col.nextActionDate")}</th>
+                        <th>{t("workbench.col.nextBestAction")}</th>
+                        <th>{t("workbench.col.status")}</th>
+                        <th>{t("workbench.col.action")}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -5341,7 +5419,9 @@ export function InvoicesView({
                                 type="checkbox"
                                 checked={checked}
                                 onChange={() => toggleWorkbenchSelection(item.invoiceId)}
-                                aria-label={`Select ${item.documentNumber}`}
+                                aria-label={t("workbench.selectRowAria", {
+                                  document: item.documentNumber
+                                })}
                               />
                             </td>
                             <td className="cell-wrap">{item.documentNumber}</td>
@@ -5350,23 +5430,21 @@ export function InvoicesView({
                             <td>
                               {item.nextActionDate}
                               {item.nextFollowUpAt ? (
-                                <span className="meta"> · follow-up</span>
+                                <span className="meta">{t("workbench.tag.followUp")}</span>
                               ) : null}
                               {item.disputeReviewAt ? (
-                                <span className="meta"> · dispute review</span>
+                                <span className="meta">{t("workbench.tag.disputeReview")}</span>
                               ) : null}
                               {item.escalationDueAt ? (
                                 <span className="meta">
-                                  {" "}
-                                  · escalation
-                                  {item.escalationOverdue ? " overdue" : ""}
+                                  {" "}{t("workbench.tag.escalation")}
+                                  {item.escalationOverdue ? t("workbench.tag.overdueWord") : ""}
                                 </span>
                               ) : null}
                               {item.paymentPlanNextDueAt ? (
                                 <span className="meta">
-                                  {" "}
-                                  · plan
-                                  {item.paymentPlanOverdue ? " overdue" : ""}
+                                  {" "}{t("workbench.tag.plan")}
+                                  {item.paymentPlanOverdue ? t("workbench.tag.overdueWord") : ""}
                                 </span>
                               ) : null}
                             </td>
@@ -5391,7 +5469,7 @@ export function InvoicesView({
                                   {escalationReasonLabel(item.escalation.reason)}
                                   {" · "}
                                   {escalationTeamLabel(item.escalation.responsibleTeam)}
-                                  {item.escalationOverdue ? " · overdue" : ""}
+                                  {item.escalationOverdue ? t("workbench.tag.overdueDot") : ""}
                                   <br />
                                   {item.escalation.requestedAction.length > 60
                                     ? `${item.escalation.requestedAction.slice(0, 57)}…`
@@ -5413,9 +5491,9 @@ export function InvoicesView({
                                     ? ` · ${Math.round(item.paymentPlanProgress * 100)}%`
                                     : ""}
                                   {item.paymentPlanNextDueAt
-                                    ? ` · next ${item.paymentPlanNextDueAt}`
+                                    ? t("workbench.tag.nextDue", { date: item.paymentPlanNextDueAt })
                                     : ""}
-                                  {item.paymentPlanOverdue ? " · overdue" : ""}
+                                  {item.paymentPlanOverdue ? t("workbench.tag.overdueDot") : ""}
                                 </p>
                               ) : null}
                             </td>
@@ -5442,14 +5520,14 @@ export function InvoicesView({
                                     }
                                   }}
                                 >
-                                  Відкрити
+                                  {t("invoices.openAction")}
                                 </button>
                                 <button
                                   type="button"
                                   className="button-secondary"
                                   onClick={() => openCaseHistory(item.invoiceId)}
                                 >
-                                  History
+                                  {t("workbench.historyAction")}
                                 </button>
                                 {item.status !== "completed" ? (
                                   <>
@@ -5461,7 +5539,7 @@ export function InvoicesView({
                                         bumpPromiseRevision();
                                       }}
                                     >
-                                      Contacted
+                                      {t("workbench.rowContacted")}
                                     </button>
                                     <button
                                       type="button"
@@ -5474,7 +5552,7 @@ export function InvoicesView({
                                         bumpPromiseRevision();
                                       }}
                                     >
-                                      Follow-up
+                                      {t("workbench.rowFollowUp")}
                                     </button>
                                   </>
                                 ) : null}
@@ -5498,8 +5576,8 @@ export function InvoicesView({
                   {workbenchFilteredCases.every((item) =>
                     workbenchSelectedIds.includes(item.invoiceId)
                   )
-                    ? "Зняти вибір"
-                    : "Вибрати всі видимі"}
+                    ? t("workbench.clearSelection")
+                    : t("workbench.selectAllVisible")}
                 </button>
               </p>
             ) : null}
@@ -5509,9 +5587,15 @@ export function InvoicesView({
         {followUpsPanelActive && promiseGroups && promiseFollowUpItems.length > 0 ? (
           <>
             <p className="meta">
-              Promise Follow-ups · показано {promiseFollowUpItems.length}
-              {promiseGroup ? ` · ${PROMISE_GROUP_OPTIONS.find((o) => o.id === promiseGroup)?.label}` : ""}
-              {promiseSearch ? ` · пошук «${promiseSearch}»` : ""}
+              {t("promise.summary", { count: promiseFollowUpItems.length })}
+              {promiseGroup
+                ? t("promise.summaryGroup", {
+                    group: t(promiseGroupKey(promiseGroup))
+                  })
+                : ""}
+              {promiseSearch
+                ? t("promise.summarySearch", { search: promiseSearch })
+                : ""}
             </p>
             {(
               [
@@ -5533,23 +5617,22 @@ export function InvoicesView({
                 return (
                   <div key={groupId} className="promise-group-section">
                     <h4 className="promise-group-title">
-                      {PROMISE_GROUP_OPTIONS.find((option) => option.id === groupId)?.label ??
-                        groupId}
+                      {t(promiseGroupKey(groupId))}
                     </h4>
                     <div className="table-wrap">
                       <table>
                         <thead>
                           <tr>
-                            <th>Invoice Number</th>
-                            <th>Customer</th>
-                            <th>Overdue amount</th>
-                            <th>Original due date</th>
-                            <th>Promise date</th>
-                            <th>Days to / past promise</th>
-                            <th>Follow-up status</th>
-                            <th>Resolution</th>
-                            <th>Note</th>
-                            <th>Дія</th>
+                            <th>{t("promise.col.invoiceNumber")}</th>
+                            <th>{t("promise.col.customer")}</th>
+                            <th>{t("promise.col.overdueAmount")}</th>
+                            <th>{t("promise.col.originalDueDate")}</th>
+                            <th>{t("promise.col.promiseDate")}</th>
+                            <th>{t("promise.col.daysToPromise")}</th>
+                            <th>{t("promise.col.followUpStatus")}</th>
+                            <th>{t("promise.col.resolution")}</th>
+                            <th>{t("promise.col.note")}</th>
+                            <th>{t("invoices.col.action")}</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -5617,7 +5700,7 @@ export function InvoicesView({
                                       }
                                     }}
                                   >
-                                    Відкрити
+                                    {t("invoices.openAction")}
                                   </button>
                                 </td>
                               </tr>
@@ -5636,12 +5719,18 @@ export function InvoicesView({
           <>
             <p className="meta">
               {overdueQueueActive
-                ? `Payment collection · показано ${displayInvoices.length}${
+                ? `${t("collections.tableMeta", { shown: displayInvoices.length })}${
                     queueHideSettled && collectionsSummary
-                      ? ` open · ${collectionsSummary.settledCount} settled hidden`
+                      ? t("collections.tableMetaSettled", {
+                          count: collectionsSummary.settledCount
+                        })
                       : ""
-                  } · у запиті ${totalCount}`
-                : `Сторінка ${page} · показано ${displayInvoices.length} · усього ${totalCount}`}
+                  }${t("collections.tableMetaTotal", { total: totalCount })}`
+                : t("invoices.pageMeta", {
+                  page,
+                  shown: displayInvoices.length,
+                  total: totalCount
+                })}
             </p>
             <div className="table-wrap">
               <table>
@@ -5649,28 +5738,28 @@ export function InvoicesView({
                   <tr>
                     {overdueQueueActive ? (
                       <>
-                        <th>Invoice Number</th>
-                        <th>Customer</th>
-                        <th>Amount</th>
-                        <th>Currency</th>
-                        <th>Due Date</th>
-                        <th>Days Overdue</th>
-                        <th>Status</th>
-                        <th>Settlement</th>
-                        <th>Дія</th>
+                        <th>{t("collections.col.invoiceNumber")}</th>
+                        <th>{t("collections.col.customer")}</th>
+                        <th>{t("collections.col.amount")}</th>
+                        <th>{t("collections.col.currency")}</th>
+                        <th>{t("collections.col.dueDate")}</th>
+                        <th>{t("collections.col.daysOverdue")}</th>
+                        <th>{t("collections.col.status")}</th>
+                        <th>{t("collections.col.settlement")}</th>
+                        <th>{t("invoices.col.action")}</th>
                       </>
                     ) : (
                       <>
-                        <th>Номер</th>
-                        <th>Контрагент</th>
-                        <th>Сума</th>
-                        <th>Валюта</th>
-                        <th>Виставлено</th>
-                        <th>Строк оплати</th>
-                        <th>Статус</th>
-                        <th>Статус строку</th>
-                        <th>Дні / bucket</th>
-                        <th>Дія</th>
+                        <th>{t("invoices.col.number")}</th>
+                        <th>{t("invoices.col.counterparty")}</th>
+                        <th>{t("invoices.col.amount")}</th>
+                        <th>{t("invoices.col.currency")}</th>
+                        <th>{t("invoices.col.issued")}</th>
+                        <th>{t("invoices.col.dueDate")}</th>
+                        <th>{t("invoices.col.status")}</th>
+                        <th>{t("invoices.col.agingStatus")}</th>
+                        <th>{t("invoices.col.daysBucket")}</th>
+                        <th>{t("invoices.col.action")}</th>
                       </>
                     )}
                   </tr>
@@ -5720,11 +5809,11 @@ export function InvoicesView({
                           <td>
                             {daysOverdue != null ? (
                               <span className="aging-badge aging-badge--overdue">
-                                {daysOverdue} дн.
+                                {t("collections.daysShort", { count: daysOverdue })}
                               </span>
                             ) : aging.kind === "due_today" ? (
                               <span className="aging-badge aging-badge--due_today">
-                                Строк сьогодні
+                                {t("collections.dueToday")}
                               </span>
                             ) : (
                               aging.dayOffsetLabel
@@ -5732,8 +5821,8 @@ export function InvoicesView({
                           </td>
                           <td>
                             <span className={`aging-badge aging-badge--${aging.kind}`}>
-                              {invoice.status}
-                            </span>
+                              {statusLabel(invoice.status)}
+                              </span>
                           </td>
                           <td>
                             {settlement?.label ? (
@@ -5750,8 +5839,8 @@ export function InvoicesView({
                               </span>
                             ) : (
                               <span className="aging-badge aging-badge--settlement-open">
-                                Open
-                              </span>
+                                {t("collections.settlementOpen")}
+                                </span>
                             )}
                           </td>
                         </>
@@ -5763,7 +5852,7 @@ export function InvoicesView({
                           <td>{invoice.currency}</td>
                           <td>{formatDate(invoice.issuedAtUtc)}</td>
                           <td>{formatDate(invoice.dueDateUtc)}</td>
-                          <td>{invoice.status}</td>
+                          <td>{statusLabel(invoice.status)}</td>
                           <td>
                             <span className={`aging-badge aging-badge--${aging.kind}`}>
                               {aging.label}
@@ -5771,7 +5860,7 @@ export function InvoicesView({
                           </td>
                           <td>
                             {daysOverdue != null && bucket
-                              ? `${daysOverdue} дн. · ${bucket}`
+                              ? t("invoices.daysBucket", { days: daysOverdue, bucket })
                               : aging.dayOffsetLabel}
                           </td>
                         </>
@@ -5786,8 +5875,8 @@ export function InvoicesView({
                               onClick={() => beginViewInvoiceDetails(invoice)}
                             >
                               {detailLoading && detailTargetId === invoice.id
-                                ? "Завантаження…"
-                                : "Деталі"}
+                                ? t("loading", { ns: "common" })
+                                : t("details", { ns: "common" })}
                             </button>
                           ) : null}
                           {canEditDraftInvoiceHeader(invoice) ? (
@@ -5808,8 +5897,8 @@ export function InvoicesView({
                               onClick={() => beginHeaderEdit(invoice)}
                             >
                               {headerEditBusy && savingHeaderInvoiceId === invoice.id
-                                ? "Збереження…"
-                                : "Змінити реквізити"}
+                                ? t("saving", { ns: "common" })
+                                : t("invoices.editHeader")}
                             </button>
                           ) : null}
                           {canAddDraftInvoiceLine(invoice) ? (
@@ -5830,8 +5919,8 @@ export function InvoicesView({
                               onClick={() => beginLineAdd(invoice)}
                             >
                               {lineAddBusy && savingLineInvoiceId === invoice.id
-                                ? "Збереження…"
-                                : "Додати рядок"}
+                                ? t("saving", { ns: "common" })
+                                : t("invoices.addLine")}
                             </button>
                           ) : null}
                           {canEditDraftInvoiceDueDate(invoice) ? (
@@ -5852,8 +5941,8 @@ export function InvoicesView({
                               onClick={() => beginDueDateEdit(invoice)}
                             >
                               {dueDateEditBusy && savingDueDateInvoiceId === invoice.id
-                                ? "Збереження…"
-                                : "Змінити дату"}
+                                ? t("saving", { ns: "common" })
+                                : t("invoices.changeDueDateShort")}
                             </button>
                           ) : null}
                           {isDraftInvoice(invoice) ? (
@@ -5873,7 +5962,7 @@ export function InvoicesView({
                               }
                               onClick={() => beginIssue(invoice)}
                             >
-                              Виставити
+                              {t("invoices.issue")}
                             </button>
                           ) : null}
                           {canCreateAccrualFromInvoice(invoice) ? (
@@ -5895,8 +5984,8 @@ export function InvoicesView({
                             >
                               {createAccrualBusy &&
                               savingCreateAccrualInvoiceId === invoice.id
-                                ? "Створення…"
-                                : "Створити нарахування"}
+                                ? t("creating", { ns: "common" })
+                                : t("invoices.createAccrual")}
                             </button>
                           ) : null}
                           {!canViewInvoiceDetails(invoice) &&
@@ -5912,7 +6001,7 @@ export function InvoicesView({
                 </tbody>
               </table>
             </div>
-            <div className="pagination" role="navigation" aria-label="Сторінки рахунків">
+            <div className="pagination" role="navigation" aria-label={t("invoices.paginationAria")}>
               <button
                 type="button"
                 disabled={!canGoPrevious}
@@ -5933,7 +6022,7 @@ export function InvoicesView({
                   );
                 }}
               >
-                Назад
+                {t("back", { ns: "common" })}
               </button>
               <span className="meta">
                 {page} / {pages}
@@ -5958,7 +6047,7 @@ export function InvoicesView({
                   );
                 }}
               >
-                Далі
+                {t("next", { ns: "common" })}
               </button>
             </div>
           </>

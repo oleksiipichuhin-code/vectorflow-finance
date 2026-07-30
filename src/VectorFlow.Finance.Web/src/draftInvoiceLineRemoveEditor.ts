@@ -1,3 +1,4 @@
+import i18n from "./i18n/index.ts";
 import type { Invoice, InvoiceLine } from "./api.ts";
 import { isDraftInvoice } from "./invoiceIssue.ts";
 
@@ -35,10 +36,10 @@ function asApiFailure(error: unknown): ApiFailureShape | null {
 }
 
 const CONFLICT_OPERATOR_MESSAGE =
-  "Рахунок або рядок було змінено іншою дією. Список оновлено — відкрийте видалення знову з актуальними даними.";
+  i18n.t("invoices.error.invoiceChangedLineRemove", { ns: "finance" });
 
 const NOT_FOUND_OPERATOR_MESSAGE =
-  "Рахунок не знайдено. Список оновлено з сервера.";
+  i18n.t("invoices.error.invoiceNotFound", { ns: "finance" });
 
 export function canRemoveDraftInvoiceLine(invoice: Pick<Invoice, "status">): boolean {
   return isDraftInvoice(invoice);
@@ -49,7 +50,7 @@ export function draftInvoiceLineConfirmationLabel(
   line: Pick<InvoiceLine, "sequence" | "description">
 ): string {
   const description = line.description?.trim();
-  const descriptionPart = description && description.length > 0 ? description : "без опису";
+  const descriptionPart = description && description.length > 0 ? description : i18n.t("invoices.lineWithoutDescription", { ns: "finance" });
   return `#${line.sequence} · ${descriptionPart}`;
 }
 
@@ -122,7 +123,7 @@ export function interpretDraftInvoiceLineRemoveError(
   }
 
   return {
-    message: "Не вдалося видалити рядок рахунка.",
+    message: i18n.t("invoices.error.lineRemoveFailed", { ns: "finance" }),
     keepConfirmationOpen: true,
     refreshList: false
   };

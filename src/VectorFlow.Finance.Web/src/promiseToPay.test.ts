@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { escalationTeamLabel } from "./collectionCaseHistory.ts";
 import {
   applyCollectionResolution,
   buildPromiseFollowUpItems,
@@ -1370,7 +1371,11 @@ describe("collection escalation workflow", () => {
       1
     );
     const handoffEvent = updated.record.history.find((e) => e.type === "escalation_updated");
-    assert.ok(handoffEvent?.description.includes("Finance → Legal"));
+    assert.ok(
+      handoffEvent?.description.includes(
+        `${escalationTeamLabel("finance")} → ${escalationTeamLabel("legal")}`
+      )
+    );
 
     const noop = updateCollectionEscalation(
       INVOICE_A,

@@ -3,6 +3,8 @@
  * Stored on PromiseToPayRecord.notes — same localStorage key.
  * Append-oriented thread for collectors; not customer-facing contact notes.
  */
+import i18n from "./i18n/index.ts";
+
 
 export type CollectionNoteCategory =
   | "general"
@@ -78,7 +80,9 @@ export function parseNoteCategory(
 
 export function noteCategoryLabel(category: CollectionNoteCategory): string {
   return (
-    NOTE_CATEGORY_OPTIONS.find((option) => option.id === category)?.label ?? category
+    NOTE_CATEGORY_OPTIONS.some((option) => option.id === category)
+      ? i18n.t(`promise.noteCategory.${category}`, { ns: "finance" })
+      : category
   );
 }
 
@@ -135,23 +139,23 @@ export function validateCollectionNoteInput(
 ): CollectionNoteValidationResult {
   const body = (input.body ?? "").trim();
   if (!body) {
-    return { ok: false, error: "Текст нотатки обовʼязковий." };
+    return { ok: false, error: i18n.t("note.error.bodyRequired", { ns: "finance" }) };
   }
   if (body.length > BODY_MAX) {
     return {
       ok: false,
-      error: `Текст нотатки занадто довгий (макс. ${BODY_MAX} символів).`
+      error: i18n.t("note.error.bodyTooLong", { ns: "finance", max: BODY_MAX })
     };
   }
 
   const author = (input.author ?? "").trim();
   if (!author) {
-    return { ok: false, error: "Автор нотатки обовʼязковий." };
+    return { ok: false, error: i18n.t("note.error.authorRequired", { ns: "finance" }) };
   }
   if (author.length > AUTHOR_MAX) {
     return {
       ok: false,
-      error: `Імʼя автора занадто довге (макс. ${AUTHOR_MAX} символів).`
+      error: i18n.t("note.error.authorTooLong", { ns: "finance", max: AUTHOR_MAX })
     };
   }
 
@@ -159,7 +163,7 @@ export function validateCollectionNoteInput(
   const category =
     categoryRaw === "" ? null : parseNoteCategory(String(categoryRaw));
   if (!category) {
-    return { ok: false, error: "Оберіть категорію нотатки." };
+    return { ok: false, error: i18n.t("note.error.categoryRequired", { ns: "finance" }) };
   }
 
   return {

@@ -1,3 +1,4 @@
+import i18n from "./i18n/index.ts";
 import type { Invoice, InvoiceLine } from "./api.ts";
 import { canAddDraftInvoiceLine } from "./draftInvoiceLineAddEditor.ts";
 import { canEditDraftInvoiceDueDate } from "./draftInvoiceDueDateEditor.ts";
@@ -95,7 +96,7 @@ export type BeginEditorOptions = {
 };
 
 export const DETAIL_RELOAD_AFTER_MUTATION_FAILED_MESSAGE =
-  "Зміни збережено, але не вдалося оновити деталі. Натисніть «Спробувати знову».";
+  i18n.t("invoices.error.detailReloadFailed", { ns: "finance" });
 
 /**
  * After a successful issue mutation, reload detail when the same Invoice is open.
@@ -142,9 +143,9 @@ function asApiFailure(error: unknown): ApiFailureShape | null {
 }
 
 const INVOICE_NOT_FOUND_MESSAGE =
-  "Рахунок більше недоступний. Список оновлено з сервера.";
+  i18n.t("invoices.error.invoiceGone", { ns: "finance" });
 
-const INVOICE_LOAD_FAILED_MESSAGE = "Не вдалося завантажити рахунок.";
+const INVOICE_LOAD_FAILED_MESSAGE = i18n.t("invoices.error.invoiceLoadFailed", { ns: "finance" });
 
 /**
  * Map Invoice GET-by-id failures for the read-only detail panel.

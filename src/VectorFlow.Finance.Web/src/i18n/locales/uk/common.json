@@ -25,5 +25,6 @@
   "nav.trialBalance": "Оборотно-сальдова відомість",
   "nav.accountStatement": "Виписка рахунку",
   "nav.customerLedger": "Книга клієнта",
-  "nav.journals": "Журнали"
+  "nav.journals": "Журнали",
+  "nav.invoices": "Рахунки"
 }

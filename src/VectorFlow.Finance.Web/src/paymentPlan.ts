@@ -4,6 +4,7 @@
  * does not post ledger payments or change invoice status.
  */
 
+import i18n from "./i18n/index.ts";
 import { calendarDayDiff, localCalendarDateString } from "./invoiceDueDateAging.ts";
 
 export type PaymentPlanStatus = "Active" | "Completed" | "Cancelled";
@@ -127,11 +128,21 @@ export function isValidPlanDate(value: string | null | undefined): boolean {
 }
 
 export function paymentPlanStatusLabel(status: PaymentPlanStatus): string {
-  return status;
+  return i18n.t(`promise.paymentPlanStatus.${status}`, { ns: "finance" });
 }
 
+const INSTALLMENT_STATUS_KEYS: Record<InstallmentComputedStatus, string> = {
+  Scheduled: "scheduled",
+  "Partially paid": "partial",
+  Paid: "paid",
+  Overdue: "overdue"
+};
+
 export function installmentStatusLabel(status: InstallmentComputedStatus): string {
-  return status;
+  const suffix = INSTALLMENT_STATUS_KEYS[status];
+  return suffix
+    ? i18n.t(`promise.installmentStatus.${suffix}`, { ns: "finance" })
+    : status;
 }
 
 export function isActivePaymentPlan(
@@ -393,16 +404,16 @@ export function validatePaymentPlanCreateInput(
   const rows = input.installments ?? [];
 
   if (planAmount == null && rows.length === 0 && !currency) {
-    return { ok: false, error: "Заповніть суму плану та внески." };
+    return { ok: false, error: i18n.t("plan.error.fieldsRequired", { ns: "finance" }) };
   }
   if (planAmount == null || planAmount <= 0) {
-    return { ok: false, error: "Вкажіть суму плану (більше нуля)." };
+    return { ok: false, error: i18n.t("plan.error.amountRequired", { ns: "finance" }) };
   }
   if (!currency) {
-    return { ok: false, error: "Вкажіть валюту плану." };
+    return { ok: false, error: i18n.t("plan.error.currencyRequired", { ns: "finance" }) };
   }
   if (rows.length === 0) {
-    return { ok: false, error: "Додайте щонайменше один внесок." };
+    return { ok: false, error: i18n.t("plan.error.installmentRequired", { ns: "finance" }) };
   }
 
   const installments: Array<{
@@ -419,24 +430,48 @@ export function validatePaymentPlanCreateInput(
     const recordedPaidAmount = parseMoneyAmount(row.recordedPaidAmount) ?? 0;
 
     if (!dueRaw && expectedAmount == null) {
-      return { ok: false, error: `Внесок ${index + 1}: заповніть дату та суму.` };
+      return {
+        ok: false,
+        error: i18n.t("plan.error.installmentFieldsRequired", {
+          ns: "finance",
+          index: index + 1
+        })
+      };
     }
     if (!dueRaw || !isValidPlanDate(dueRaw)) {
       return {
         ok: false,
-        error: `Внесок ${index + 1}: вкажіть коректну due date (РРРР-ММ-ДД).`
+        error: i18n.t("plan.error.installmentDueDateFormat", {
+          ns: "finance",
+          index: index + 1
+        })
       };
     }
     if (expectedAmount == null || expectedAmount <= 0) {
-      return { ok: false, error: `Внесок ${index + 1}: сума має бути більше нуля.` };
+      return {
+        ok: false,
+        error: i18n.t("plan.error.installmentAmountPositive", {
+          ns: "finance",
+          index: index + 1
+        })
+      };
     }
     if (recordedPaidAmount < 0) {
-      return { ok: false, error: `Внесок ${index + 1}: сплачена сума не може бути відʼємною.` };
+      return {
+        ok: false,
+        error: i18n.t("plan.error.installmentPaidNegative", {
+          ns: "finance",
+          index: index + 1
+        })
+      };
     }
     if (recordedPaidAmount > expectedAmount) {
       return {
         ok: false,
-        error: `Внесок ${index + 1}: сплачена сума не може перевищувати очікувану.`
+        error: i18n.t("plan.error.installmentPaidExceedsExpected", {
+          ns: "finance",
+          index: index + 1
+        })
       };
     }
     installments.push({
@@ -451,7 +486,7 @@ export function validatePaymentPlanCreateInput(
     if (installments[index]!.dueDate < installments[index - 1]!.dueDate) {
       return {
         ok: false,
-        error: "Дати внесків мають іти в неспадному порядку."
+        error: i18n.t("plan.error.installmentOrder", { ns: "finance" })
       };
     }
   }
@@ -462,7 +497,11 @@ export function validatePaymentPlanCreateInput(
   if (sum !== planAmount) {
     return {
       ok: false,
-      error: `Сума внесків (${sum.toFixed(2)}) має дорівнювати сумі плану (${planAmount.toFixed(2)}).`
+      error: i18n.t("plan.error.installmentSumMismatch", {
+        ns: "finance",
+        sum: sum.toFixed(2),
+        planAmount: planAmount.toFixed(2)
+      })
     };
   }
 
@@ -513,14 +552,20 @@ export function validatePaymentPlanUpdateInput(
       ) {
         return {
           ok: false,
-          error: `Внесок #${previous.sequence} уже має записаний платіж і не може змінюватися.`
+          error: i18n.t("plan.error.installmentPaidImmutable", {
+            ns: "finance",
+            sequence: previous.sequence
+          })
         };
       }
     }
     if (roundMoney(row.recordedPaidAmount) < roundMoney(previous.recordedPaidAmount)) {
       return {
         ok: false,
-        error: `Внесок #${previous.sequence}: не можна зменшувати записану оплату.`
+        error: i18n.t("plan.error.installmentPaidDecrease", {
+          ns: "finance",
+          sequence: previous.sequence
+        })
       };
     }
   }
@@ -533,7 +578,10 @@ export function validatePaymentPlanUpdateInput(
     if (!stillPresent) {
       return {
         ok: false,
-        error: `Внесок #${previous.sequence} із записаним платежем не можна видалити.`
+        error: i18n.t("plan.error.installmentPaidDelete", {
+          ns: "finance",
+          sequence: previous.sequence
+        })
       };
     }
   }
@@ -556,28 +604,31 @@ export function validateInstallmentPaymentInput(
     }
   | { ok: false; error: string } {
   if (!isActivePaymentPlan(plan)) {
-    return { ok: false, error: "Платіж можна записати лише для активного плану." };
+    return { ok: false, error: i18n.t("plan.error.activePlanRequired", { ns: "finance" }) };
   }
   const installmentId = (input.installmentId ?? "").trim();
   if (!installmentId) {
-    return { ok: false, error: "Оберіть внесок для запису платежу." };
+    return { ok: false, error: i18n.t("plan.error.installmentSelectionRequired", { ns: "finance" }) };
   }
   const installment = plan.installments.find((item) => item.id === installmentId);
   if (!installment) {
-    return { ok: false, error: "Внесок не знайдено." };
+    return { ok: false, error: i18n.t("plan.error.installmentNotFound", { ns: "finance" }) };
   }
   if (computeInstallmentStatus(installment, now) === "Paid") {
-    return { ok: false, error: "Цей внесок уже повністю оплачений." };
+    return { ok: false, error: i18n.t("plan.error.installmentAlreadyPaid", { ns: "finance" }) };
   }
   const amount = parseMoneyAmount(input.amount);
   if (amount == null || amount <= 0) {
-    return { ok: false, error: "Вкажіть суму платежу (більше нуля)." };
+    return { ok: false, error: i18n.t("plan.error.paymentAmountRequired", { ns: "finance" }) };
   }
   const remaining = planInstallmentRemaining(installment);
   if (amount > remaining) {
     return {
       ok: false,
-      error: `Сума не може перевищувати залишок внеску (${remaining.toFixed(2)}).`
+      error: i18n.t("plan.error.paymentExceedsRemaining", {
+        ns: "finance",
+        remaining: remaining.toFixed(2)
+      })
     };
   }
   const nextPaid = roundMoney(installment.recordedPaidAmount + amount);
@@ -596,7 +647,7 @@ export function validatePaymentPlanCancelInput(
 ): { ok: true; reason: string } | { ok: false; error: string } {
   const reason = (input.reason ?? "").trim();
   if (!reason) {
-    return { ok: false, error: "Вкажіть причину скасування плану." };
+    return { ok: false, error: i18n.t("plan.error.cancellationReasonRequired", { ns: "finance" }) };
   }
   return { ok: true, reason };
 }

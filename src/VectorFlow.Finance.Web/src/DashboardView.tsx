@@ -23,21 +23,25 @@ type DashboardViewProps = {
   onShowOverdueIssuedInvoices: () => void;
 };
 
-function invoiceCardCopy(workspace: FinanceWorkspace | null, totals: WorkspaceTotals | null): string {
+function invoiceCardCopy(
+  workspace: FinanceWorkspace | null,
+  totals: WorkspaceTotals | null,
+  t: (key: string, options?: Record<string, unknown>) => string
+): string {
   if (!workspace) {
-    return "Список рахунків обраного workspace";
+    return t("dashboard.invoicesCopy", { ns: "finance" });
   }
 
   if (!totals) {
-    return "Підрахунок рахунків…";
+    return t("dashboard.invoicesCounting", { ns: "finance" });
   }
 
   const count = totals.invoiceCount;
   if (count === 1) {
-    return "1 рахунок у workspace";
+    return t("dashboard.invoicesCountOne", { ns: "finance" });
   }
 
-  return `${count} рахунків у workspace`;
+  return t("dashboard.invoicesCount", { ns: "finance", count });
 }
 
 function accrualCardCopy(workspace: FinanceWorkspace | null, totals: WorkspaceTotals | null): string {
@@ -179,13 +183,15 @@ export function DashboardView({
             onClick={() => onNavigate("invoices")}
             disabled={!workspace}
           >
-            <span className="nav-card-title">Invoices</span>
+            <span className="nav-card-title">{t("nav.invoices", { ns: "common" })}</span>
             {workspace && totals ? (
               <span className="nav-card-metric" aria-hidden="true">
                 {totals.invoiceCount}
               </span>
             ) : null}
-            <span className="nav-card-copy">{invoiceCardCopy(workspace, workspace ? totals : null)}</span>
+            <span className="nav-card-copy">
+              {invoiceCardCopy(workspace, workspace ? totals : null, t)}
+            </span>
           </button>
           <button
             type="button"
@@ -288,27 +294,30 @@ export function DashboardView({
         </div>
         {workspace ? (
           <div className="list-shortcuts dashboard-list-shortcuts">
-            <p className="list-shortcuts-label">Швидкий фільтр</p>
+            <p className="list-shortcuts-label">
+              {t("dashboard.quickFilterLabel", { ns: "finance" })}
+            </p>
             <div className="list-shortcuts-row">
               <button type="button" className="list-shortcut" onClick={onShowDraftInvoices}>
-                Чернетки рахунків
+                {t("dashboard.draftInvoices", { ns: "finance" })}
               </button>
               <button type="button" className="list-shortcut" onClick={onShowIssuedInvoices}>
-                Виставлені рахунки
+                {t("dashboard.issuedInvoices", { ns: "finance" })}
               </button>
               <button
                 type="button"
                 className="list-shortcut list-shortcut--attention"
                 onClick={onShowOverdueIssuedInvoices}
               >
-                Збір оплат
+                {t("dashboard.collections", { ns: "finance" })}
               </button>
             </div>
             <p className="meta">
-              Чернетки — <span className="mono">status=Draft</span>. Виставлені —
-              <span className="mono"> status=Issued</span>. Збір оплат — payment collection
-              workspace для Issued зі строком сьогодні або раніше (не факт оплати). Сторінка 1,
-              стан у shareable URL.
+              {t("dashboard.invoiceShortcutHelpDrafts", { ns: "finance" })}{" "}
+              <span className="mono">status=Draft</span>
+              {t("dashboard.invoiceShortcutHelpIssued", { ns: "finance" })}
+              <span className="mono"> status=Issued</span>
+              {t("dashboard.invoiceShortcutHelpCollections", { ns: "finance" })}
             </p>
           </div>
         ) : (

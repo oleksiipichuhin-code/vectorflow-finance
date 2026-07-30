@@ -366,6 +366,110 @@ describe("journals finance catalogs", () => {
   });
 });
 
+describe("invoices finance catalogs", () => {
+  const invoicePrefixes = [
+    "invoices.",
+    "invoiceStatus.",
+    "collections.",
+    "workbench.",
+    "promise.",
+    "plan.",
+    "note.",
+    "reminder.",
+    "attachment."
+  ];
+
+  function invoiceKeys(catalog: Record<string, string>): string[] {
+    return Object.keys(catalog).filter(
+      (key) =>
+        invoicePrefixes.some((prefix) => key.startsWith(prefix)) ||
+        key === "dashboard.invoicesCopy"
+    );
+  }
+
+  beforeEach(async () => {
+    await i18n.changeLanguage("uk");
+  });
+
+  it("localizes invoices workflow chrome in Ukrainian and English", async () => {
+    assert.equal(i18n.t("invoices.panelTitle", { ns: "finance" }), "Рахунки");
+    assert.equal(i18n.t("invoices.createDraft", { ns: "finance" }), "Створити чернетку");
+    assert.equal(i18n.t("invoices.issue", { ns: "finance" }), "Виставити");
+    assert.equal(
+      i18n.t("dashboard.invoicesCopy", { ns: "finance" }),
+      "Список рахунків обраного workspace"
+    );
+    assert.equal(i18n.t("nav.invoices", { ns: "common" }), "Рахунки");
+
+    await i18n.changeLanguage("en");
+    assert.equal(i18n.t("invoices.panelTitle", { ns: "finance" }), "Invoices");
+    assert.equal(i18n.t("invoices.createDraft", { ns: "finance" }), "Create draft");
+    assert.equal(i18n.t("invoices.issue", { ns: "finance" }), "Issue");
+    assert.equal(
+      i18n.t("dashboard.invoicesCopy", { ns: "finance" }),
+      "Invoice list for the selected workspace"
+    );
+    assert.equal(i18n.t("nav.invoices", { ns: "common" }), "Invoices");
+  });
+
+  it("preserves invoice status wire values while localizing labels", async () => {
+    assert.equal(i18n.t("invoiceStatus.Draft", { ns: "finance" }), "Чернетка");
+    assert.equal(i18n.t("invoiceStatus.Issued", { ns: "finance" }), "Виставлений");
+    assert.equal(
+      i18n.t("invoiceStatus.Draft", { ns: "finance" }),
+      i18n.t("customerLedger.invoiceStatus.Draft", { ns: "finance" })
+    );
+    assert.equal("Draft", "Draft");
+    assert.equal("Issued", "Issued");
+
+    await i18n.changeLanguage("en");
+    assert.equal(i18n.t("invoiceStatus.Draft", { ns: "finance" }), "Draft");
+    assert.equal(i18n.t("invoiceStatus.Issued", { ns: "finance" }), "Issued");
+  });
+
+  it("localizes collections, workbench, and promise chrome", async () => {
+    assert.equal(
+      i18n.t("collections.bannerTitle", { ns: "finance" }),
+      "Робочий простір збору оплат"
+    );
+    assert.equal(i18n.t("workbench.section.all", { ns: "finance" }), "Усі секції");
+    assert.equal(i18n.t("promise.title", { ns: "finance" }), "Обіцянка оплати");
+
+    await i18n.changeLanguage("en");
+    assert.equal(
+      i18n.t("collections.bannerTitle", { ns: "finance" }),
+      "Payment collection workspace"
+    );
+    assert.equal(i18n.t("workbench.section.all", { ns: "finance" }), "All sections");
+    assert.equal(i18n.t("promise.title", { ns: "finance" }), "Promise to pay");
+  });
+
+  it("interpolates invoice counts and queue metadata", async () => {
+    assert.equal(
+      i18n.t("collections.daysShort", { ns: "finance", count: 12 }),
+      "12 дн."
+    );
+    assert.equal(
+      i18n.t("invoices.pageMeta", { ns: "finance", page: 2, shown: 5, total: 40 }),
+      "Сторінка 2 · показано 5 · усього 40"
+    );
+
+    await i18n.changeLanguage("en");
+    assert.equal(i18n.t("collections.daysShort", { ns: "finance", count: 12 }), "12 d.");
+    assert.equal(
+      i18n.t("invoices.pageMeta", { ns: "finance", page: 2, shown: 5, total: 40 }),
+      "Page 2 · showing 5 · 40 total"
+    );
+  });
+
+  it("has matching invoices key structure in uk and en", () => {
+    const ukKeys = invoiceKeys(financeUk as Record<string, string>);
+    const enKeys = invoiceKeys(financeEn as Record<string, string>);
+    assert.ok(ukKeys.length > 0);
+    assert.deepEqual(ukKeys.sort(), enKeys.sort());
+  });
+});
+
 describe("locale-aware formatting", () => {
   const sample = "2026-07-29T14:30:00.000Z";
 

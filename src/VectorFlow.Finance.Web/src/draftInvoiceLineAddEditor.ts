@@ -1,3 +1,4 @@
+import i18n from "./i18n/index.ts";
 import type { Invoice } from "./api.ts";
 import { isDraftInvoice } from "./invoiceIssue.ts";
 
@@ -49,10 +50,10 @@ function asApiFailure(error: unknown): ApiFailureShape | null {
 }
 
 const CONFLICT_OPERATOR_MESSAGE =
-  "Рахунок було змінено іншою дією. Список оновлено — відкрийте додавання рядка знову з актуальними даними.";
+  i18n.t("invoices.error.invoiceChangedLineAdd", { ns: "finance" });
 
 const NOT_FOUND_OPERATOR_MESSAGE =
-  "Рахунок не знайдено. Список оновлено з сервера.";
+  i18n.t("invoices.error.invoiceNotFound", { ns: "finance" });
 
 export function canAddDraftInvoiceLine(invoice: Pick<Invoice, "status">): boolean {
   return isDraftInvoice(invoice);
@@ -78,20 +79,23 @@ export function validateDraftInvoiceLineAddInput(
   const unitPrice = Number(input.unitPrice.replace(",", "."));
 
   if (!Number.isFinite(quantity) || quantity <= 0) {
-    return "Кількість має бути додатним числом.";
+    return i18n.t("invoices.error.quantityPositive", { ns: "finance" });
   }
 
   if (!Number.isFinite(unitPrice) || unitPrice < 0) {
-    return "Ціна має бути невід’ємним числом.";
+    return i18n.t("invoices.error.priceNonNegative", { ns: "finance" });
   }
 
   if (quantity * unitPrice <= 0) {
-    return "Сума рядка має бути додатною.";
+    return i18n.t("invoices.error.lineAmountPositive", { ns: "finance" });
   }
 
   const description = input.description.trim();
   if (description.length > INVOICE_LINE_DESCRIPTION_MAX_LENGTH) {
-    return `Опис рядка не може перевищувати ${INVOICE_LINE_DESCRIPTION_MAX_LENGTH} символів.`;
+    return i18n.t("invoices.error.lineDescriptionTooLong", {
+      ns: "finance",
+      max: INVOICE_LINE_DESCRIPTION_MAX_LENGTH
+    });
   }
 
   return null;
@@ -193,7 +197,7 @@ export function interpretDraftInvoiceLineAddError(
   }
 
   return {
-    message: "Не вдалося додати рядок рахунка.",
+    message: i18n.t("invoices.error.lineAddFailed", { ns: "finance" }),
     keepEditorOpen: true,
     refreshList: false
   };

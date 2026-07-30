@@ -3,6 +3,8 @@
  * Stored on PromiseToPayRecord.attachments — same localStorage key.
  * Binary payload kept as a data URL with a hard size cap.
  */
+import i18n from "./i18n/index.ts";
+
 
 export type AttachmentCategory =
   | "payment_proof"
@@ -90,7 +92,9 @@ export function parseAttachmentCategory(
 
 export function attachmentCategoryLabel(category: AttachmentCategory): string {
   return (
-    ATTACHMENT_CATEGORY_OPTIONS.find((option) => option.id === category)?.label ??
+    (ATTACHMENT_CATEGORY_OPTIONS.some((option) => option.id === category)
+      ? i18n.t(`promise.attachmentCategory.${category}`, { ns: "finance" })
+      : null) ??
     category
   );
 }
@@ -186,12 +190,15 @@ export function validateCollectionAttachmentInput(
 
   const fileName = (input.fileName ?? existing?.fileName ?? "").trim();
   if (!fileName) {
-    return { ok: false, error: "Імʼя файлу обовʼязкове." };
+    return { ok: false, error: i18n.t("attachment.error.fileNameRequired", { ns: "finance" }) };
   }
   if (fileName.length > FILE_NAME_MAX) {
     return {
       ok: false,
-      error: `Імʼя файлу занадто довге (макс. ${FILE_NAME_MAX} символів).`
+      error: i18n.t("attachment.error.fileNameTooLong", {
+        ns: "finance",
+        max: FILE_NAME_MAX
+      })
     };
   }
 
@@ -201,12 +208,15 @@ export function validateCollectionAttachmentInput(
     "application/octet-stream"
   ).trim();
   if (!contentType) {
-    return { ok: false, error: "Тип вмісту обовʼязковий." };
+    return { ok: false, error: i18n.t("attachment.error.contentTypeRequired", { ns: "finance" }) };
   }
   if (contentType.length > CONTENT_TYPE_MAX) {
     return {
       ok: false,
-      error: `Тип вмісту занадто довгий (макс. ${CONTENT_TYPE_MAX} символів).`
+      error: i18n.t("attachment.error.contentTypeTooLong", {
+        ns: "finance",
+        max: CONTENT_TYPE_MAX
+      })
     };
   }
 
@@ -214,18 +224,21 @@ export function validateCollectionAttachmentInput(
   if (description.length > DESCRIPTION_MAX) {
     return {
       ok: false,
-      error: `Опис вкладення занадто довгий (макс. ${DESCRIPTION_MAX} символів).`
+      error: i18n.t("attachment.error.descriptionTooLong", {
+        ns: "finance",
+        max: DESCRIPTION_MAX
+      })
     };
   }
 
   const uploadedBy = (input.uploadedBy ?? existing?.uploadedBy ?? "").trim();
   if (!uploadedBy) {
-    return { ok: false, error: "Автор вкладення обовʼязковий." };
+    return { ok: false, error: i18n.t("attachment.error.authorRequired", { ns: "finance" }) };
   }
   if (uploadedBy.length > AUTHOR_MAX) {
     return {
       ok: false,
-      error: `Імʼя автора занадто довге (макс. ${AUTHOR_MAX} символів).`
+      error: i18n.t("attachment.error.authorTooLong", { ns: "finance", max: AUTHOR_MAX })
     };
   }
 
@@ -233,7 +246,7 @@ export function validateCollectionAttachmentInput(
   const category =
     categoryRaw === "" ? null : parseAttachmentCategory(String(categoryRaw));
   if (!category) {
-    return { ok: false, error: "Оберіть категорію вкладення." };
+    return { ok: false, error: i18n.t("attachment.error.categoryRequired", { ns: "finance" }) };
   }
 
   let contentDataUrl = (input.contentDataUrl ?? "").trim();
@@ -248,29 +261,32 @@ export function validateCollectionAttachmentInput(
   }
 
   if (!contentDataUrl) {
-    return { ok: false, error: "Файл вкладення обовʼязковий." };
+    return { ok: false, error: i18n.t("attachment.error.fileRequired", { ns: "finance" }) };
   }
   if (!isValidDataUrl(contentDataUrl)) {
     return {
       ok: false,
-      error: "Некоректний вміст файлу. Очікується data URL у форматі base64."
+      error: i18n.t("attachment.error.invalidContent", { ns: "finance" })
     };
   }
 
   const estimated = estimateDecodedBytes(contentDataUrl);
   if (estimated == null) {
-    return { ok: false, error: "Не вдалося перевірити розмір файлу." };
+    return { ok: false, error: i18n.t("attachment.error.sizeCheckFailed", { ns: "finance" }) };
   }
   if (!Number.isFinite(sizeBytes) || sizeBytes < 0) {
     sizeBytes = estimated;
   }
   if (sizeBytes === 0 && estimated === 0) {
-    return { ok: false, error: "Файл не може бути порожнім." };
+    return { ok: false, error: i18n.t("attachment.error.emptyFile", { ns: "finance" }) };
   }
   if (sizeBytes > ATTACHMENT_MAX_BYTES || estimated > ATTACHMENT_MAX_BYTES) {
     return {
       ok: false,
-      error: `Файл занадто великий (макс. ${formatAttachmentSize(ATTACHMENT_MAX_BYTES)}).`
+      error: i18n.t("attachment.error.fileTooLarge", {
+        ns: "finance",
+        max: formatAttachmentSize(ATTACHMENT_MAX_BYTES)
+      })
     };
   }
 

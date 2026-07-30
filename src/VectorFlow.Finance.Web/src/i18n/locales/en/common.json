@@ -25,5 +25,6 @@
   "nav.trialBalance": "Trial balance",
   "nav.accountStatement": "Account statement",
   "nav.customerLedger": "Customer ledger",
-  "nav.journals": "Journals"
+  "nav.journals": "Journals",
+  "nav.invoices": "Invoices"
 }

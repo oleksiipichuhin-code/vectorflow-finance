@@ -1,3 +1,4 @@
+import i18n from "./i18n/index.ts";
 import type { Invoice } from "./api.ts";
 import { isDraftInvoice, toDueDateUtcIso } from "./invoiceIssue.ts";
 
@@ -35,10 +36,10 @@ function asApiFailure(error: unknown): ApiFailureShape | null {
 }
 
 const CONFLICT_OPERATOR_MESSAGE =
-  "Рахунок було змінено іншою дією. Список оновлено — відкрийте редагування знову з актуальними даними.";
+  i18n.t("invoices.error.invoiceChangedHeader", { ns: "finance" });
 
 const NOT_FOUND_OPERATOR_MESSAGE =
-  "Рахунок не знайдено. Список оновлено з сервера.";
+  i18n.t("invoices.error.invoiceNotFound", { ns: "finance" });
 
 export function canEditDraftInvoiceDueDate(
   invoice: Pick<Invoice, "status">
@@ -79,7 +80,7 @@ export function validateDraftInvoiceDueDateInput(dateInput: string): string | nu
   try {
     toDueDateUtcIso(dateInput);
   } catch (error) {
-    return error instanceof Error ? error.message : "Перевірте дату оплати.";
+    return error instanceof Error ? error.message : i18n.t("invoices.error.checkDueDate", { ns: "finance" });
   }
 
   return null;
@@ -159,7 +160,7 @@ export function interpretDraftInvoiceDueDateEditError(
   }
 
   return {
-    message: "Не вдалося змінити дату оплати.",
+    message: i18n.t("invoices.error.dueDateChangeFailed", { ns: "finance" }),
     keepEditorOpen: true,
     refreshList: false
   };

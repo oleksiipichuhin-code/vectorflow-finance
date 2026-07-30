@@ -3,11 +3,13 @@
  * Classifies calendar due date only — never payment/settlement status.
  */
 
+import i18n from "./i18n/index.ts";
+
 export type DueDateAgingKind = "overdue" | "due_today" | "not_due_yet" | "no_due_date";
 
 export type DueDateAging = {
   kind: DueDateAgingKind;
-  /** Short Ukrainian label for list/detail badges. */
+  /** Localized short label for list/detail badges. */
   label: string;
   /**
    * Days relative to today:
@@ -22,8 +24,17 @@ export type DueDateAging = {
   explanation: string;
 };
 
-const AGING_EXPLANATION =
-  "Статус визначено за строком оплати. Дані про фактичну оплату в системі відсутні.";
+function financeLabel(key: string, options?: Record<string, unknown>): string {
+  return i18n.t(key, { ns: "finance", ...options });
+}
+
+function agingExplanation(): string {
+  return financeLabel("customerLedger.agingExplanation");
+}
+
+function agingKindLabel(kind: DueDateAgingKind): string {
+  return financeLabel(`customerLedger.agingKind.${kind}`);
+}
 
 /** Local calendar YYYY-MM-DD for the given instant (user timezone). */
 export function localCalendarDateString(now: Date = new Date()): string {
@@ -79,26 +90,27 @@ export function calendarDayDiff(fromDate: string, toDate: string): number {
   return Math.round((toMs - fromMs) / 86_400_000);
 }
 
-function dayOffsetLabelFor(kind: DueDateAgingKind, dayOffset: number | null): string {
+export function dayOffsetLabelFor(
+  kind: DueDateAgingKind,
+  dayOffset: number | null
+): string {
   if (kind === "no_due_date" || dayOffset == null) {
-    return "—";
+    return i18n.t("emDash", { ns: "common" });
   }
 
   if (kind === "due_today") {
-    return "0 днів";
+    return financeLabel("customerLedger.dayOffset.dueToday");
   }
 
   if (kind === "overdue") {
-    if (dayOffset === 1) {
-      return "1 день прострочення";
-    }
-    return `${dayOffset} днів прострочення`;
+    return dayOffset === 1
+      ? financeLabel("customerLedger.dayOffset.overdueOne")
+      : financeLabel("customerLedger.dayOffset.overdue", { count: dayOffset });
   }
 
-  if (dayOffset === 1) {
-    return "через 1 день";
-  }
-  return `через ${dayOffset} днів`;
+  return dayOffset === 1
+    ? financeLabel("customerLedger.dayOffset.untilOne")
+    : financeLabel("customerLedger.dayOffset.until", { count: dayOffset });
 }
 
 /**
@@ -113,10 +125,10 @@ export function classifyDueDateAging(
   if (!dueDay) {
     return {
       kind: "no_due_date",
-      label: "Немає строку",
+      label: agingKindLabel("no_due_date"),
       dayOffset: null,
-      dayOffsetLabel: "—",
-      explanation: AGING_EXPLANATION
+      dayOffsetLabel: dayOffsetLabelFor("no_due_date", null),
+      explanation: agingExplanation()
     };
   }
 
@@ -126,30 +138,30 @@ export function classifyDueDateAging(
   if (diffFromDueToToday > 0) {
     return {
       kind: "overdue",
-      label: "Прострочено",
+      label: agingKindLabel("overdue"),
       dayOffset: diffFromDueToToday,
       dayOffsetLabel: dayOffsetLabelFor("overdue", diffFromDueToToday),
-      explanation: AGING_EXPLANATION
+      explanation: agingExplanation()
     };
   }
 
   if (diffFromDueToToday === 0) {
     return {
       kind: "due_today",
-      label: "Строк сьогодні",
+      label: agingKindLabel("due_today"),
       dayOffset: 0,
       dayOffsetLabel: dayOffsetLabelFor("due_today", 0),
-      explanation: AGING_EXPLANATION
+      explanation: agingExplanation()
     };
   }
 
   const daysUntil = -diffFromDueToToday;
   return {
     kind: "not_due_yet",
-    label: "Строк не настав",
+    label: agingKindLabel("not_due_yet"),
     dayOffset: daysUntil,
     dayOffsetLabel: dayOffsetLabelFor("not_due_yet", daysUntil),
-    explanation: AGING_EXPLANATION
+    explanation: agingExplanation()
   };
 }
 

@@ -3,6 +3,7 @@
  * (same localStorage key). No separate history store.
  */
 
+import i18n from "./i18n/index.ts";
 import {
   calendarDayDiff,
   localCalendarDateString
@@ -143,7 +144,7 @@ export const ACTIVITY_EVENT_TYPE_OPTIONS: readonly {
   id: CollectionActivityEventTypeFilter;
   label: string;
 }[] = [
-  { id: "", label: "Усі події" },
+  { id: "", label: "All events" },
   { id: "promise_created", label: "Promise created" },
   { id: "promise_updated", label: "Promise updated" },
   { id: "promise_broken", label: "Promise broken" },
@@ -292,95 +293,60 @@ const ESCALATION_TEAM_SET: ReadonlySet<string> = new Set(
   ESCALATION_TEAM_OPTIONS.map((option) => option.id)
 );
 
-const EVENT_LABELS: Record<CollectionActivityEventType, string> = {
-  promise_created: "Promise created",
-  promise_updated: "Promise updated",
-  promise_broken: "Promise broken",
-  follow_up_required: "Follow-up required",
-  contacted: "Contacted",
-  contact_logged: "Contact logged",
-  paid: "Paid",
-  partially_paid: "Partially paid",
-  new_promise: "New promise",
-  disputed: "Disputed",
-  dispute_raised: "Dispute raised",
-  dispute_updated: "Dispute updated",
-  dispute_resolved: "Dispute resolved",
-  dispute_rejected: "Dispute rejected",
-  escalated: "Escalated",
-  case_escalated: "Case escalated",
-  escalation_updated: "Escalation updated",
-  escalation_completed: "Escalation completed",
-  payment_plan_created: "Payment plan created",
-  payment_plan_updated: "Payment plan updated",
-  installment_payment_recorded: "Installment payment recorded",
-  payment_plan_completed: "Payment plan completed",
-  payment_plan_cancelled: "Payment plan cancelled",
-  note_added: "Note added",
-  note_updated: "Note updated",
-  note_archived: "Note archived",
-  reminder_created: "Reminder created",
-  reminder_updated: "Reminder updated",
-  reminder_completed: "Reminder completed",
-  reminder_cancelled: "Reminder cancelled",
-  attachment_added: "Attachment added",
-  attachment_updated: "Attachment updated",
-  attachment_archived: "Attachment archived",
-  unable_to_contact: "Unable to contact",
-  completed: "Completed"
-};
+function statusLabel(status: PromiseFollowUpStatus): string {
+  return i18n.t(`promise.status.${status}`, { ns: "finance" });
+}
 
-const STATUS_LABELS: Record<PromiseFollowUpStatus, string> = {
-  awaiting: "Очікується",
-  follow_up_required: "Потрібен повторний контакт",
-  contacted: "Контакт виконано",
-  completed: "Завершено"
-};
-
-const RESOLUTION_LABELS: Record<CollectionResolution["kind"], string> = {
-  paid: "Paid",
-  partially_paid: "Partially Paid",
-  new_promise: "New Promise",
-  disputed: "Disputed",
-  escalated: "Escalated",
-  unable_to_contact: "Unable to Contact"
-};
+function resolutionLabel(kind: CollectionResolution["kind"]): string {
+  return i18n.t(`promise.resolutionKind.${kind}`, { ns: "finance" });
+}
 
 export function activityEventTypeLabel(type: CollectionActivityEventType): string {
-  return EVENT_LABELS[type] ?? type;
+  return EVENT_TYPE_SET.has(type)
+    ? i18n.t(`promise.history.eventType.${type}`, { ns: "finance" })
+    : type;
 }
 
 export function contactChannelLabel(channel: ContactChannel): string {
-  return CONTACT_CHANNEL_OPTIONS.find((option) => option.id === channel)?.label ?? channel;
+  return CONTACT_CHANNEL_SET.has(channel)
+    ? i18n.t(`promise.contactChannel.${channel}`, { ns: "finance" })
+    : channel;
 }
 
 export function contactResultLabel(result: ContactResult): string {
-  return CONTACT_RESULT_OPTIONS.find((option) => option.id === result)?.label ?? result;
+  return CONTACT_RESULT_SET.has(result)
+    ? i18n.t(`promise.contactResult.${result}`, { ns: "finance" })
+    : result;
 }
 
 export function disputeReasonLabel(reason: DisputeReason): string {
-  return DISPUTE_REASON_OPTIONS.find((option) => option.id === reason)?.label ?? reason;
+  return DISPUTE_REASON_SET.has(reason)
+    ? i18n.t(`promise.disputeReason.${reason}`, { ns: "finance" })
+    : reason;
 }
 
 export function disputePartyLabel(party: DisputeParty): string {
-  return DISPUTE_PARTY_OPTIONS.find((option) => option.id === party)?.label ?? party;
+  return DISPUTE_PARTY_SET.has(party)
+    ? i18n.t(`promise.disputeParty.${party}`, { ns: "finance" })
+    : party;
 }
 
 export function escalationReasonLabel(reason: EscalationReason): string {
-  return (
-    ESCALATION_REASON_OPTIONS.find((option) => option.id === reason)?.label ?? reason
-  );
+  return ESCALATION_REASON_SET.has(reason)
+    ? i18n.t(`promise.escalationReason.${reason}`, { ns: "finance" })
+    : reason;
 }
 
 export function escalationPriorityLabel(priority: EscalationPriority): string {
-  return (
-    ESCALATION_PRIORITY_OPTIONS.find((option) => option.id === priority)?.label ??
-    priority
-  );
+  return ESCALATION_PRIORITY_SET.has(priority)
+    ? i18n.t(`promise.escalationPriority.${priority}`, { ns: "finance" })
+    : priority;
 }
 
 export function escalationTeamLabel(team: EscalationTeam): string {
-  return ESCALATION_TEAM_OPTIONS.find((option) => option.id === team)?.label ?? team;
+  return ESCALATION_TEAM_SET.has(team)
+    ? i18n.t(`promise.escalationTeam.${team}`, { ns: "finance" })
+    : team;
 }
 
 export function parseContactChannel(value: string | null | undefined): ContactChannel | null {
@@ -927,11 +893,11 @@ export function buildCaseHistorySummary(
   ).length;
 
   return {
-    currentStatus: STATUS_LABELS[record.status] ?? record.status,
+    currentStatus: statusLabel(record.status),
     currentPromise: record.promiseDate,
     lastContactAtUtc: lastContact?.atUtc ?? null,
     lastResolutionLabel: record.resolution
-      ? RESOLUTION_LABELS[record.resolution.kind]
+      ? resolutionLabel(record.resolution.kind)
       : null,
     totalFollowUps,
     totalPromises

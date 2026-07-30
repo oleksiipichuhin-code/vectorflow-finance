@@ -1,5 +1,6 @@
 import type { Accrual, Invoice } from "../api";
 import type { FormEvent } from "react";
+import { useTranslation } from "react-i18next";
 import {
   buildInvoiceDetailFields,
   canAddInvoiceLineFromDetails,
@@ -15,7 +16,7 @@ import {
   buildRelatedAccrualRowView,
   type RelatedAccrualRowView
 } from "../invoiceAccrualBridge";
-import { formatDate, formatMoney } from "../format";
+import { formatDate, formatMoney } from "../i18n/format";
 import type {
   CollectionResolutionKind,
   CollectionNoteCategory,
@@ -370,6 +371,9 @@ export function InvoiceDetailPanel({
   onCreateAccrual,
   onOpenAccrual
 }: InvoiceDetailPanelProps) {
+  const { t } = useTranslation(["finance", "common"]);
+  const statusLabel = (status: string) =>
+    status === "Draft" || status === "Issued" ? t(`invoiceStatus.${status}`) : status;
   const fields = invoice ? buildInvoiceDetailFields(invoice) : null;
   const lifecycleActions = invoice ? detailLifecycleActionsFor(invoice) : [];
   const showEditHeader =
@@ -441,25 +445,25 @@ export function InvoiceDetailPanel({
       aria-labelledby="invoice-detail-heading"
     >
       <div className="panel-header">
-        <h3 id="invoice-detail-heading">Деталі рахунку</h3>
+        <h3 id="invoice-detail-heading">{t("invoices.detail.title")}</h3>
         <button
           type="button"
           className="button-secondary"
           onClick={onClose}
           disabled={closeDisabled}
         >
-          Закрити
+          {t("close", { ns: "common" })}
         </button>
       </div>
 
-      {loading ? <StatusMessage>Завантаження деталей…</StatusMessage> : null}
+      {loading ? <StatusMessage>{t("detailLoading")}</StatusMessage> : null}
 
       {!loading && error ? (
         <div className="state-actions" role="alert">
           <StatusMessage tone="error">{error}</StatusMessage>
           {errorRetryable ? (
             <button type="button" onClick={onRetry}>
-              Спробувати знову
+              {t("retry", { ns: "common" })}
             </button>
           ) : null}
         </div>
@@ -470,39 +474,39 @@ export function InvoiceDetailPanel({
           <p className="meta cell-wrap">{fields.documentNumber}</p>
           <dl className="facts">
             <div>
-              <dt>Статус</dt>
-              <dd>{fields.status}</dd>
+              <dt>{t("invoices.detail.field.status")}</dt>
+              <dd>{statusLabel(fields.status)}</dd>
             </div>
             <div>
-              <dt>Контрагент</dt>
+              <dt>{t("invoices.detail.field.counterparty")}</dt>
               <dd className="cell-wrap">{fields.counterpartyReference}</dd>
             </div>
             <div>
-              <dt>Сума</dt>
+              <dt>{t("customerLedger.col.amount")}</dt>
               <dd>{fields.amountDisplay}</dd>
             </div>
             <div>
-              <dt>Валюта</dt>
+              <dt>{t("customerLedger.col.currency")}</dt>
               <dd>{fields.currency}</dd>
             </div>
             <div>
-              <dt>Строк оплати</dt>
+              <dt>{t("invoices.detail.field.dueDate")}</dt>
               <dd>{fields.dueDateDisplay}</dd>
             </div>
             <div>
-              <dt>Виставлено</dt>
+              <dt>{t("invoices.col.issued")}</dt>
               <dd>{fields.issuedAtDisplay}</dd>
             </div>
             <div>
-              <dt>Створено</dt>
+              <dt>{t("field.created")}</dt>
               <dd>{fields.createdAtDisplay}</dd>
             </div>
             <div>
-              <dt>Оновлено</dt>
+              <dt>{t("field.updated")}</dt>
               <dd>{fields.updatedAtDisplay}</dd>
             </div>
             <div>
-              <dt>Id</dt>
+              <dt>{t("invoices.detail.field.id")}</dt>
               <dd className="mono">{fields.invoiceId}</dd>
             </div>
           </dl>
@@ -511,14 +515,14 @@ export function InvoiceDetailPanel({
             className="due-date-aging-block"
             aria-labelledby="invoice-due-aging-heading"
           >
-            <h4 id="invoice-due-aging-heading">Строк оплати (календар)</h4>
+            <h4 id="invoice-due-aging-heading">{t("invoices.detail.agingTitle")}</h4>
             <dl className="facts">
               <div>
-                <dt>Строк оплати</dt>
+                <dt>{t("invoices.detail.field.dueDate")}</dt>
                 <dd>{fields.dueDateDisplay}</dd>
               </div>
               <div>
-                <dt>Статус строку</dt>
+                <dt>{t("invoices.detail.agingStatus")}</dt>
                 <dd>
                   <span
                     className={`aging-badge aging-badge--${fields.dueDateAging.kind}`}
@@ -528,7 +532,7 @@ export function InvoiceDetailPanel({
                 </dd>
               </div>
               <div>
-                <dt>Дні відносно строку</dt>
+                <dt>{t("invoices.detail.agingDays")}</dt>
                 <dd>{fields.dueDateAging.dayOffsetLabel}</dd>
               </div>
             </dl>
@@ -540,18 +544,18 @@ export function InvoiceDetailPanel({
               className="collections-context-block"
               aria-labelledby="invoice-collections-heading"
             >
-              <h4 id="invoice-collections-heading">Payment collection</h4>
+              <h4 id="invoice-collections-heading">{t("collections.contextTitle")}</h4>
               <dl className="facts">
                 <div>
-                  <dt>Дні прострочення</dt>
+                  <dt>{t("collections.field.daysOverdue")}</dt>
                   <dd>
                     {collectionsContext.daysOverdue == null
-                      ? "Строк сьогодні / —"
+                      ? t("collections.dueTodayOrNone")
                       : collectionsContext.daysOverdue}
                   </dd>
                 </div>
                 <div>
-                  <dt>Aging bucket</dt>
+                  <dt>{t("customerLedger.agingBucketLabel")}</dt>
                   <dd>
                     {collectionsContext.bucketId ? (
                       <span
@@ -565,23 +569,23 @@ export function InvoiceDetailPanel({
                   </dd>
                 </div>
                 <div>
-                  <dt>Строк оплати</dt>
+                  <dt>{t("invoices.detail.field.dueDate")}</dt>
                   <dd>{collectionsContext.dueDateDisplay}</dd>
                 </div>
                 <div>
-                  <dt>Сума рахунка</dt>
+                  <dt>{t("collections.field.invoiceAmount")}</dt>
                   <dd>{collectionsContext.amountDisplay}</dd>
                 </div>
                 <div>
-                  <dt>Контрагент</dt>
+                  <dt>{t("collections.field.counterparty")}</dt>
                   <dd className="cell-wrap">{collectionsContext.counterpartyReference}</dd>
                 </div>
                 <div>
-                  <dt>Статус invoice</dt>
-                  <dd>{collectionsContext.status}</dd>
+                  <dt>{t("collections.field.invoiceStatus")}</dt>
+                  <dd>{statusLabel(collectionsContext.status)}</dd>
                 </div>
                 <div>
-                  <dt>Позиція в queue</dt>
+                  <dt>{t("collections.field.queuePosition")}</dt>
                   <dd>{collectionsContext.positionLabel ?? "—"}</dd>
                 </div>
               </dl>
@@ -591,15 +595,15 @@ export function InvoiceDetailPanel({
                   disabled={!collectionsContext.canGoNext || closeDisabled}
                   title={
                     collectionsContext.isLast
-                      ? "Це останній рахунок у поточній collections queue"
-                      : "Наступний прострочений рахунок у поточному bucket"
+                      ? t("collections.nextTitleLast")
+                      : t("collections.nextTitle")
                   }
                   onClick={collectionsContext.onNext}
                 >
-                  Next collection invoice
+                  {t("collections.nextInvoice")}
                 </button>
                 {collectionsContext.isLast ? (
-                  <p className="meta">Останній рахунок у поточній collections queue.</p>
+                  <p className="meta">{t("collections.lastInQueue")}</p>
                 ) : null}
               </div>
             </section>
@@ -610,15 +614,15 @@ export function InvoiceDetailPanel({
               className="promise-followup-block"
               aria-labelledby="invoice-promise-heading"
             >
-              <h4 id="invoice-promise-heading">Promise to pay</h4>
+              <h4 id="invoice-promise-heading">{t("promise.title")}</h4>
               {promiseContext.record ? (
                 <dl className="facts">
                   <div>
-                    <dt>Promise date</dt>
+                    <dt>{t("promise.col.promiseDate")}</dt>
                     <dd>{promiseContext.record.promiseDate}</dd>
                   </div>
                   <div>
-                    <dt>Follow-up status</dt>
+                    <dt>{t("promise.col.followUpStatus")}</dt>
                     <dd>
                       <span
                         className={`aging-badge aging-badge--promise aging-badge--promise-${promiseContext.record.status}`}
@@ -629,7 +633,7 @@ export function InvoiceDetailPanel({
                   </div>
                   {promiseContext.record.resolution ? (
                     <div>
-                      <dt>Resolution</dt>
+                      <dt>{t("promise.field.resolution")}</dt>
                       <dd>
                         <span
                           className={`aging-badge aging-badge--promise aging-badge--resolution-${promiseContext.record.resolution.kind}`}
@@ -641,47 +645,47 @@ export function InvoiceDetailPanel({
                   ) : null}
                   {promiseContext.record.resolution?.paymentDate ? (
                     <div>
-                      <dt>Payment date</dt>
+                      <dt>{t("promise.field.paymentDate")}</dt>
                       <dd>{promiseContext.record.resolution.paymentDate}</dd>
                     </div>
                   ) : null}
                   {promiseContext.record.resolution?.paidAmount != null ? (
                     <div>
-                      <dt>Paid amount</dt>
+                      <dt>{t("promise.field.paidAmount")}</dt>
                       <dd>{promiseContext.record.resolution.paidAmount.toFixed(2)}</dd>
                     </div>
                   ) : null}
                   {promiseContext.record.resolution?.remainingAmount != null ? (
                     <div>
-                      <dt>Remaining amount</dt>
+                      <dt>{t("promise.field.remainingAmount")}</dt>
                       <dd>{promiseContext.record.resolution.remainingAmount.toFixed(2)}</dd>
                     </div>
                   ) : null}
                   {promiseContext.record.resolution?.reason ? (
                     <div>
-                      <dt>Reason</dt>
+                      <dt>{t("promise.field.reason")}</dt>
                       <dd className="cell-wrap">{promiseContext.record.resolution.reason}</dd>
                     </div>
                   ) : null}
                   {promiseContext.record.note ? (
                     <div>
-                      <dt>Note</dt>
+                      <dt>{t("promise.col.note")}</dt>
                       <dd className="cell-wrap">{promiseContext.record.note}</dd>
                     </div>
                   ) : null}
                   <div className="collection-notes-list">
-                    <dt>Internal notes</dt>
+                    <dt>{t("promise.field.internalNotes")}</dt>
                     <dd>
                       {(() => {
                         const activeNotes = sortCollectionNotesForDisplay(
                           listActiveCollectionNotes(promiseContext.record.notes)
                         );
                         if (activeNotes.length === 0) {
-                          return "0 active";
+                          return t("promise.noneActive");
                         }
                         return (
                           <>
-                            <span>{activeNotes.length} active</span>
+                            <span>{t("promise.activeCount", { count: activeNotes.length })}</span>
                             {activeNotes.map((note) => (
                               <span
                                 key={note.id}
@@ -691,10 +695,10 @@ export function InvoiceDetailPanel({
                               >
                                 {note.category === "handoff" ? (
                                   <span className="aging-badge aging-badge--note-handoff">
-                                    Handoff
+                                    {t("promise.handoffBadge")}
                                   </span>
                                 ) : null}
-                                {note.pinned ? "Pinned · " : ""}
+                                {note.pinned ? t("promise.pinnedPrefix") : ""}
                                 {noteCategoryLabel(note.category)} · {note.author} ·{" "}
                                 {note.body.length > 120
                                   ? `${note.body.slice(0, 117)}…`
@@ -707,18 +711,18 @@ export function InvoiceDetailPanel({
                     </dd>
                   </div>
                   <div className="collection-notes-list">
-                    <dt>Reminders</dt>
+                    <dt>{t("promise.field.reminders")}</dt>
                     <dd>
                       {(() => {
                         const openReminders = sortCollectionRemindersForDisplay(
                           listOpenCollectionReminders(promiseContext.record.reminders)
                         );
                         if (openReminders.length === 0) {
-                          return "0 open";
+                          return t("promise.noneOpen");
                         }
                         return (
                           <>
-                            <span>{openReminders.length} open</span>
+                            <span>{t("promise.openCount", { count: openReminders.length })}</span>
                             {openReminders.map((reminder) => (
                               <span
                                 key={reminder.id}
@@ -730,10 +734,11 @@ export function InvoiceDetailPanel({
                               >
                                 {isReminderDueOrOverdue(reminder) ? (
                                   <span className="aging-badge aging-badge--reminder-due">
-                                    Due
-                                  </span>
+                                    {t("promise.dueBadge")}
+                                    </span>
                                 ) : null}
-                                {reminderKindLabel(reminder.kind)} · due {reminder.dueDate} ·{" "}
+                                {reminderKindLabel(reminder.kind)} ·{" "}
+                                {t("promise.dueOn", { date: reminder.dueDate })} ·{" "}
                                 {reminder.title}
                               </span>
                             ))}
@@ -743,7 +748,7 @@ export function InvoiceDetailPanel({
                     </dd>
                   </div>
                   <div className="collection-notes-list">
-                    <dt>Evidence</dt>
+                    <dt>{t("promise.field.evidence")}</dt>
                     <dd>
                       {(() => {
                         const activeAttachments = sortCollectionAttachmentsForDisplay(
@@ -752,11 +757,11 @@ export function InvoiceDetailPanel({
                           )
                         );
                         if (activeAttachments.length === 0) {
-                          return "0 active";
+                          return t("promise.noneActive");
                         }
                         return (
                           <>
-                            <span>{activeAttachments.length} active</span>
+                            <span>{t("promise.activeCount", { count: activeAttachments.length })}</span>
                             {activeAttachments.map((attachment) => (
                               <span
                                 key={attachment.id}
@@ -776,14 +781,14 @@ export function InvoiceDetailPanel({
                   </div>
                   {promiseContext.record.nextFollowUpAt ? (
                     <div>
-                      <dt>Next follow-up</dt>
+                      <dt>{t("promise.field.nextFollowUp")}</dt>
                       <dd>{promiseContext.record.nextFollowUpAt}</dd>
                     </div>
                   ) : null}
                   {promiseContext.record.lastContact ? (
                     <>
                       <div>
-                        <dt>Last contact</dt>
+                        <dt>{t("promise.field.lastContact")}</dt>
                         <dd>
                           {contactChannelLabel(promiseContext.record.lastContact.channel)}
                           {" · "}
@@ -792,7 +797,7 @@ export function InvoiceDetailPanel({
                       </div>
                       {promiseContext.record.lastContact.note ? (
                         <div>
-                          <dt>Contact note</dt>
+                          <dt>{t("promise.field.contactNote")}</dt>
                           <dd className="cell-wrap">
                             {promiseContext.record.lastContact.note}
                           </dd>
@@ -803,7 +808,7 @@ export function InvoiceDetailPanel({
                   {promiseContext.record.dispute ? (
                     <>
                       <div>
-                        <dt>Dispute</dt>
+                        <dt>{t("promise.field.dispute")}</dt>
                         <dd>
                           <span
                             className={`aging-badge aging-badge--promise aging-badge--dispute-${promiseContext.record.dispute.status as DisputeStatus}`}
@@ -815,26 +820,26 @@ export function InvoiceDetailPanel({
                         </dd>
                       </div>
                       <div>
-                        <dt>Dispute owner</dt>
+                        <dt>{t("promise.field.disputeOwner")}</dt>
                         <dd>
                           {disputePartyLabel(promiseContext.record.dispute.responsibleParty)}
                         </dd>
                       </div>
                       <div>
-                        <dt>Dispute description</dt>
+                        <dt>{t("promise.field.disputeDescription")}</dt>
                         <dd className="cell-wrap">
                           {promiseContext.record.dispute.description}
                         </dd>
                       </div>
                       {promiseContext.record.dispute.nextReviewAt ? (
                         <div>
-                          <dt>Dispute review</dt>
+                          <dt>{t("promise.field.disputeReview")}</dt>
                           <dd>{promiseContext.record.dispute.nextReviewAt}</dd>
                         </div>
                       ) : null}
                       {promiseContext.record.dispute.resolutionComment ? (
                         <div>
-                          <dt>Dispute outcome</dt>
+                          <dt>{t("promise.field.disputeOutcome")}</dt>
                           <dd className="cell-wrap">
                             {promiseContext.record.dispute.resolutionComment}
                           </dd>
@@ -845,7 +850,7 @@ export function InvoiceDetailPanel({
                   {promiseContext.record.escalation ? (
                     <>
                       <div>
-                        <dt>Escalation</dt>
+                        <dt>{t("promise.field.escalation")}</dt>
                         <dd>
                           <span
                             className={`aging-badge aging-badge--promise aging-badge--escalation-${promiseContext.record.escalation.status as EscalationStatus}${
@@ -864,7 +869,7 @@ export function InvoiceDetailPanel({
                         </dd>
                       </div>
                       <div>
-                        <dt>Responsible team</dt>
+                        <dt>{t("promise.field.responsibleTeam")}</dt>
                         <dd>
                           {escalationTeamLabel(
                             promiseContext.record.escalation.responsibleTeam
@@ -872,24 +877,24 @@ export function InvoiceDetailPanel({
                         </dd>
                       </div>
                       <div>
-                        <dt>Requested action</dt>
+                        <dt>{t("promise.field.requestedAction")}</dt>
                         <dd className="cell-wrap">
                           {promiseContext.record.escalation.requestedAction}
                         </dd>
                       </div>
                       <div>
-                        <dt>Escalation due</dt>
+                        <dt>{t("promise.field.escalationDue")}</dt>
                         <dd>{promiseContext.record.escalation.dueDate}</dd>
                       </div>
                       <div>
-                        <dt>Escalation opened</dt>
+                        <dt>{t("promise.field.escalationOpened")}</dt>
                         <dd>
                           {formatDate(promiseContext.record.escalation.openedAtUtc)}
                         </dd>
                       </div>
                       {promiseContext.record.escalation.completionComment ? (
                         <div>
-                          <dt>Escalation outcome</dt>
+                          <dt>{t("promise.field.escalationOutcome")}</dt>
                           <dd className="cell-wrap">
                             {promiseContext.record.escalation.completionComment}
                           </dd>
@@ -900,7 +905,7 @@ export function InvoiceDetailPanel({
                   {promiseContext.record.paymentPlan ? (
                     <>
                       <div>
-                        <dt>Payment plan</dt>
+                        <dt>{t("promise.field.paymentPlan")}</dt>
                         <dd>
                           <span
                             className={`aging-badge aging-badge--promise aging-badge--payment-plan-${promiseContext.record.paymentPlan.status as PaymentPlanStatus}${
@@ -912,12 +917,12 @@ export function InvoiceDetailPanel({
                             {paymentPlanStatusLabel(promiseContext.record.paymentPlan.status)}
                           </span>
                           {hasOverdueInstallment(promiseContext.record.paymentPlan)
-                            ? " · overdue installment"
+                            ? t("promise.overdueInstallmentSuffix")
                             : ""}
                         </dd>
                       </div>
                       <div>
-                        <dt>Plan amount</dt>
+                        <dt>{t("promise.field.planAmount")}</dt>
                         <dd>
                           {formatMoney(
                             promiseContext.record.paymentPlan.planAmount,
@@ -926,7 +931,7 @@ export function InvoiceDetailPanel({
                         </dd>
                       </div>
                       <div>
-                        <dt>Paid / remaining</dt>
+                        <dt>{t("promise.field.paidRemaining")}</dt>
                         <dd>
                           {formatMoney(
                             planPaidTotal(promiseContext.record.paymentPlan),
@@ -942,7 +947,10 @@ export function InvoiceDetailPanel({
                             const counts = countPaidInstallments(
                               promiseContext.record.paymentPlan
                             );
-                            return `${counts.paid}/${counts.total} paid`;
+                            return t("promise.paidCount", {
+                              paid: counts.paid,
+                              total: counts.total
+                            });
                           })()}
                         </dd>
                       </div>
@@ -952,14 +960,14 @@ export function InvoiceDetailPanel({
                         );
                         return next ? (
                           <div>
-                            <dt>Next installment</dt>
+                            <dt>{t("promise.field.nextInstallment")}</dt>
                             <dd>
                               #{next.sequence} · {next.dueDate} ·{" "}
                               {formatMoney(
                                 planInstallmentRemaining(next),
                                 promiseContext.record.paymentPlan.currency
                               )}{" "}
-                              remaining
+                              {t("promise.installmentRemaining")}
                             </dd>
                           </div>
                         ) : null;
@@ -967,7 +975,7 @@ export function InvoiceDetailPanel({
                       {listOverdueInstallments(promiseContext.record.paymentPlan).length >
                       0 ? (
                         <div>
-                          <dt>Overdue installments</dt>
+                          <dt>{t("promise.field.overdueInstallments")}</dt>
                           <dd>
                             {listOverdueInstallments(promiseContext.record.paymentPlan)
                               .map((item) => `#${item.sequence}`)
@@ -977,24 +985,24 @@ export function InvoiceDetailPanel({
                       ) : null}
                       {promiseContext.record.paymentPlan.cancellationReason ? (
                         <div>
-                          <dt>Cancellation reason</dt>
+                          <dt>{t("promise.field.cancellationReason")}</dt>
                           <dd className="cell-wrap">
                             {promiseContext.record.paymentPlan.cancellationReason}
                           </dd>
                         </div>
                       ) : null}
                       <div className="payment-plan-schedule">
-                        <dt>Schedule</dt>
+                        <dt>{t("promise.field.schedule")}</dt>
                         <dd>
                           <table className="data-table payment-plan-table">
                             <thead>
                               <tr>
                                 <th>#</th>
-                                <th>Due</th>
-                                <th>Expected</th>
-                                <th>Recorded</th>
-                                <th>Remaining</th>
-                                <th>Status</th>
+                                <th>{t("promise.plan.col.due")}</th>
+                                <th>{t("promise.plan.col.expected")}</th>
+                                <th>{t("promise.plan.col.recorded")}</th>
+                                <th>{t("promise.plan.col.remaining")}</th>
+                                <th>{t("promise.plan.col.status")}</th>
                                 <th />
                               </tr>
                             </thead>
@@ -1048,7 +1056,7 @@ export function InvoiceDetailPanel({
                                               )
                                             }
                                           >
-                                            Record payment
+                                            {t("promise.recordPayment")}
                                           </button>
                                         ) : null}
                                       </td>
@@ -1059,8 +1067,7 @@ export function InvoiceDetailPanel({
                             </tbody>
                           </table>
                           <p className="meta">
-                            Recorded amounts are for collection tracking only — they do not
-                            post ledger payments.
+                            {t("promise.trackingOnlyNote")}
                           </p>
                         </dd>
                       </div>
@@ -1068,7 +1075,7 @@ export function InvoiceDetailPanel({
                   ) : null}
                 </dl>
               ) : (
-                <p className="meta">Обіцянку оплати ще не зафіксовано.</p>
+                <p className="meta">{t("promise.notRecorded")}</p>
               )}
 
               {promiseContext.success ? (
@@ -1087,7 +1094,7 @@ export function InvoiceDetailPanel({
                   }}
                 >
                   <label>
-                    Promise date
+                    {t("promise.col.promiseDate")}
                     <input
                       type="date"
                       required
@@ -1099,11 +1106,11 @@ export function InvoiceDetailPanel({
                     />
                   </label>
                   <label>
-                    Note
+                    {t("promise.col.note")}
                     <input
                       value={promiseContext.note}
                       onChange={(event) => promiseContext.onNoteChange(event.target.value)}
-                      placeholder="коротка нотатка (необовʼязково)"
+                      placeholder={t("promise.notePlaceholder")}
                       autoComplete="off"
                       disabled={promiseContext.busy}
                     />
@@ -1111,10 +1118,10 @@ export function InvoiceDetailPanel({
                   <div className="filter-actions">
                     <button type="submit" disabled={promiseContext.busy || closeDisabled}>
                       {promiseContext.busy
-                        ? "Збереження…"
+                        ? t("saving", { ns: "common" })
                         : promiseContext.record
-                          ? "Оновити обіцянку"
-                          : "Зберегти обіцянку"}
+                          ? t("promise.updatePromiseAction")
+                          : t("promise.savePromise")}
                     </button>
                     <button
                       type="button"
@@ -1122,7 +1129,7 @@ export function InvoiceDetailPanel({
                       disabled={promiseContext.busy || closeDisabled}
                       onClick={promiseContext.onCloseForm}
                     >
-                      Скасувати
+                      {t("promise.cancelAction")}
                     </button>
                   </div>
                 </form>
@@ -1137,9 +1144,11 @@ export function InvoiceDetailPanel({
                     promiseContext.onSaveResolution();
                   }}
                 >
-                  <h4 id="collection-resolution-heading">Resolution</h4>
+                  <h4 id="collection-resolution-heading">
+                    {t("promise.resolutionTitle")}
+                  </h4>
                   <label>
-                    Action
+                    {t("promise.field.action")}
                     <select
                       value={promiseContext.resolutionKind}
                       onChange={(event) =>
@@ -1150,10 +1159,10 @@ export function InvoiceDetailPanel({
                       disabled={promiseContext.busy}
                       required
                     >
-                      <option value="">Оберіть результат…</option>
+                      <option value="">{t("promise.selectResolution")}</option>
                       {RESOLUTION_KIND_OPTIONS.map((option) => (
                         <option key={option.id} value={option.id}>
-                          {option.label}
+                          {resolutionKindLabel(option.id)}
                         </option>
                       ))}
                     </select>
@@ -1161,7 +1170,7 @@ export function InvoiceDetailPanel({
                   {promiseContext.resolutionKind === "paid" ||
                   promiseContext.resolutionKind === "partially_paid" ? (
                     <label>
-                      Payment date
+                      {t("promise.field.paymentDate")}
                       <input
                         type="date"
                         required
@@ -1176,7 +1185,7 @@ export function InvoiceDetailPanel({
                   {promiseContext.resolutionKind === "partially_paid" ? (
                     <>
                       <label>
-                        Paid amount
+                        {t("promise.field.paidAmount")}
                         <input
                           inputMode="decimal"
                           required
@@ -1189,7 +1198,7 @@ export function InvoiceDetailPanel({
                         />
                       </label>
                       <label>
-                        Remaining amount
+                        {t("promise.field.remainingAmount")}
                         <input
                           inputMode="decimal"
                           required
@@ -1205,7 +1214,7 @@ export function InvoiceDetailPanel({
                   ) : null}
                   {promiseContext.resolutionKind === "new_promise" ? (
                     <label>
-                      New promise date
+                      {t("promise.field.newPromiseDate")}
                       <input
                         type="date"
                         required
@@ -1221,8 +1230,8 @@ export function InvoiceDetailPanel({
                   promiseContext.resolutionKind === "escalated" ? (
                     <label>
                       {promiseContext.resolutionKind === "disputed"
-                        ? "Dispute reason"
-                        : "Escalation reason"}
+                        ? t("promise.field.disputeReason")
+                        : t("promise.field.escalationReason")}
                       <input
                         required
                         value={promiseContext.resolutionReason}
@@ -1236,13 +1245,13 @@ export function InvoiceDetailPanel({
                   ) : null}
                   {promiseContext.resolutionKind ? (
                     <label>
-                      Note
+                      {t("promise.col.note")}
                       <input
                         value={promiseContext.resolutionNote}
                         onChange={(event) =>
                           promiseContext.onResolutionNoteChange(event.target.value)
                         }
-                        placeholder="коротка нотатка (необовʼязково)"
+                        placeholder={t("promise.notePlaceholder")}
                         autoComplete="off"
                         disabled={promiseContext.busy}
                       />
@@ -1257,7 +1266,7 @@ export function InvoiceDetailPanel({
                         !promiseContext.resolutionKind
                       }
                     >
-                      {promiseContext.busy ? "Збереження…" : "Save resolution"}
+                      {promiseContext.busy ? t("saving", { ns: "common" }) : t("promise.saveResolution")}
                     </button>
                     <button
                       type="button"
@@ -1265,7 +1274,7 @@ export function InvoiceDetailPanel({
                       disabled={promiseContext.busy || closeDisabled}
                       onClick={promiseContext.onCloseResolution}
                     >
-                      Скасувати
+                      {t("promise.cancelAction")}
                     </button>
                   </div>
                 </form>
@@ -1280,9 +1289,9 @@ export function InvoiceDetailPanel({
                     promiseContext.onSaveContact();
                   }}
                 >
-                  <h4 id="collection-contact-heading">Log contact</h4>
+                  <h4 id="collection-contact-heading">{t("promise.contactTitle")}</h4>
                   <label>
-                    Channel
+                    {t("promise.field.channel")}
                     <select
                       value={promiseContext.contactChannel}
                       onChange={(event) =>
@@ -1293,16 +1302,16 @@ export function InvoiceDetailPanel({
                       disabled={promiseContext.busy}
                       required
                     >
-                      <option value="">Оберіть канал…</option>
+                      <option value="">{t("promise.selectChannel")}</option>
                       {CONTACT_CHANNEL_OPTIONS.map((option) => (
                         <option key={option.id} value={option.id}>
-                          {option.label}
+                          {contactChannelLabel(option.id)}
                         </option>
                       ))}
                     </select>
                   </label>
                   <label>
-                    Result
+                    {t("promise.field.result")}
                     <select
                       value={promiseContext.contactResult}
                       onChange={(event) =>
@@ -1313,34 +1322,33 @@ export function InvoiceDetailPanel({
                       disabled={promiseContext.busy}
                       required
                     >
-                      <option value="">Оберіть результат…</option>
+                      <option value="">{t("promise.selectResult")}</option>
                       {CONTACT_RESULT_OPTIONS.map((option) => (
                         <option key={option.id} value={option.id}>
-                          {option.label}
+                          {contactResultLabel(option.id)}
                         </option>
                       ))}
                     </select>
                   </label>
                   {promiseContext.contactResult === "payment_promised" ? (
                     <p className="meta">
-                      Результат «Payment promised» збереже контакт і відкриє форму Promise to
-                      pay для фіксації дати обіцянки.
+                      {t("promise.paymentPromisedHint")}
                     </p>
                   ) : null}
                   <label>
-                    Note
+                    {t("promise.col.note")}
                     <input
                       value={promiseContext.contactNote}
                       onChange={(event) =>
                         promiseContext.onContactNoteChange(event.target.value)
                       }
-                      placeholder="коротка нотатка (необовʼязково)"
+                      placeholder={t("promise.notePlaceholder")}
                       autoComplete="off"
                       disabled={promiseContext.busy}
                     />
                   </label>
                   <label>
-                    Next follow-up
+                    {t("promise.field.nextFollowUp")}
                     <input
                       type="date"
                       value={promiseContext.contactFollowUpAt}
@@ -1360,7 +1368,7 @@ export function InvoiceDetailPanel({
                         !promiseContext.contactResult
                       }
                     >
-                      {promiseContext.busy ? "Збереження…" : "Save contact"}
+                      {promiseContext.busy ? t("saving", { ns: "common" }) : t("promise.saveContact")}
                     </button>
                     <button
                       type="button"
@@ -1368,7 +1376,7 @@ export function InvoiceDetailPanel({
                       disabled={promiseContext.busy || closeDisabled}
                       onClick={promiseContext.onCloseContact}
                     >
-                      Скасувати
+                      {t("promise.cancelAction")}
                     </button>
                     {promiseContext.record?.nextFollowUpAt ? (
                       <button
@@ -1377,7 +1385,7 @@ export function InvoiceDetailPanel({
                         disabled={promiseContext.busy || closeDisabled}
                         onClick={promiseContext.onClearFollowUp}
                       >
-                        Clear follow-up
+                        {t("promise.clearFollowUp")}
                       </button>
                     ) : null}
                   </div>
@@ -1394,10 +1402,10 @@ export function InvoiceDetailPanel({
                   }}
                 >
                   <h4 id="collection-dispute-heading">
-                    {promiseContext.disputeEditMode ? "Update dispute" : "Raise dispute"}
+                    {promiseContext.disputeEditMode ? t("promise.updateDispute") : t("promise.raiseDispute")}
                   </h4>
                   <label>
-                    Reason *
+                    {t("promise.field.reasonRequired")}
                     <select
                       value={promiseContext.disputeReason}
                       onChange={(event) =>
@@ -1408,29 +1416,29 @@ export function InvoiceDetailPanel({
                       disabled={promiseContext.busy}
                       required
                     >
-                      <option value="">Оберіть причину…</option>
+                      <option value="">{t("promise.selectReason")}</option>
                       {DISPUTE_REASON_OPTIONS.map((option) => (
                         <option key={option.id} value={option.id}>
-                          {option.label}
+                          {disputeReasonLabel(option.id)}
                         </option>
                       ))}
                     </select>
                   </label>
                   <label>
-                    Description *
+                    {t("promise.field.descriptionRequired")}
                     <input
                       value={promiseContext.disputeDescription}
                       onChange={(event) =>
                         promiseContext.onDisputeDescriptionChange(event.target.value)
                       }
-                      placeholder="опис спору"
+                      placeholder={t("promise.disputeDescriptionPlaceholder")}
                       autoComplete="off"
                       disabled={promiseContext.busy}
                       required
                     />
                   </label>
                   <label>
-                    Responsible party *
+                    {t("promise.field.responsiblePartyRequired")}
                     <select
                       value={promiseContext.disputeParty}
                       onChange={(event) =>
@@ -1441,16 +1449,16 @@ export function InvoiceDetailPanel({
                       disabled={promiseContext.busy}
                       required
                     >
-                      <option value="">Оберіть сторону…</option>
+                      <option value="">{t("promise.selectParty")}</option>
                       {DISPUTE_PARTY_OPTIONS.map((option) => (
                         <option key={option.id} value={option.id}>
-                          {option.label}
+                          {disputePartyLabel(option.id)}
                         </option>
                       ))}
                     </select>
                   </label>
                   <label>
-                    Next review date
+                    {t("promise.field.nextReviewDate")}
                     <input
                       type="date"
                       value={promiseContext.disputeReviewAt}
@@ -1472,10 +1480,10 @@ export function InvoiceDetailPanel({
                       }
                     >
                       {promiseContext.busy
-                        ? "Збереження…"
+                        ? t("saving", { ns: "common" })
                         : promiseContext.disputeEditMode
-                          ? "Save dispute update"
-                          : "Save dispute"}
+                          ? t("promise.saveDisputeUpdate")
+                          : t("promise.saveDispute")}
                     </button>
                     <button
                       type="button"
@@ -1483,7 +1491,7 @@ export function InvoiceDetailPanel({
                       disabled={promiseContext.busy || closeDisabled}
                       onClick={promiseContext.onCloseDisputeForm}
                     >
-                      Скасувати
+                      {t("promise.cancelAction")}
                     </button>
                   </div>
                 </form>
@@ -1500,17 +1508,17 @@ export function InvoiceDetailPanel({
                 >
                   <h4 id="collection-dispute-close-heading">
                     {promiseContext.disputeCloseMode === "resolve"
-                      ? "Resolve dispute"
-                      : "Reject dispute"}
+                      ? t("promise.resolveDispute")
+                      : t("promise.rejectDispute")}
                   </h4>
                   <label>
-                    Resolution comment *
+                    {t("promise.field.resolutionCommentRequired")}
                     <input
                       value={promiseContext.disputeCloseComment}
                       onChange={(event) =>
                         promiseContext.onDisputeCloseCommentChange(event.target.value)
                       }
-                      placeholder="підсумковий коментар"
+                      placeholder={t("promise.commentPlaceholder")}
                       autoComplete="off"
                       disabled={promiseContext.busy}
                       required
@@ -1526,10 +1534,10 @@ export function InvoiceDetailPanel({
                       }
                     >
                       {promiseContext.busy
-                        ? "Збереження…"
+                        ? t("saving", { ns: "common" })
                         : promiseContext.disputeCloseMode === "resolve"
-                          ? "Resolve dispute"
-                          : "Reject dispute"}
+                          ? t("promise.resolveDispute")
+                          : t("promise.rejectDispute")}
                     </button>
                     <button
                       type="button"
@@ -1537,7 +1545,7 @@ export function InvoiceDetailPanel({
                       disabled={promiseContext.busy || closeDisabled}
                       onClick={promiseContext.onCloseDisputeForm}
                     >
-                      Скасувати
+                      {t("promise.cancelAction")}
                     </button>
                   </div>
                 </form>
@@ -1554,11 +1562,11 @@ export function InvoiceDetailPanel({
                 >
                   <h4 id="collection-escalation-heading">
                     {promiseContext.escalationEditMode
-                      ? "Update escalation"
-                      : "Escalate case"}
+                      ? t("promise.updateEscalation")
+                      : t("promise.escalateCase")}
                   </h4>
                   <label>
-                    Reason *
+                    {t("promise.field.reasonRequired")}
                     <select
                       value={promiseContext.escalationReason}
                       onChange={(event) =>
@@ -1569,16 +1577,16 @@ export function InvoiceDetailPanel({
                       disabled={promiseContext.busy}
                       required
                     >
-                      <option value="">Оберіть причину…</option>
+                      <option value="">{t("promise.selectReason")}</option>
                       {ESCALATION_REASON_OPTIONS.map((option) => (
                         <option key={option.id} value={option.id}>
-                          {option.label}
+                          {escalationReasonLabel(option.id)}
                         </option>
                       ))}
                     </select>
                   </label>
                   <label>
-                    Priority *
+                    {t("promise.field.priorityRequired")}
                     <select
                       value={promiseContext.escalationPriority}
                       onChange={(event) =>
@@ -1589,16 +1597,16 @@ export function InvoiceDetailPanel({
                       disabled={promiseContext.busy}
                       required
                     >
-                      <option value="">Оберіть пріоритет…</option>
+                      <option value="">{t("promise.selectPriority")}</option>
                       {ESCALATION_PRIORITY_OPTIONS.map((option) => (
                         <option key={option.id} value={option.id}>
-                          {option.label}
+                          {escalationPriorityLabel(option.id)}
                         </option>
                       ))}
                     </select>
                   </label>
                   <label>
-                    Responsible team *
+                    {t("promise.field.responsibleTeamRequired")}
                     <select
                       value={promiseContext.escalationTeam}
                       onChange={(event) =>
@@ -1609,16 +1617,16 @@ export function InvoiceDetailPanel({
                       disabled={promiseContext.busy}
                       required
                     >
-                      <option value="">Оберіть підрозділ…</option>
+                      <option value="">{t("promise.selectTeam")}</option>
                       {ESCALATION_TEAM_OPTIONS.map((option) => (
                         <option key={option.id} value={option.id}>
-                          {option.label}
+                          {escalationTeamLabel(option.id)}
                         </option>
                       ))}
                     </select>
                   </label>
                   <label>
-                    Requested action *
+                    {t("promise.field.requestedActionRequired")}
                     <textarea
                       value={promiseContext.escalationRequestedAction}
                       onChange={(event) =>
@@ -1626,14 +1634,14 @@ export function InvoiceDetailPanel({
                           event.target.value
                         )
                       }
-                      placeholder="очікувана наступна дія"
+                      placeholder={t("promise.requestedActionPlaceholder")}
                       disabled={promiseContext.busy}
                       required
                       rows={2}
                     />
                   </label>
                   <label>
-                    Due date *
+                    {t("promise.field.dueDateRequired")}
                     <input
                       type="date"
                       value={promiseContext.escalationDueDate}
@@ -1646,13 +1654,13 @@ export function InvoiceDetailPanel({
                   </label>
                   {!promiseContext.escalationEditMode ? (
                     <label>
-                      Note
+                      {t("promise.col.note")}
                       <input
                         value={promiseContext.escalationNote}
                         onChange={(event) =>
                           promiseContext.onEscalationNoteChange(event.target.value)
                         }
-                        placeholder="optional"
+                        placeholder={t("promise.optionalPlaceholder")}
                         autoComplete="off"
                         disabled={promiseContext.busy}
                       />
@@ -1672,10 +1680,10 @@ export function InvoiceDetailPanel({
                       }
                     >
                       {promiseContext.busy
-                        ? "Збереження…"
+                        ? t("saving", { ns: "common" })
                         : promiseContext.escalationEditMode
-                          ? "Save escalation update"
-                          : "Save escalation"}
+                          ? t("promise.saveEscalationUpdate")
+                          : t("promise.saveEscalation")}
                     </button>
                     <button
                       type="button"
@@ -1683,7 +1691,7 @@ export function InvoiceDetailPanel({
                       disabled={promiseContext.busy || closeDisabled}
                       onClick={promiseContext.onCloseEscalationForm}
                     >
-                      Скасувати
+                      {t("promise.cancelAction")}
                     </button>
                   </div>
                 </form>
@@ -1699,10 +1707,10 @@ export function InvoiceDetailPanel({
                   }}
                 >
                   <h4 id="collection-escalation-complete-heading">
-                    Complete escalation
+                    {t("promise.completeEscalation")}
                   </h4>
                   <label>
-                    Completion comment *
+                    {t("promise.field.completionCommentRequired")}
                     <input
                       value={promiseContext.escalationCompleteComment}
                       onChange={(event) =>
@@ -1710,7 +1718,7 @@ export function InvoiceDetailPanel({
                           event.target.value
                         )
                       }
-                      placeholder="підсумковий коментар"
+                      placeholder={t("promise.commentPlaceholder")}
                       autoComplete="off"
                       disabled={promiseContext.busy}
                       required
@@ -1725,7 +1733,7 @@ export function InvoiceDetailPanel({
                         !promiseContext.escalationCompleteComment.trim()
                       }
                     >
-                      {promiseContext.busy ? "Збереження…" : "Complete escalation"}
+                      {promiseContext.busy ? t("saving", { ns: "common" }) : t("promise.completeEscalation")}
                     </button>
                     <button
                       type="button"
@@ -1733,7 +1741,7 @@ export function InvoiceDetailPanel({
                       disabled={promiseContext.busy || closeDisabled}
                       onClick={promiseContext.onCloseEscalationForm}
                     >
-                      Скасувати
+                      {t("promise.cancelAction")}
                     </button>
                   </div>
                 </form>
@@ -1752,15 +1760,14 @@ export function InvoiceDetailPanel({
                 >
                   <h4 id="collection-payment-plan-heading">
                     {promiseContext.paymentPlanEditMode
-                      ? "Edit payment plan"
-                      : "Create payment plan"}
+                      ? t("promise.editPaymentPlan")
+                      : t("promise.createPaymentPlan")}
                   </h4>
                   <p className="meta">
-                    Operational collection schedule only. Saving does not post a ledger
-                    payment or mark the invoice paid.
+                    {t("promise.paymentPlanNote")}
                   </p>
                   <label>
-                    Plan amount *
+                    {t("promise.field.planAmountRequired")}
                     <input
                       type="number"
                       min="0.01"
@@ -1785,11 +1792,11 @@ export function InvoiceDetailPanel({
                         }
                         disabled={promiseContext.busy}
                       />
-                      Replace active Promise to Pay with this installment schedule
+                      {t("promise.replacePromiseCheckbox")}
                     </label>
                   ) : null}
                   <div className="payment-plan-installment-editor">
-                    <h5>Installments</h5>
+                    <h5>{t("promise.installmentsTitle")}</h5>
                     {promiseContext.paymentPlanInstallments.map((row, index) => {
                       const locked =
                         promiseContext.paymentPlanEditMode &&
@@ -1797,7 +1804,7 @@ export function InvoiceDetailPanel({
                       return (
                         <div key={row.id ?? `new-${index}`} className="payment-plan-row">
                           <label>
-                            Due date *
+                            {t("promise.field.dueDateRequired")}
                             <input
                               type="date"
                               required
@@ -1812,7 +1819,7 @@ export function InvoiceDetailPanel({
                             />
                           </label>
                           <label>
-                            Amount *
+                            {t("promise.field.amountRequired")}
                             <input
                               type="number"
                               min="0.01"
@@ -1834,7 +1841,7 @@ export function InvoiceDetailPanel({
                             />
                           </label>
                           {locked ? (
-                            <p className="meta">Paid / partial — locked</p>
+                            <p className="meta">{t("promise.installmentLocked")}</p>
                           ) : (
                             <button
                               type="button"
@@ -1847,7 +1854,7 @@ export function InvoiceDetailPanel({
                                 promiseContext.onRemovePaymentPlanInstallment(index)
                               }
                             >
-                              Remove
+                              {t("promise.removeInstallment")}
                             </button>
                           )}
                         </div>
@@ -1859,10 +1866,10 @@ export function InvoiceDetailPanel({
                       disabled={promiseContext.busy}
                       onClick={promiseContext.onAddPaymentPlanInstallment}
                     >
-                      Add installment
+                      {t("promise.addInstallment")}
                     </button>
                     <p className="meta">
-                      Installment total:{" "}
+                      {t("promise.installmentTotal")}{" "}
                       {promiseContext.paymentPlanInstallments
                         .reduce((sum, row) => {
                           const amount = Number(
@@ -1890,10 +1897,10 @@ export function InvoiceDetailPanel({
                       }
                     >
                       {promiseContext.busy
-                        ? "Збереження…"
+                        ? t("saving", { ns: "common" })
                         : promiseContext.paymentPlanEditMode
-                          ? "Save payment plan update"
-                          : "Save payment plan"}
+                          ? t("promise.savePaymentPlanUpdate")
+                          : t("promise.savePaymentPlan")}
                     </button>
                     <button
                       type="button"
@@ -1901,7 +1908,7 @@ export function InvoiceDetailPanel({
                       disabled={promiseContext.busy || closeDisabled}
                       onClick={promiseContext.onClosePaymentPlanForm}
                     >
-                      Скасувати
+                      {t("promise.cancelAction")}
                     </button>
                   </div>
                 </form>
@@ -1917,16 +1924,16 @@ export function InvoiceDetailPanel({
                   }}
                 >
                   <h4 id="collection-payment-plan-cancel-heading">
-                    Cancel payment plan
+                    {t("promise.cancelPaymentPlan")}
                   </h4>
                   <label>
-                    Cancellation reason *
+                    {t("promise.field.cancellationReasonRequired")}
                     <input
                       value={promiseContext.paymentPlanCancelReason}
                       onChange={(event) =>
                         promiseContext.onPaymentPlanCancelReasonChange(event.target.value)
                       }
-                      placeholder="обовʼязкова причина"
+                      placeholder={t("promise.cancellationReasonPlaceholder")}
                       autoComplete="off"
                       disabled={promiseContext.busy}
                       required
@@ -1941,7 +1948,7 @@ export function InvoiceDetailPanel({
                         !promiseContext.paymentPlanCancelReason.trim()
                       }
                     >
-                      {promiseContext.busy ? "Збереження…" : "Cancel payment plan"}
+                      {promiseContext.busy ? t("saving", { ns: "common" }) : t("promise.cancelPaymentPlan")}
                     </button>
                     <button
                       type="button"
@@ -1949,7 +1956,7 @@ export function InvoiceDetailPanel({
                       disabled={promiseContext.busy || closeDisabled}
                       onClick={promiseContext.onClosePaymentPlanForm}
                     >
-                      Скасувати
+                      {t("promise.cancelAction")}
                     </button>
                   </div>
                 </form>
@@ -1965,14 +1972,13 @@ export function InvoiceDetailPanel({
                   }}
                 >
                   <h4 id="collection-payment-plan-record-heading">
-                    Record payment for collection tracking
+                    {t("promise.recordPaymentTitle")}
                   </h4>
                   <p className="meta">
-                    This records an operational payment against the installment. It does
-                    not create a ledger posting.
+                    {t("promise.recordPaymentNote")}
                   </p>
                   <label>
-                    Amount *
+                    {t("promise.field.amountRequired")}
                     <input
                       type="number"
                       min="0.01"
@@ -1986,14 +1992,14 @@ export function InvoiceDetailPanel({
                     />
                   </label>
                   <label>
-                    Note
+                    {t("promise.col.note")}
                     <input
                       value={promiseContext.paymentPlanRecordNote}
                       onChange={(event) =>
                         promiseContext.onPaymentPlanRecordNoteChange(event.target.value)
                       }
                       disabled={promiseContext.busy}
-                      placeholder="optional"
+                      placeholder={t("promise.optionalPlaceholder")}
                     />
                   </label>
                   <div className="filter-actions">
@@ -2006,8 +2012,8 @@ export function InvoiceDetailPanel({
                       }
                     >
                       {promiseContext.busy
-                        ? "Збереження…"
-                        : "Payment recorded for collection tracking"}
+                        ? t("saving", { ns: "common" })
+                        : t("promise.recordPaymentSubmit")}
                     </button>
                     <button
                       type="button"
@@ -2015,7 +2021,7 @@ export function InvoiceDetailPanel({
                       disabled={promiseContext.busy || closeDisabled}
                       onClick={promiseContext.onClosePaymentPlanForm}
                     >
-                      Скасувати
+                      {t("promise.cancelAction")}
                     </button>
                   </div>
                 </form>
@@ -2031,10 +2037,10 @@ export function InvoiceDetailPanel({
                   }}
                 >
                   <h4 id="collection-notes-heading">
-                    {promiseContext.notesEditId ? "Update internal note" : "Add internal note"}
+                    {promiseContext.notesEditId ? t("promise.updateNoteTitle") : t("promise.addNoteTitle")}
                   </h4>
                   <label>
-                    Author *
+                    {t("promise.field.authorRequired")}
                     <input
                       value={promiseContext.noteAuthor}
                       onChange={(event) =>
@@ -2046,7 +2052,7 @@ export function InvoiceDetailPanel({
                     />
                   </label>
                   <label>
-                    Category *
+                    {t("promise.field.categoryRequired")}
                     <select
                       value={promiseContext.noteCategory}
                       onChange={(event) =>
@@ -2057,16 +2063,16 @@ export function InvoiceDetailPanel({
                       disabled={promiseContext.busy}
                       required
                     >
-                      <option value="">Оберіть категорію…</option>
+                      <option value="">{t("promise.selectCategory")}</option>
                       {NOTE_CATEGORY_OPTIONS.map((option) => (
                         <option key={option.id} value={option.id}>
-                          {option.label}
+                          {noteCategoryLabel(option.id)}
                         </option>
                       ))}
                     </select>
                   </label>
                   <label>
-                    Body *
+                    {t("promise.field.bodyRequired")}
                     <textarea
                       value={promiseContext.noteBody}
                       onChange={(event) =>
@@ -2086,7 +2092,7 @@ export function InvoiceDetailPanel({
                       }
                       disabled={promiseContext.busy}
                     />
-                    Pin note
+                    {t("promise.pinNote")}
                   </label>
                   <div className="filter-actions">
                     <button
@@ -2100,10 +2106,10 @@ export function InvoiceDetailPanel({
                       }
                     >
                       {promiseContext.busy
-                        ? "Збереження…"
+                        ? t("saving", { ns: "common" })
                         : promiseContext.notesEditId
-                          ? "Update note"
-                          : "Save note"}
+                          ? t("promise.updateNote")
+                          : t("promise.saveNote")}
                     </button>
                     <button
                       type="button"
@@ -2111,7 +2117,7 @@ export function InvoiceDetailPanel({
                       disabled={promiseContext.busy || closeDisabled}
                       onClick={promiseContext.onCloseNotesForm}
                     >
-                      Скасувати
+                      {t("promise.cancelAction")}
                     </button>
                   </div>
                 </form>
@@ -2128,11 +2134,11 @@ export function InvoiceDetailPanel({
                 >
                   <h4 id="collection-reminders-heading">
                     {promiseContext.remindersEditId
-                      ? "Reschedule reminder"
-                      : "Schedule reminder"}
+                      ? t("promise.rescheduleReminderTitle")
+                      : t("promise.scheduleReminderTitle")}
                   </h4>
                   <label>
-                    Title *
+                    {t("promise.field.titleRequired")}
                     <input
                       value={promiseContext.reminderTitle}
                       onChange={(event) =>
@@ -2143,7 +2149,7 @@ export function InvoiceDetailPanel({
                     />
                   </label>
                   <label>
-                    Type *
+                    {t("promise.field.typeRequired")}
                     <select
                       value={promiseContext.reminderKind}
                       onChange={(event) =>
@@ -2154,16 +2160,16 @@ export function InvoiceDetailPanel({
                       disabled={promiseContext.busy}
                       required
                     >
-                      <option value="">Оберіть тип…</option>
+                      <option value="">{t("promise.selectType")}</option>
                       {REMINDER_KIND_OPTIONS.map((option) => (
                         <option key={option.id} value={option.id}>
-                          {option.label}
+                          {reminderKindLabel(option.id)}
                         </option>
                       ))}
                     </select>
                   </label>
                   <label>
-                    Due date *
+                    {t("promise.field.dueDateRequired")}
                     <input
                       type="date"
                       value={promiseContext.reminderDueDate}
@@ -2175,7 +2181,7 @@ export function InvoiceDetailPanel({
                     />
                   </label>
                   <label>
-                    Note
+                    {t("promise.col.note")}
                     <textarea
                       value={promiseContext.reminderNote}
                       onChange={(event) =>
@@ -2197,10 +2203,10 @@ export function InvoiceDetailPanel({
                       }
                     >
                       {promiseContext.busy
-                        ? "Збереження…"
+                        ? t("saving", { ns: "common" })
                         : promiseContext.remindersEditId
-                          ? "Update reminder"
-                          : "Save reminder"}
+                          ? t("promise.updateReminder")
+                          : t("promise.saveReminder")}
                     </button>
                     <button
                       type="button"
@@ -2208,7 +2214,7 @@ export function InvoiceDetailPanel({
                       disabled={promiseContext.busy || closeDisabled}
                       onClick={promiseContext.onCloseRemindersForm}
                     >
-                      Скасувати
+                      {t("promise.cancelAction")}
                     </button>
                   </div>
                 </form>
@@ -2225,11 +2231,11 @@ export function InvoiceDetailPanel({
                 >
                   <h4 id="collection-attachments-heading">
                     {promiseContext.attachmentsEditId
-                      ? "Edit attachment"
-                      : "Add supporting evidence"}
+                      ? t("promise.editAttachmentTitle")
+                      : t("promise.addEvidenceTitle")}
                   </h4>
                   <label>
-                    File
+                    {t("promise.field.file")}
                     <input
                       type="file"
                       disabled={promiseContext.busy || closeDisabled}
@@ -2251,19 +2257,19 @@ export function InvoiceDetailPanel({
                         : ""}
                       {promiseContext.attachmentsEditId &&
                       !promiseContext.attachmentHasNewFile
-                        ? " · existing file retained"
+                        ? t("promise.existingFileRetained")
                         : ""}
                     </p>
                   ) : (
                     <p className="meta">
                       Max {formatAttachmentSize(ATTACHMENT_MAX_BYTES)}.
                       {promiseContext.attachmentsEditId
-                        ? " Leave empty to keep the current file."
+                        ? t("promise.keepCurrentFile")
                         : ""}
                     </p>
                   )}
                   <label>
-                    Category
+                    {t("promise.field.category")}
                     <select
                       value={promiseContext.attachmentCategory}
                       disabled={promiseContext.busy || closeDisabled}
@@ -2273,16 +2279,16 @@ export function InvoiceDetailPanel({
                         )
                       }
                     >
-                      <option value="">Select category</option>
+                      <option value="">{t("promise.selectCategoryPlain")}</option>
                       {ATTACHMENT_CATEGORY_OPTIONS.map((option) => (
                         <option key={option.id} value={option.id}>
-                          {option.label}
+                          {attachmentCategoryLabel(option.id)}
                         </option>
                       ))}
                     </select>
                   </label>
                   <label>
-                    Uploaded by
+                    {t("promise.field.uploadedBy")}
                     <input
                       type="text"
                       value={promiseContext.attachmentUploadedBy}
@@ -2293,7 +2299,7 @@ export function InvoiceDetailPanel({
                     />
                   </label>
                   <label>
-                    Description
+                    {t("invoices.detail.col.description")}
                     <textarea
                       rows={3}
                       value={promiseContext.attachmentDescription}
@@ -2319,10 +2325,10 @@ export function InvoiceDetailPanel({
                       }
                     >
                       {promiseContext.busy
-                        ? "Збереження…"
+                        ? t("saving", { ns: "common" })
                         : promiseContext.attachmentsEditId
-                          ? "Update attachment"
-                          : "Save attachment"}
+                          ? t("promise.updateAttachment")
+                          : t("promise.saveAttachment")}
                     </button>
                     <button
                       type="button"
@@ -2330,7 +2336,7 @@ export function InvoiceDetailPanel({
                       disabled={promiseContext.busy || closeDisabled}
                       onClick={promiseContext.onCloseAttachmentsForm}
                     >
-                      Скасувати
+                      {t("promise.cancelAction")}
                     </button>
                   </div>
                 </form>
@@ -2351,28 +2357,28 @@ export function InvoiceDetailPanel({
                     disabled={closeDisabled || promiseContext.busy}
                     onClick={promiseContext.onOpenContact}
                   >
-                    Log contact
+                    {t("promise.contactTitle")}
                   </button>
                   <button
                     type="button"
                     disabled={closeDisabled || promiseContext.busy}
                     onClick={promiseContext.onOpenAddNote}
                   >
-                    Add note
+                    {t("promise.addNote")}
                   </button>
                   <button
                     type="button"
                     disabled={closeDisabled || promiseContext.busy}
                     onClick={promiseContext.onOpenAddReminder}
                   >
-                    Schedule reminder
+                    {t("promise.scheduleReminderTitle")}
                   </button>
                   <button
                     type="button"
                     disabled={closeDisabled || promiseContext.busy}
                     onClick={promiseContext.onOpenAddAttachment}
                   >
-                    Add evidence
+                    {t("promise.addEvidence")}
                   </button>
                   {isActiveDispute(promiseContext.record?.dispute) ? (
                     <>
@@ -2381,14 +2387,14 @@ export function InvoiceDetailPanel({
                         disabled={closeDisabled || promiseContext.busy}
                         onClick={promiseContext.onOpenEditDispute}
                       >
-                        Update dispute
+                        {t("promise.updateDispute")}
                       </button>
                       <button
                         type="button"
                         disabled={closeDisabled || promiseContext.busy}
                         onClick={promiseContext.onOpenResolveDispute}
                       >
-                        Resolve dispute
+                        {t("promise.resolveDispute")}
                       </button>
                       <button
                         type="button"
@@ -2396,7 +2402,7 @@ export function InvoiceDetailPanel({
                         disabled={closeDisabled || promiseContext.busy}
                         onClick={promiseContext.onOpenRejectDispute}
                       >
-                        Reject dispute
+                        {t("promise.rejectDispute")}
                       </button>
                     </>
                   ) : (
@@ -2405,7 +2411,7 @@ export function InvoiceDetailPanel({
                       disabled={closeDisabled || promiseContext.busy}
                       onClick={promiseContext.onOpenRaiseDispute}
                     >
-                      Raise dispute
+                      {t("promise.raiseDispute")}
                     </button>
                   )}
                   {isActiveEscalation(promiseContext.record?.escalation) ? (
@@ -2415,14 +2421,14 @@ export function InvoiceDetailPanel({
                         disabled={closeDisabled || promiseContext.busy}
                         onClick={promiseContext.onOpenEditEscalation}
                       >
-                        Update escalation
+                        {t("promise.updateEscalation")}
                       </button>
                       <button
                         type="button"
                         disabled={closeDisabled || promiseContext.busy}
                         onClick={promiseContext.onOpenCompleteEscalation}
                       >
-                        Complete escalation
+                        {t("promise.completeEscalation")}
                       </button>
                     </>
                   ) : (
@@ -2431,7 +2437,7 @@ export function InvoiceDetailPanel({
                       disabled={closeDisabled || promiseContext.busy}
                       onClick={promiseContext.onOpenEscalateCase}
                     >
-                      Escalate case
+                      {t("promise.escalateCase")}
                     </button>
                   )}
                   {isActivePaymentPlan(promiseContext.record?.paymentPlan) ? (
@@ -2441,7 +2447,7 @@ export function InvoiceDetailPanel({
                         disabled={closeDisabled || promiseContext.busy}
                         onClick={promiseContext.onOpenEditPaymentPlan}
                       >
-                        Edit payment plan
+                        {t("promise.editPaymentPlan")}
                       </button>
                       <button
                         type="button"
@@ -2449,7 +2455,7 @@ export function InvoiceDetailPanel({
                         disabled={closeDisabled || promiseContext.busy}
                         onClick={promiseContext.onOpenCancelPaymentPlan}
                       >
-                        Cancel payment plan
+                        {t("promise.cancelPaymentPlan")}
                       </button>
                     </>
                   ) : (
@@ -2458,7 +2464,7 @@ export function InvoiceDetailPanel({
                       disabled={closeDisabled || promiseContext.busy}
                       onClick={promiseContext.onOpenCreatePaymentPlan}
                     >
-                      Create payment plan
+                      {t("promise.createPaymentPlan")}
                     </button>
                   )}
                   <button
@@ -2471,11 +2477,11 @@ export function InvoiceDetailPanel({
                     onClick={promiseContext.onOpenForm}
                     title={
                       isActivePaymentPlan(promiseContext.record?.paymentPlan)
-                        ? "Finish or cancel the active payment plan first"
+                        ? t("promise.activePlanTitle")
                         : undefined
                     }
                   >
-                    {promiseContext.record ? "Update promise" : "Promise to pay"}
+                    {promiseContext.record ? t("promise.updatePromiseAction") : t("promise.title")}
                   </button>
                   {promiseContext.record ? (
                     <button
@@ -2483,7 +2489,7 @@ export function InvoiceDetailPanel({
                       disabled={closeDisabled || promiseContext.busy}
                       onClick={promiseContext.onOpenResolution}
                     >
-                      Resolve collection
+                      {t("promise.resolveCollection")}
                     </button>
                   ) : null}
                   {promiseContext.record && promiseStatus !== "completed" ? (
@@ -2494,7 +2500,7 @@ export function InvoiceDetailPanel({
                         disabled={promiseContext.busy || closeDisabled}
                         onClick={promiseContext.onMarkFollowUpRequired}
                       >
-                        Mark follow-up required
+                        {t("promise.markFollowUpRequired")}
                       </button>
                       <button
                         type="button"
@@ -2502,7 +2508,7 @@ export function InvoiceDetailPanel({
                         disabled={promiseContext.busy || closeDisabled}
                         onClick={promiseContext.onMarkContacted}
                       >
-                        Mark contacted
+                        {t("promise.markContacted")}
                       </button>
                       <button
                         type="button"
@@ -2510,7 +2516,7 @@ export function InvoiceDetailPanel({
                         disabled={promiseContext.busy || closeDisabled}
                         onClick={promiseContext.onComplete}
                       >
-                        Complete follow-up
+                        {t("promise.completeFollowUp")}
                       </button>
                     </>
                   ) : null}
@@ -2521,7 +2527,7 @@ export function InvoiceDetailPanel({
                       disabled={promiseContext.busy || closeDisabled}
                       onClick={promiseContext.onReopen}
                     >
-                      Reopen follow-up
+                      {t("promise.reopenFollowUp")}
                     </button>
                   ) : null}
                 </div>
@@ -2540,11 +2546,11 @@ export function InvoiceDetailPanel({
                         <div>
                           {note.category === "handoff" ? (
                             <span className="aging-badge aging-badge--note-handoff">
-                              Handoff
+                              {t("promise.handoffBadge")}
                             </span>
                           ) : null}
                           <strong>{noteCategoryLabel(note.category)}</strong> · {note.author}
-                          {note.pinned ? " · pinned" : ""}
+                          {note.pinned ? t("promise.pinnedSuffix") : ""}
                         </div>
                         <p>{note.body}</p>
                         <div className="row-actions">
@@ -2554,7 +2560,7 @@ export function InvoiceDetailPanel({
                             disabled={closeDisabled || promiseContext.busy}
                             onClick={() => promiseContext.onOpenEditNote(note.id)}
                           >
-                            Edit
+                            {t("invoices.detail.editLine")}
                           </button>
                           <button
                             type="button"
@@ -2562,7 +2568,7 @@ export function InvoiceDetailPanel({
                             disabled={closeDisabled || promiseContext.busy}
                             onClick={() => promiseContext.onArchiveNote(note.id)}
                           >
-                            Archive
+                            {t("promise.archiveAction")}
                           </button>
                         </div>
                       </article>
@@ -2581,8 +2587,8 @@ export function InvoiceDetailPanel({
                         <div>
                           {isReminderDueOrOverdue(reminder) ? (
                             <span className="aging-badge aging-badge--reminder-due">
-                              Due
-                            </span>
+                              {t("promise.dueBadge")}
+                              </span>
                           ) : null}
                           <strong>{reminderKindLabel(reminder.kind)}</strong> · due{" "}
                           {reminder.dueDate} · {reminderStatusLabel(reminder.status)}
@@ -2598,7 +2604,7 @@ export function InvoiceDetailPanel({
                             disabled={closeDisabled || promiseContext.busy}
                             onClick={() => promiseContext.onOpenEditReminder(reminder.id)}
                           >
-                            Reschedule
+                            {t("promise.rescheduleAction")}
                           </button>
                           <button
                             type="button"
@@ -2606,7 +2612,7 @@ export function InvoiceDetailPanel({
                             disabled={closeDisabled || promiseContext.busy}
                             onClick={() => promiseContext.onCompleteReminder(reminder.id)}
                           >
-                            Complete
+                            {t("promise.completeAction")}
                           </button>
                           <button
                             type="button"
@@ -2614,7 +2620,7 @@ export function InvoiceDetailPanel({
                             disabled={closeDisabled || promiseContext.busy}
                             onClick={() => promiseContext.onCancelReminder(reminder.id)}
                           >
-                            Cancel
+                            {t("promise.cancelAction")}
                           </button>
                         </div>
                       </article>
@@ -2641,7 +2647,7 @@ export function InvoiceDetailPanel({
                             href={attachment.contentDataUrl}
                             download={attachment.fileName}
                           >
-                            Download
+                            {t("promise.downloadAction")}
                           </a>
                           <button
                             type="button"
@@ -2651,7 +2657,7 @@ export function InvoiceDetailPanel({
                               promiseContext.onOpenEditAttachment(attachment.id)
                             }
                           >
-                            Edit
+                            {t("invoices.detail.editLine")}
                           </button>
                           <button
                             type="button"
@@ -2661,7 +2667,7 @@ export function InvoiceDetailPanel({
                               promiseContext.onArchiveAttachment(attachment.id)
                             }
                           >
-                            Archive
+                            {t("promise.archiveAction")}
                           </button>
                         </div>
                       </article>
@@ -2669,10 +2675,7 @@ export function InvoiceDetailPanel({
                 </div>
               ) : null}
               <p className="meta promise-persistence-note">
-                Contact, dispute, escalation, payment plan, internal notes, reminders,
-                attachments, follow-up і resolution зберігаються локально в браузері
-                (localStorage) за invoice id. Payment plan payments are operational tracking
-                only.
+                {t("promise.persistenceNote")}
               </p>
             </section>
           ) : null}
@@ -2683,7 +2686,7 @@ export function InvoiceDetailPanel({
               aria-labelledby="case-history-heading"
             >
               <div className="filter-actions">
-                <h4 id="case-history-heading">Case history</h4>
+                <h4 id="case-history-heading">{t("promise.history.title")}</h4>
                 {!historyContext.open ? (
                   <button
                     type="button"
@@ -2691,7 +2694,7 @@ export function InvoiceDetailPanel({
                     disabled={closeDisabled}
                     onClick={historyContext.onOpen}
                   >
-                    Open history
+                    {t("promise.history.open")}
                   </button>
                 ) : (
                   <button
@@ -2700,7 +2703,7 @@ export function InvoiceDetailPanel({
                     disabled={closeDisabled}
                     onClick={historyContext.onClose}
                   >
-                    Close history
+                    {t("promise.history.close")}
                   </button>
                 )}
               </div>
@@ -2709,29 +2712,29 @@ export function InvoiceDetailPanel({
                 <>
                   <dl className="collections-summary facts collections-kpi case-history-summary">
                     <div>
-                      <dt>Current Status</dt>
+                      <dt>{t("promise.history.currentStatus")}</dt>
                       <dd>{historyContext.view.summary.currentStatus}</dd>
                     </div>
                     <div>
-                      <dt>Current Promise</dt>
+                      <dt>{t("promise.history.currentPromise")}</dt>
                       <dd>{historyContext.view.summary.currentPromise ?? "—"}</dd>
                     </div>
                     <div>
-                      <dt>Last Contact</dt>
+                      <dt>{t("promise.history.lastContact")}</dt>
                       <dd>
                         {formatDate(historyContext.view.summary.lastContactAtUtc)}
                       </dd>
                     </div>
                     <div>
-                      <dt>Last Resolution</dt>
+                      <dt>{t("promise.history.lastResolution")}</dt>
                       <dd>{historyContext.view.summary.lastResolutionLabel ?? "—"}</dd>
                     </div>
                     <div>
-                      <dt>Total Follow-ups</dt>
+                      <dt>{t("promise.history.totalFollowUps")}</dt>
                       <dd>{historyContext.view.summary.totalFollowUps}</dd>
                     </div>
                     <div>
-                      <dt>Total Promises</dt>
+                      <dt>{t("promise.history.totalPromises")}</dt>
                       <dd>{historyContext.view.summary.totalPromises}</dd>
                     </div>
                   </dl>
@@ -2741,18 +2744,18 @@ export function InvoiceDetailPanel({
                     onSubmit={historyContext.onSearchSubmit}
                   >
                     <label>
-                      Пошук у нотатках
+                      {t("promise.history.searchLabel")}
                       <input
                         value={historyContext.searchDraft}
                         onChange={(event) =>
                           historyContext.onSearchDraftChange(event.target.value)
                         }
-                        placeholder="note / description"
+                        placeholder={t("promise.history.searchPlaceholder")}
                         autoComplete="off"
                       />
                     </label>
                     <label>
-                      Тип події
+                      {t("promise.history.typeLabel")}
                       <select
                         value={historyContext.typeFilter}
                         onChange={(event) =>
@@ -2763,21 +2766,23 @@ export function InvoiceDetailPanel({
                       >
                         {ACTIVITY_EVENT_TYPE_OPTIONS.map((option) => (
                           <option key={option.id || "all-events"} value={option.id}>
-                            {option.label}
+                            {option.id
+                              ? activityEventTypeLabel(option.id)
+                              : t("promise.history.allEvents")}
                           </option>
                         ))}
                       </select>
                     </label>
                     <div className="filter-actions">
-                      <button type="submit">Знайти</button>
+                      <button type="submit">{t("invoices.findAction")}</button>
                       <button
                         type="button"
                         className="button-secondary"
                         onClick={historyContext.onToggleExpanded}
                       >
                         {historyContext.view.collapsed
-                          ? "Показати всю історію"
-                          : "Згорнути історію"}
+                          ? t("promise.history.expand")
+                          : t("promise.history.collapse")}
                       </button>
                     </div>
                   </form>
@@ -2785,11 +2790,11 @@ export function InvoiceDetailPanel({
                   <p className="meta">
                     Activity timeline · {historyContext.view.visibleCount} /{" "}
                     {historyContext.view.totalCount}
-                    {historyContext.view.collapsed ? " · collapsed" : ""}
+                    {historyContext.view.collapsed ? t("promise.history.collapsedSuffix") : ""}
                   </p>
 
                   {historyContext.view.events.length === 0 ? (
-                    <p className="meta">Подій за поточними фільтрами немає.</p>
+                    <p className="meta">{t("promise.history.empty")}</p>
                   ) : (
                     <ol className="case-history-timeline">
                       {historyContext.view.events.map((event) => (
@@ -2804,7 +2809,9 @@ export function InvoiceDetailPanel({
                           </div>
                           <p className="case-history-description">{event.description}</p>
                           {event.note ? (
-                            <p className="meta cell-wrap">Note: {event.note}</p>
+                            <p className="meta cell-wrap">
+                              {t("promise.history.notePrefix", { note: event.note })}
+                            </p>
                           ) : null}
                           {event.contactChannel || event.contactResult ? (
                             <p className="meta">
@@ -2819,11 +2826,11 @@ export function InvoiceDetailPanel({
                           {event.followUpAt ? (
                             <p className="meta">
                               {event.type.startsWith("dispute_")
-                                ? `Review: ${event.followUpAt}`
+                                ? t("promise.history.reviewOn", { date: event.followUpAt })
                                 : event.type === "case_escalated" ||
                                     event.type === "escalation_updated"
-                                  ? `Due: ${event.followUpAt}`
-                                  : `Follow-up: ${event.followUpAt}`}
+                                  ? t("promise.history.dueOn", { date: event.followUpAt })
+                                  : t("promise.history.followUpOn", { date: event.followUpAt })}
                             </p>
                           ) : null}
                           {event.disputeReason || event.disputeParty ? (
@@ -2867,16 +2874,16 @@ export function InvoiceDetailPanel({
 
           {fields.lines.length > 0 ? (
             <div className="table-wrap">
-              <p className="meta">Рядки</p>
+              <p className="meta">{t("invoices.detail.linesTitle")}</p>
               <table>
                 <thead>
                   <tr>
                     <th>#</th>
-                    <th>Опис</th>
-                    <th>Кількість</th>
-                    <th>Ціна</th>
-                    <th>Сума</th>
-                    {showLineManage ? <th>Дія</th> : null}
+                    <th>{t("invoices.detail.col.description")}</th>
+                    <th>{t("invoices.detail.col.quantity")}</th>
+                    <th>{t("invoices.detail.col.price")}</th>
+                    <th>{t("invoices.detail.col.amount")}</th>
+                    {showLineManage ? <th>{t("invoices.detail.col.action")}</th> : null}
                   </tr>
                 </thead>
                 <tbody>
@@ -2896,7 +2903,7 @@ export function InvoiceDetailPanel({
                               disabled={actionsDisabled}
                               onClick={() => onUpdateLine?.(invoice, line.id)}
                             >
-                              {lineUpdateBusy ? "Збереження…" : "Змінити"}
+                              {lineUpdateBusy ? t("saving", { ns: "common" }) : t("invoices.detail.editLine")}
                             </button>
                             <button
                               type="button"
@@ -2904,7 +2911,7 @@ export function InvoiceDetailPanel({
                               disabled={actionsDisabled}
                               onClick={() => onRemoveLine?.(invoice, line.id)}
                             >
-                              {lineRemoveBusy ? "Видалення…" : "Видалити"}
+                              {lineRemoveBusy ? t("invoices.removing") : t("remove", { ns: "common" })}
                             </button>
                           </div>
                         </td>
@@ -2915,38 +2922,38 @@ export function InvoiceDetailPanel({
               </table>
             </div>
           ) : (
-            <p className="meta">Рядків немає.</p>
+            <p className="meta">{t("invoices.detail.linesEmpty")}</p>
           )}
 
           <div className="table-wrap" aria-labelledby="invoice-related-accruals-heading">
             <p className="meta" id="invoice-related-accruals-heading">
-              Повʼязані нарахування
+              {t("invoices.detail.relatedAccruals")}
             </p>
             {relatedAccrualsLoading ? (
-              <StatusMessage>Завантаження нарахувань…</StatusMessage>
+              <StatusMessage>{t("invoices.detail.relatedAccrualsLoading")}</StatusMessage>
             ) : null}
             {!relatedAccrualsLoading && relatedAccrualsError ? (
               <div className="state-actions" role="alert">
                 <StatusMessage tone="error">{relatedAccrualsError}</StatusMessage>
                 {onRetryRelatedAccruals ? (
                   <button type="button" onClick={onRetryRelatedAccruals}>
-                    Спробувати знову
+                    {t("retry", { ns: "common" })}
                   </button>
                 ) : null}
               </div>
             ) : null}
             {!relatedAccrualsLoading && !relatedAccrualsError && relatedRows.length === 0 ? (
-              <p className="meta">Повʼязаних нарахувань немає.</p>
+              <p className="meta">{t("invoices.detail.relatedAccrualsEmpty")}</p>
             ) : null}
             {!relatedAccrualsLoading && !relatedAccrualsError && relatedRows.length > 0 ? (
               <table>
                 <thead>
                   <tr>
-                    <th>Опис</th>
-                    <th>Статус</th>
-                    <th>Сума</th>
-                    <th>Дата визнання</th>
-                    {onOpenAccrual ? <th>Дія</th> : null}
+                    <th>{t("invoices.detail.accrualCol.description")}</th>
+                    <th>{t("invoices.detail.accrualCol.status")}</th>
+                    <th>{t("invoices.detail.accrualCol.amount")}</th>
+                    <th>{t("invoices.detail.accrualCol.recognitionDate")}</th>
+                    {onOpenAccrual ? <th>{t("invoices.detail.accrualCol.action")}</th> : null}
                   </tr>
                 </thead>
                 <tbody>
@@ -2964,7 +2971,7 @@ export function InvoiceDetailPanel({
                             disabled={actionsDisabled}
                             onClick={() => onOpenAccrual(row.id)}
                           >
-                            Відкрити
+                            {t("invoices.openAction")}
                           </button>
                         </td>
                       ) : null}
@@ -2977,7 +2984,7 @@ export function InvoiceDetailPanel({
 
           {showActions ? (
             <div className="filter-actions invoice-detail-actions">
-              <p className="meta">Дії</p>
+              <p className="meta">{t("invoices.detail.actionsTitle")}</p>
               {showEditHeader ? (
                 <button
                   type="button"
@@ -2985,7 +2992,7 @@ export function InvoiceDetailPanel({
                   disabled={actionsDisabled}
                   onClick={() => onEditHeader?.(invoice)}
                 >
-                  {headerEditBusy ? "Збереження…" : "Змінити реквізити"}
+                  {headerEditBusy ? t("saving", { ns: "common" }) : t("invoices.editHeader")}
                 </button>
               ) : null}
               {showAddLine ? (
@@ -2995,7 +3002,7 @@ export function InvoiceDetailPanel({
                   disabled={actionsDisabled}
                   onClick={() => onAddLine?.(invoice)}
                 >
-                  {lineAddBusy ? "Збереження…" : "Додати рядок"}
+                  {lineAddBusy ? t("saving", { ns: "common" }) : t("invoices.addLine")}
                 </button>
               ) : null}
               {showEditDueDate ? (
@@ -3005,7 +3012,7 @@ export function InvoiceDetailPanel({
                   disabled={actionsDisabled}
                   onClick={() => onEditDueDate?.(invoice)}
                 >
-                  {dueDateEditBusy ? "Збереження…" : "Змінити дату оплати"}
+                  {dueDateEditBusy ? t("saving", { ns: "common" }) : t("invoices.changeDueDate")}
                 </button>
               ) : null}
               {showIssue ? (
@@ -3015,7 +3022,7 @@ export function InvoiceDetailPanel({
                   disabled={actionsDisabled}
                   onClick={() => onIssue?.(invoice)}
                 >
-                  {issueBusy ? "Виставлення…" : "Виставити"}
+                  {issueBusy ? t("invoices.issuing") : t("invoices.issue")}
                 </button>
               ) : null}
               {showCreateAccrual ? (
@@ -3025,7 +3032,7 @@ export function InvoiceDetailPanel({
                   disabled={actionsDisabled}
                   onClick={() => onCreateAccrual?.(invoice)}
                 >
-                  {createAccrualBusy ? "Створення…" : "Створити нарахування"}
+                  {createAccrualBusy ? t("creating", { ns: "common" }) : t("invoices.createAccrual")}
                 </button>
               ) : null}
             </div>

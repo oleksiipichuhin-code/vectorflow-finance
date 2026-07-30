@@ -4,6 +4,7 @@
  * No server collection/follow-up contract exists yet.
  */
 
+import i18n from "./i18n/index.ts";
 import {
   calendarDayDiff,
   dueDateCalendarString,
@@ -494,7 +495,7 @@ export const RESOLUTION_KIND_OPTIONS: readonly {
 ];
 
 export const PROMISE_GROUP_OPTIONS: readonly PromiseGroupOption[] = [
-  { id: "", label: "Усі follow-ups", shortLabel: "Усі" },
+  { id: "", label: "All follow-ups", shortLabel: "All" },
   { id: "due_today", label: "Due today", shortLabel: "Due today" },
   { id: "upcoming", label: "Upcoming", shortLabel: "Upcoming" },
   { id: "broken", label: "Broken promises", shortLabel: "Broken" },
@@ -557,10 +558,10 @@ export function isValidPromiseDate(value: string | null | undefined): boolean {
 export function validatePromiseToPayInput(input: PromiseToPayInput): PromiseValidationResult {
   const rawDate = input.promiseDate?.trim() ?? "";
   if (!rawDate) {
-    return { ok: false, error: "Вкажіть обіцяну дату оплати." };
+    return { ok: false, error: i18n.t("promise.error.promiseDateRequired", { ns: "finance" }) };
   }
   if (!isValidPromiseDate(rawDate)) {
-    return { ok: false, error: "Некоректна дата обіцянки. Використовуйте формат РРРР-ММ-ДД." };
+    return { ok: false, error: i18n.t("promise.error.promiseDateFormat", { ns: "finance" }) };
   }
   const note = (input.note ?? "").trim();
   return { ok: true, promiseDate: rawDate, note };
@@ -575,18 +576,18 @@ export function validateCollectionContactInput(
   const followUpRaw = (input.followUpAt ?? "").trim();
 
   if (!channel && !result && !note && !followUpRaw) {
-    return { ok: false, error: "Заповніть канал або результат контакту." };
+    return { ok: false, error: i18n.t("promise.error.contactFieldsRequired", { ns: "finance" }) };
   }
   if (!channel) {
-    return { ok: false, error: "Оберіть канал контакту." };
+    return { ok: false, error: i18n.t("promise.error.contactChannelRequired", { ns: "finance" }) };
   }
   if (!result) {
-    return { ok: false, error: "Оберіть результат контакту." };
+    return { ok: false, error: i18n.t("promise.error.contactResultRequired", { ns: "finance" }) };
   }
   if (followUpRaw && !isValidPromiseDate(followUpRaw)) {
     return {
       ok: false,
-      error: "Некоректна дата follow-up. Використовуйте формат РРРР-ММ-ДД."
+      error: i18n.t("promise.error.followUpDateFormat", { ns: "finance" })
     };
   }
 
@@ -609,21 +610,21 @@ export function validateCollectionDisputeInput(
   const reviewRaw = (input.nextReviewAt ?? "").trim();
 
   if (!reason && !responsibleParty && !description && !reviewRaw) {
-    return { ok: false, error: "Заповніть обовʼязкові поля спору." };
+    return { ok: false, error: i18n.t("promise.error.disputeFieldsRequired", { ns: "finance" }) };
   }
   if (!reason) {
-    return { ok: false, error: "Оберіть причину спору." };
+    return { ok: false, error: i18n.t("promise.error.disputeReasonRequired", { ns: "finance" }) };
   }
   if (!description) {
-    return { ok: false, error: "Вкажіть опис спору." };
+    return { ok: false, error: i18n.t("promise.error.disputeDescriptionRequired", { ns: "finance" }) };
   }
   if (!responsibleParty) {
-    return { ok: false, error: "Оберіть відповідальну сторону." };
+    return { ok: false, error: i18n.t("promise.error.disputePartyRequired", { ns: "finance" }) };
   }
   if (reviewRaw && !isValidPromiseDate(reviewRaw)) {
     return {
       ok: false,
-      error: "Некоректна дата review. Використовуйте формат РРРР-ММ-ДД."
+      error: i18n.t("promise.error.reviewDateFormat", { ns: "finance" })
     };
   }
 
@@ -641,7 +642,7 @@ export function validateDisputeCloseInput(
 ): { ok: true; comment: string } | { ok: false; error: string } {
   const comment = (input.comment ?? "").trim();
   if (!comment) {
-    return { ok: false, error: "Вкажіть підсумковий коментар." };
+    return { ok: false, error: i18n.t("promise.error.commentRequired", { ns: "finance" }) };
   }
   return { ok: true, comment };
 }
@@ -649,11 +650,9 @@ export function validateDisputeCloseInput(
 export function disputeStatusLabel(status: DisputeStatus): string {
   switch (status) {
     case "open":
-      return "Open";
     case "resolved":
-      return "Resolved";
     case "rejected":
-      return "Rejected";
+      return i18n.t(`promise.disputeStatus.${status}`, { ns: "finance" });
     default:
       return status;
   }
@@ -676,27 +675,27 @@ export function validateCollectionEscalationInput(
   const note = (input.note ?? "").trim();
 
   if (!reason && !priority && !responsibleTeam && !requestedAction && !dueRaw && !note) {
-    return { ok: false, error: "Заповніть обовʼязкові поля ескалації." };
+    return { ok: false, error: i18n.t("promise.error.escalationFieldsRequired", { ns: "finance" }) };
   }
   if (!reason) {
-    return { ok: false, error: "Оберіть причину ескалації." };
+    return { ok: false, error: i18n.t("promise.error.escalationReasonRequired", { ns: "finance" }) };
   }
   if (!priority) {
-    return { ok: false, error: "Оберіть пріоритет ескалації." };
+    return { ok: false, error: i18n.t("promise.error.escalationPriorityRequired", { ns: "finance" }) };
   }
   if (!responsibleTeam) {
-    return { ok: false, error: "Оберіть відповідальний підрозділ." };
+    return { ok: false, error: i18n.t("promise.error.escalationTeamRequired", { ns: "finance" }) };
   }
   if (!requestedAction) {
-    return { ok: false, error: "Вкажіть очікувану наступну дію." };
+    return { ok: false, error: i18n.t("promise.error.requestedActionRequired", { ns: "finance" }) };
   }
   if (!dueRaw) {
-    return { ok: false, error: "Вкажіть строк обробки ескалації." };
+    return { ok: false, error: i18n.t("promise.error.escalationDueRequired", { ns: "finance" }) };
   }
   if (!isValidPromiseDate(dueRaw)) {
     return {
       ok: false,
-      error: "Некоректна дата due. Використовуйте формат РРРР-ММ-ДД."
+      error: i18n.t("promise.error.dueDateFormat", { ns: "finance" })
     };
   }
 
@@ -716,7 +715,7 @@ export function validateEscalationCompleteInput(
 ): { ok: true; comment: string } | { ok: false; error: string } {
   const comment = (input.comment ?? "").trim();
   if (!comment) {
-    return { ok: false, error: "Вкажіть підсумковий коментар." };
+    return { ok: false, error: i18n.t("promise.error.commentRequired", { ns: "finance" }) };
   }
   return { ok: true, comment };
 }
@@ -724,9 +723,8 @@ export function validateEscalationCompleteInput(
 export function escalationStatusLabel(status: EscalationStatus): string {
   switch (status) {
     case "open":
-      return "Open";
     case "completed":
-      return "Completed";
+      return i18n.t(`promise.escalationStatus.${status}`, { ns: "finance" });
     default:
       return status;
   }
@@ -763,27 +761,36 @@ export function parsePromiseGroupParam(value: string | null | undefined): Promis
     : "";
 }
 
+/** Catalog key for a promise group id; `""` means "all follow-ups". */
+export function promiseGroupKey(group: PromiseGroupFilter): string {
+  return `promise.group.${group || "all"}`;
+}
+
+export function promiseGroupShortKey(group: PromiseGroupFilter): string {
+  return `promise.groupShort.${group || "all"}`;
+}
+
 export function promiseGroupLabel(group: PromiseGroupFilter): string {
-  return PROMISE_GROUP_OPTIONS.find((option) => option.id === group)?.label ?? "Усі follow-ups";
+  const found = PROMISE_GROUP_OPTIONS.find((option) => option.id === group);
+  return i18n.t(promiseGroupKey(found?.id ?? ""), { ns: "finance" });
 }
 
 export function promiseStatusLabel(status: PromiseFollowUpStatus): string {
   switch (status) {
     case "awaiting":
-      return "Очікується";
     case "follow_up_required":
-      return "Потрібен повторний контакт";
     case "contacted":
-      return "Контакт виконано";
     case "completed":
-      return "Завершено";
+      return i18n.t(`promise.status.${status}`, { ns: "finance" });
     default:
       return status;
   }
 }
 
 export function resolutionKindLabel(kind: CollectionResolutionKind): string {
-  return RESOLUTION_KIND_OPTIONS.find((option) => option.id === kind)?.label ?? kind;
+  return RESOLUTION_KIND_OPTIONS.some((option) => option.id === kind)
+    ? i18n.t(`promise.resolutionKind.${kind}`, { ns: "finance" })
+    : kind;
 }
 
 export function daysRelativeToPromiseDate(
@@ -800,13 +807,17 @@ export function daysRelativeToPromiseDate(
 
 export function daysRelativeLabel(days: number): string {
   if (days === 0) {
-    return "сьогодні";
+    return i18n.t("promise.days.today", { ns: "finance" });
   }
   if (days > 0) {
-    return days === 1 ? "через 1 день" : `через ${days} днів`;
+    return days === 1
+      ? i18n.t("promise.days.untilOne", { ns: "finance" })
+      : i18n.t("promise.days.until", { ns: "finance", count: days });
   }
   const past = -days;
-  return past === 1 ? "1 день прострочення" : `${past} днів прострочення`;
+  return past === 1
+    ? i18n.t("promise.days.overdueOne", { ns: "finance" })
+    : i18n.t("promise.days.overdue", { ns: "finance", count: past });
 }
 
 function isRecentCompleted(completedAtUtc: string | null | undefined, now: Date): boolean {
@@ -1413,7 +1424,7 @@ export function savePromiseToPay(
     return validation;
   }
   if (!UUID_RE.test(invoiceId.trim())) {
-    return { ok: false, error: "Некоректний ідентифікатор рахунку." };
+    return { ok: false, error: i18n.t("promise.error.invalidInvoiceId", { ns: "finance" }) };
   }
 
   const storage = options?.storage === undefined ? defaultStorage() : options.storage;
@@ -1423,7 +1434,7 @@ export function savePromiseToPay(
     return {
       ok: false,
       error:
-        "Активний payment plan уже існує. Завершіть або скасуйте план перед новою Promise to Pay."
+        i18n.t("promise.error.activePlanBlocksPromise", { ns: "finance" })
     };
   }
   let status: PromiseFollowUpStatus = "awaiting";
@@ -1469,7 +1480,7 @@ export function savePromiseToPay(
   };
 
   if (storage && !writePromiseToStorage(record, storage)) {
-    return { ok: false, error: "Не вдалося зберегти обіцянку оплати в браузері." };
+    return { ok: false, error: i18n.t("promise.error.saveFailed", { ns: "finance" }) };
   }
 
   return { ok: true, record };
@@ -1484,7 +1495,7 @@ export function updatePromiseStatus(
   const now = options?.now ?? new Date();
   const existing = readPromiseFromStorage(invoiceId, storage);
   if (!existing) {
-    return { ok: false, error: "Обіцянку оплати для цього рахунку не знайдено." };
+    return { ok: false, error: i18n.t("promise.error.promiseNotFound", { ns: "finance" }) };
   }
 
   const record: PromiseToPayRecord = {
@@ -1518,7 +1529,7 @@ export function updatePromiseStatus(
   };
 
   if (storage && !writePromiseToStorage(record, storage)) {
-    return { ok: false, error: "Не вдалося оновити follow-up у браузері." };
+    return { ok: false, error: i18n.t("promise.error.followUpUpdateFailed", { ns: "finance" }) };
   }
 
   return { ok: true, record };
@@ -1540,10 +1551,10 @@ export function validateCollectionResolutionInput(
     case "paid": {
       const paymentDate = (input.paymentDate ?? "").trim();
       if (!paymentDate) {
-        return { ok: false, error: "Вкажіть дату оплати." };
+        return { ok: false, error: i18n.t("promise.error.paymentDateRequired", { ns: "finance" }) };
       }
       if (!isValidPromiseDate(paymentDate)) {
-        return { ok: false, error: "Некоректна дата оплати. Використовуйте формат РРРР-ММ-ДД." };
+        return { ok: false, error: i18n.t("promise.error.paymentDateFormat", { ns: "finance" }) };
       }
       return {
         ok: true,
@@ -1564,21 +1575,21 @@ export function validateCollectionResolutionInput(
     case "partially_paid": {
       const paymentDate = (input.paymentDate ?? "").trim();
       if (!paymentDate) {
-        return { ok: false, error: "Вкажіть дату часткової оплати." };
+        return { ok: false, error: i18n.t("promise.error.partialPaymentDateRequired", { ns: "finance" }) };
       }
       if (!isValidPromiseDate(paymentDate)) {
         return {
           ok: false,
-          error: "Некоректна дата часткової оплати. Використовуйте формат РРРР-ММ-ДД."
+          error: i18n.t("promise.error.partialPaymentDateFormat", { ns: "finance" })
         };
       }
       const paidAmount = parseAmount(input.paidAmount);
       const remainingAmount = parseAmount(input.remainingAmount);
       if (paidAmount == null || paidAmount <= 0) {
-        return { ok: false, error: "Вкажіть сплачену суму (більше нуля)." };
+        return { ok: false, error: i18n.t("promise.error.paidAmountRequired", { ns: "finance" }) };
       }
       if (remainingAmount == null || remainingAmount < 0) {
-        return { ok: false, error: "Вкажіть залишок до сплати (нуль або більше)." };
+        return { ok: false, error: i18n.t("promise.error.remainingAmountRequired", { ns: "finance" }) };
       }
       return {
         ok: true,
@@ -1599,12 +1610,12 @@ export function validateCollectionResolutionInput(
     case "new_promise": {
       const promiseDate = (input.promiseDate ?? "").trim();
       if (!promiseDate) {
-        return { ok: false, error: "Вкажіть нову дату обіцянки оплати." };
+        return { ok: false, error: i18n.t("promise.error.newPromiseDateRequired", { ns: "finance" }) };
       }
       if (!isValidPromiseDate(promiseDate)) {
         return {
           ok: false,
-          error: "Некоректна нова дата обіцянки. Використовуйте формат РРРР-ММ-ДД."
+          error: i18n.t("promise.error.newPromiseDateFormat", { ns: "finance" })
         };
       }
       return {
@@ -1626,7 +1637,7 @@ export function validateCollectionResolutionInput(
     case "disputed": {
       const reason = (input.reason ?? "").trim();
       if (!reason) {
-        return { ok: false, error: "Вкажіть причину спору." };
+        return { ok: false, error: i18n.t("promise.error.resolutionReasonDisputeRequired", { ns: "finance" }) };
       }
       return {
         ok: true,
@@ -1647,7 +1658,7 @@ export function validateCollectionResolutionInput(
     case "escalated": {
       const reason = (input.reason ?? "").trim();
       if (!reason) {
-        return { ok: false, error: "Вкажіть причину ескалації." };
+        return { ok: false, error: i18n.t("promise.error.resolutionReasonEscalationRequired", { ns: "finance" }) };
       }
       return {
         ok: true,
@@ -1683,7 +1694,7 @@ export function validateCollectionResolutionInput(
       };
     }
     default:
-      return { ok: false, error: "Невідомий тип resolution." };
+      return { ok: false, error: i18n.t("promise.error.unknownResolutionKind", { ns: "finance" }) };
   }
 }
 
@@ -1696,13 +1707,13 @@ export function applyCollectionResolution(
   options?: { storage?: Storage | null; now?: Date }
 ): { ok: true; record: PromiseToPayRecord } | { ok: false; error: string } {
   if (!UUID_RE.test(invoiceId.trim())) {
-    return { ok: false, error: "Некоректний ідентифікатор рахунку." };
+    return { ok: false, error: i18n.t("promise.error.invalidInvoiceId", { ns: "finance" }) };
   }
   const storage = options?.storage === undefined ? defaultStorage() : options.storage;
   const now = options?.now ?? new Date();
   const existing = readPromiseFromStorage(invoiceId, storage);
   if (!existing) {
-    return { ok: false, error: "Спочатку зафіксуйте обіцянку оплати." };
+    return { ok: false, error: i18n.t("promise.error.promiseFirst", { ns: "finance" }) };
   }
 
   const validated = validateCollectionResolutionInput(input, existing, now);
@@ -1738,7 +1749,7 @@ export function applyCollectionResolution(
   };
 
   if (storage && !writePromiseToStorage(record, storage)) {
-    return { ok: false, error: "Не вдалося зберегти resolution у браузері." };
+    return { ok: false, error: i18n.t("promise.error.resolutionSaveFailed", { ns: "finance" }) };
   }
 
   return { ok: true, record };
@@ -1776,7 +1787,7 @@ export function saveCollectionContact(
     return validation;
   }
   if (!UUID_RE.test(invoiceId.trim())) {
-    return { ok: false, error: "Некоректний ідентифікатор рахунку." };
+    return { ok: false, error: i18n.t("promise.error.invalidInvoiceId", { ns: "finance" }) };
   }
 
   const storage = options?.storage === undefined ? defaultStorage() : options.storage;
@@ -1838,7 +1849,7 @@ export function saveCollectionContact(
   };
 
   if (storage && !writePromiseToStorage(record, storage)) {
-    return { ok: false, error: "Не вдалося зберегти контакт у браузері." };
+    return { ok: false, error: i18n.t("promise.error.contactSaveFailed", { ns: "finance" }) };
   }
 
   return { ok: true, record, needsPromise: validation.needsPromise };
@@ -1853,23 +1864,23 @@ export function updateContactFollowUp(
   options?: { storage?: Storage | null; now?: Date }
 ): { ok: true; record: PromiseToPayRecord } | { ok: false; error: string } {
   if (!UUID_RE.test(invoiceId.trim())) {
-    return { ok: false, error: "Некоректний ідентифікатор рахунку." };
+    return { ok: false, error: i18n.t("promise.error.invalidInvoiceId", { ns: "finance" }) };
   }
   const storage = options?.storage === undefined ? defaultStorage() : options.storage;
   const now = options?.now ?? new Date();
   const existing = readPromiseFromStorage(invoiceId, storage);
   if (!existing) {
-    return { ok: false, error: "Спочатку зафіксуйте контакт або обіцянку оплати." };
+    return { ok: false, error: i18n.t("promise.error.contactOrPromiseFirst", { ns: "finance" }) };
   }
   if (existing.status === "completed" || existing.resolution?.kind === "paid") {
-    return { ok: false, error: "Завершений кейс не потребує follow-up." };
+    return { ok: false, error: i18n.t("promise.error.completedCaseNoFollowUp", { ns: "finance" }) };
   }
 
   const raw = (followUpAt ?? "").trim();
   if (raw && !isValidPromiseDate(raw)) {
     return {
       ok: false,
-      error: "Некоректна дата follow-up. Використовуйте формат РРРР-ММ-ДД."
+      error: i18n.t("promise.error.followUpDateFormat", { ns: "finance" })
     };
   }
   const nextFollowUpAt = raw || null;
@@ -1890,7 +1901,7 @@ export function updateContactFollowUp(
   };
 
   if (storage && !writePromiseToStorage(record, storage)) {
-    return { ok: false, error: "Не вдалося оновити follow-up у браузері." };
+    return { ok: false, error: i18n.t("promise.error.followUpUpdateFailed", { ns: "finance" }) };
   }
 
   return { ok: true, record };
@@ -1914,7 +1925,7 @@ export function raiseCollectionDispute(
     return validation;
   }
   if (!UUID_RE.test(invoiceId.trim())) {
-    return { ok: false, error: "Некоректний ідентифікатор рахунку." };
+    return { ok: false, error: i18n.t("promise.error.invalidInvoiceId", { ns: "finance" }) };
   }
 
   const storage = options?.storage === undefined ? defaultStorage() : options.storage;
@@ -1923,7 +1934,7 @@ export function raiseCollectionDispute(
   if (isActiveDispute(existing?.dispute)) {
     return {
       ok: false,
-      error: "Активний спір уже існує. Оновіть або завершіть поточний спір."
+      error: i18n.t("promise.error.activeDisputeExists", { ns: "finance" })
     };
   }
 
@@ -1979,7 +1990,7 @@ export function raiseCollectionDispute(
   };
 
   if (storage && !writePromiseToStorage(record, storage)) {
-    return { ok: false, error: "Не вдалося зберегти спір у браузері." };
+    return { ok: false, error: i18n.t("promise.error.disputeSaveFailed", { ns: "finance" }) };
   }
 
   return { ok: true, record };
@@ -1995,14 +2006,14 @@ export function updateCollectionDispute(
     return validation;
   }
   if (!UUID_RE.test(invoiceId.trim())) {
-    return { ok: false, error: "Некоректний ідентифікатор рахунку." };
+    return { ok: false, error: i18n.t("promise.error.invalidInvoiceId", { ns: "finance" }) };
   }
 
   const storage = options?.storage === undefined ? defaultStorage() : options.storage;
   const now = options?.now ?? new Date();
   const existing = readPromiseFromStorage(invoiceId, storage);
   if (!existing || !isActiveDispute(existing.dispute)) {
-    return { ok: false, error: "Активний спір для цього рахунку не знайдено." };
+    return { ok: false, error: i18n.t("promise.error.activeDisputeNotFound", { ns: "finance" }) };
   }
 
   const previous = existing.dispute!;
@@ -2042,7 +2053,7 @@ export function updateCollectionDispute(
   };
 
   if (storage && !writePromiseToStorage(record, storage)) {
-    return { ok: false, error: "Не вдалося оновити спір у браузері." };
+    return { ok: false, error: i18n.t("promise.error.disputeUpdateFailed", { ns: "finance" }) };
   }
 
   return { ok: true, record };
@@ -2075,14 +2086,14 @@ function closeCollectionDispute(
     return validation;
   }
   if (!UUID_RE.test(invoiceId.trim())) {
-    return { ok: false, error: "Некоректний ідентифікатор рахунку." };
+    return { ok: false, error: i18n.t("promise.error.invalidInvoiceId", { ns: "finance" }) };
   }
 
   const storage = options?.storage === undefined ? defaultStorage() : options.storage;
   const now = options?.now ?? new Date();
   const existing = readPromiseFromStorage(invoiceId, storage);
   if (!existing || !isActiveDispute(existing.dispute)) {
-    return { ok: false, error: "Активний спір для цього рахунку не знайдено." };
+    return { ok: false, error: i18n.t("promise.error.activeDisputeNotFound", { ns: "finance" }) };
   }
 
   const at = now.toISOString();
@@ -2115,7 +2126,7 @@ function closeCollectionDispute(
   };
 
   if (storage && !writePromiseToStorage(record, storage)) {
-    return { ok: false, error: "Не вдалося завершити спір у браузері." };
+    return { ok: false, error: i18n.t("promise.error.disputeCloseFailed", { ns: "finance" }) };
   }
 
   return { ok: true, record };
@@ -2139,7 +2150,7 @@ export function raiseCollectionEscalation(
     return validation;
   }
   if (!UUID_RE.test(invoiceId.trim())) {
-    return { ok: false, error: "Некоректний ідентифікатор рахунку." };
+    return { ok: false, error: i18n.t("promise.error.invalidInvoiceId", { ns: "finance" }) };
   }
 
   const storage = options?.storage === undefined ? defaultStorage() : options.storage;
@@ -2148,7 +2159,7 @@ export function raiseCollectionEscalation(
   if (isActiveEscalation(existing?.escalation)) {
     return {
       ok: false,
-      error: "Активна ескалація вже існує. Оновіть або завершіть поточну ескалацію."
+      error: i18n.t("promise.error.activeEscalationExists", { ns: "finance" })
     };
   }
 
@@ -2206,7 +2217,7 @@ export function raiseCollectionEscalation(
   };
 
   if (storage && !writePromiseToStorage(record, storage)) {
-    return { ok: false, error: "Не вдалося зберегти ескалацію у браузері." };
+    return { ok: false, error: i18n.t("promise.error.escalationSaveFailed", { ns: "finance" }) };
   }
 
   return { ok: true, record };
@@ -2222,14 +2233,14 @@ export function updateCollectionEscalation(
     return validation;
   }
   if (!UUID_RE.test(invoiceId.trim())) {
-    return { ok: false, error: "Некоректний ідентифікатор рахунку." };
+    return { ok: false, error: i18n.t("promise.error.invalidInvoiceId", { ns: "finance" }) };
   }
 
   const storage = options?.storage === undefined ? defaultStorage() : options.storage;
   const now = options?.now ?? new Date();
   const existing = readPromiseFromStorage(invoiceId, storage);
   if (!existing || !isActiveEscalation(existing.escalation)) {
-    return { ok: false, error: "Активну ескалацію для цього рахунку не знайдено." };
+    return { ok: false, error: i18n.t("promise.error.activeEscalationNotFound", { ns: "finance" }) };
   }
 
   const previous = existing.escalation!;
@@ -2273,7 +2284,7 @@ export function updateCollectionEscalation(
   };
 
   if (storage && !writePromiseToStorage(record, storage)) {
-    return { ok: false, error: "Не вдалося оновити ескалацію у браузері." };
+    return { ok: false, error: i18n.t("promise.error.escalationUpdateFailed", { ns: "finance" }) };
   }
 
   return { ok: true, record };
@@ -2289,14 +2300,14 @@ export function completeCollectionEscalation(
     return validation;
   }
   if (!UUID_RE.test(invoiceId.trim())) {
-    return { ok: false, error: "Некоректний ідентифікатор рахунку." };
+    return { ok: false, error: i18n.t("promise.error.invalidInvoiceId", { ns: "finance" }) };
   }
 
   const storage = options?.storage === undefined ? defaultStorage() : options.storage;
   const now = options?.now ?? new Date();
   const existing = readPromiseFromStorage(invoiceId, storage);
   if (!existing || !isActiveEscalation(existing.escalation)) {
-    return { ok: false, error: "Активну ескалацію для цього рахунку не знайдено." };
+    return { ok: false, error: i18n.t("promise.error.activeEscalationNotFound", { ns: "finance" }) };
   }
 
   const at = now.toISOString();
@@ -2328,7 +2339,7 @@ export function completeCollectionEscalation(
   };
 
   if (storage && !writePromiseToStorage(record, storage)) {
-    return { ok: false, error: "Не вдалося завершити ескалацію у браузері." };
+    return { ok: false, error: i18n.t("promise.error.escalationCompleteFailed", { ns: "finance" }) };
   }
 
   return { ok: true, record };
@@ -2368,7 +2379,7 @@ export function createPaymentPlan(
     return validation;
   }
   if (!UUID_RE.test(invoiceId.trim())) {
-    return { ok: false, error: "Некоректний ідентифікатор рахунку." };
+    return { ok: false, error: i18n.t("promise.error.invalidInvoiceId", { ns: "finance" }) };
   }
 
   const storage = options?.storage === undefined ? defaultStorage() : options.storage;
@@ -2377,14 +2388,14 @@ export function createPaymentPlan(
   if (isActivePaymentPlan(existing?.paymentPlan)) {
     return {
       ok: false,
-      error: "Активний payment plan уже існує. Завершіть або скасуйте поточний план."
+      error: i18n.t("plan.error.activePlanExists", { ns: "finance" })
     };
   }
   if (hasActivePromiseCommitment(existing) && !validation.replaceActivePromise) {
     return {
       ok: false,
       error:
-        "Активна Promise to Pay існує. Підтвердіть заміну простим планом погашення (replaceActivePromise)."
+        i18n.t("plan.error.confirmReplacePromise", { ns: "finance" })
     };
   }
 
@@ -2431,7 +2442,7 @@ export function createPaymentPlan(
   };
 
   if (storage && !writePromiseToStorage(record, storage)) {
-    return { ok: false, error: "Не вдалося зберегти payment plan у браузері." };
+    return { ok: false, error: i18n.t("plan.error.saveFailed", { ns: "finance" }) };
   }
 
   return { ok: true, record };
@@ -2446,13 +2457,13 @@ export function updatePaymentPlan(
   options?: { storage?: Storage | null; now?: Date }
 ): { ok: true; record: PromiseToPayRecord } | { ok: false; error: string } {
   if (!UUID_RE.test(invoiceId.trim())) {
-    return { ok: false, error: "Некоректний ідентифікатор рахунку." };
+    return { ok: false, error: i18n.t("promise.error.invalidInvoiceId", { ns: "finance" }) };
   }
   const storage = options?.storage === undefined ? defaultStorage() : options.storage;
   const now = options?.now ?? new Date();
   const existing = readPromiseFromStorage(invoiceId, storage);
   if (!existing || !isActivePaymentPlan(existing.paymentPlan)) {
-    return { ok: false, error: "Активний payment plan для цього рахунку не знайдено." };
+    return { ok: false, error: i18n.t("plan.error.activePlanNotFound", { ns: "finance" }) };
   }
 
   const previous = existing.paymentPlan!;
@@ -2493,7 +2504,7 @@ export function updatePaymentPlan(
   };
 
   if (storage && !writePromiseToStorage(record, storage)) {
-    return { ok: false, error: "Не вдалося оновити payment plan у браузері." };
+    return { ok: false, error: i18n.t("plan.error.updateFailed", { ns: "finance" }) };
   }
 
   return { ok: true, record };
@@ -2508,19 +2519,19 @@ export function recordInstallmentPayment(
   options?: { storage?: Storage | null; now?: Date }
 ): { ok: true; record: PromiseToPayRecord } | { ok: false; error: string } {
   if (!UUID_RE.test(invoiceId.trim())) {
-    return { ok: false, error: "Некоректний ідентифікатор рахунку." };
+    return { ok: false, error: i18n.t("promise.error.invalidInvoiceId", { ns: "finance" }) };
   }
   const storage = options?.storage === undefined ? defaultStorage() : options.storage;
   const now = options?.now ?? new Date();
   const existing = readPromiseFromStorage(invoiceId, storage);
   if (!existing || !existing.paymentPlan) {
-    return { ok: false, error: "Payment plan для цього рахунку не знайдено." };
+    return { ok: false, error: i18n.t("plan.error.planNotFound", { ns: "finance" }) };
   }
   if (existing.paymentPlan.status === "Cancelled") {
-    return { ok: false, error: "Скасований план не можна змінювати." };
+    return { ok: false, error: i18n.t("plan.error.cancelledReadOnly", { ns: "finance" }) };
   }
   if (existing.paymentPlan.status === "Completed") {
-    return { ok: false, error: "Завершений план не можна змінювати." };
+    return { ok: false, error: i18n.t("plan.error.completedReadOnly", { ns: "finance" }) };
   }
 
   const validation = validateInstallmentPaymentInput(input, existing.paymentPlan, now);
@@ -2590,7 +2601,7 @@ export function recordInstallmentPayment(
   };
 
   if (storage && !writePromiseToStorage(record, storage)) {
-    return { ok: false, error: "Не вдалося записати платіж у браузері." };
+    return { ok: false, error: i18n.t("plan.error.recordFailed", { ns: "finance" }) };
   }
 
   return { ok: true, record };
@@ -2609,14 +2620,14 @@ export function cancelPaymentPlan(
     return validation;
   }
   if (!UUID_RE.test(invoiceId.trim())) {
-    return { ok: false, error: "Некоректний ідентифікатор рахунку." };
+    return { ok: false, error: i18n.t("promise.error.invalidInvoiceId", { ns: "finance" }) };
   }
 
   const storage = options?.storage === undefined ? defaultStorage() : options.storage;
   const now = options?.now ?? new Date();
   const existing = readPromiseFromStorage(invoiceId, storage);
   if (!existing || !isActivePaymentPlan(existing.paymentPlan)) {
-    return { ok: false, error: "Активний payment plan для цього рахунку не знайдено." };
+    return { ok: false, error: i18n.t("plan.error.activePlanNotFound", { ns: "finance" }) };
   }
 
   const at = now.toISOString();
@@ -2645,7 +2656,7 @@ export function cancelPaymentPlan(
   };
 
   if (storage && !writePromiseToStorage(record, storage)) {
-    return { ok: false, error: "Не вдалося скасувати payment plan у браузері." };
+    return { ok: false, error: i18n.t("plan.error.cancelFailed", { ns: "finance" }) };
   }
 
   return { ok: true, record };
@@ -2729,7 +2740,7 @@ export function addCollectionNote(
     return validation;
   }
   if (!UUID_RE.test(invoiceId.trim())) {
-    return { ok: false, error: "Некоректний ідентифікатор рахунку." };
+    return { ok: false, error: i18n.t("promise.error.invalidInvoiceId", { ns: "finance" }) };
   }
 
   const storage = options?.storage === undefined ? defaultStorage() : options.storage;
@@ -2756,7 +2767,7 @@ export function addCollectionNote(
   };
 
   if (storage && !writePromiseToStorage(record, storage)) {
-    return { ok: false, error: "Не вдалося зберегти нотатку у браузері." };
+    return { ok: false, error: i18n.t("note.error.saveFailed", { ns: "finance" }) };
   }
   writeLastCollectionNoteAuthor(validation.author, storage);
 
@@ -2776,27 +2787,27 @@ export function updateCollectionNote(
     return validation;
   }
   if (!UUID_RE.test(invoiceId.trim())) {
-    return { ok: false, error: "Некоректний ідентифікатор рахунку." };
+    return { ok: false, error: i18n.t("promise.error.invalidInvoiceId", { ns: "finance" }) };
   }
   const noteId = (input.noteId ?? "").trim();
   if (!noteId) {
-    return { ok: false, error: "Некоректний ідентифікатор нотатки." };
+    return { ok: false, error: i18n.t("note.error.invalidNoteId", { ns: "finance" }) };
   }
 
   const storage = options?.storage === undefined ? defaultStorage() : options.storage;
   const now = options?.now ?? new Date();
   const existing = readPromiseFromStorage(invoiceId, storage);
   if (!existing) {
-    return { ok: false, error: "Кейс стягнення для цього рахунку не знайдено." };
+    return { ok: false, error: i18n.t("promise.error.caseNotFound", { ns: "finance" }) };
   }
 
   const index = existing.notes.findIndex((item) => item.id === noteId);
   if (index < 0) {
-    return { ok: false, error: "Нотатку не знайдено." };
+    return { ok: false, error: i18n.t("note.error.notFound", { ns: "finance" }) };
   }
   const previous = existing.notes[index]!;
   if (!isActiveCollectionNote(previous)) {
-    return { ok: false, error: "Архівовану нотатку не можна редагувати." };
+    return { ok: false, error: i18n.t("note.error.archivedReadOnly", { ns: "finance" }) };
   }
 
   const unchanged =
@@ -2837,7 +2848,7 @@ export function updateCollectionNote(
   };
 
   if (storage && !writePromiseToStorage(record, storage)) {
-    return { ok: false, error: "Не вдалося оновити нотатку у браузері." };
+    return { ok: false, error: i18n.t("note.error.updateFailed", { ns: "finance" }) };
   }
   writeLastCollectionNoteAuthor(validation.author, storage);
 
@@ -2853,23 +2864,23 @@ export function archiveCollectionNote(
   options?: { storage?: Storage | null; now?: Date }
 ): { ok: true; record: PromiseToPayRecord } | { ok: false; error: string } {
   if (!UUID_RE.test(invoiceId.trim())) {
-    return { ok: false, error: "Некоректний ідентифікатор рахунку." };
+    return { ok: false, error: i18n.t("promise.error.invalidInvoiceId", { ns: "finance" }) };
   }
   const id = noteId.trim();
   if (!id) {
-    return { ok: false, error: "Некоректний ідентифікатор нотатки." };
+    return { ok: false, error: i18n.t("note.error.invalidNoteId", { ns: "finance" }) };
   }
 
   const storage = options?.storage === undefined ? defaultStorage() : options.storage;
   const now = options?.now ?? new Date();
   const existing = readPromiseFromStorage(invoiceId, storage);
   if (!existing) {
-    return { ok: false, error: "Кейс стягнення для цього рахунку не знайдено." };
+    return { ok: false, error: i18n.t("promise.error.caseNotFound", { ns: "finance" }) };
   }
 
   const index = existing.notes.findIndex((item) => item.id === id);
   if (index < 0) {
-    return { ok: false, error: "Нотатку не знайдено." };
+    return { ok: false, error: i18n.t("note.error.notFound", { ns: "finance" }) };
   }
   const previous = existing.notes[index]!;
   if (!isActiveCollectionNote(previous)) {
@@ -2903,7 +2914,7 @@ export function archiveCollectionNote(
   };
 
   if (storage && !writePromiseToStorage(record, storage)) {
-    return { ok: false, error: "Не вдалося архівувати нотатку у браузері." };
+    return { ok: false, error: i18n.t("note.error.archiveFailed", { ns: "finance" }) };
   }
 
   return { ok: true, record };
@@ -2923,7 +2934,7 @@ export function createCollectionReminder(
     return validation;
   }
   if (!UUID_RE.test(invoiceId.trim())) {
-    return { ok: false, error: "Некоректний ідентифікатор рахунку." };
+    return { ok: false, error: i18n.t("promise.error.invalidInvoiceId", { ns: "finance" }) };
   }
 
   const storage = options?.storage === undefined ? defaultStorage() : options.storage;
@@ -2951,7 +2962,7 @@ export function createCollectionReminder(
   };
 
   if (storage && !writePromiseToStorage(record, storage)) {
-    return { ok: false, error: "Не вдалося зберегти нагадування у браузері." };
+    return { ok: false, error: i18n.t("reminder.error.saveFailed", { ns: "finance" }) };
   }
 
   return { ok: true, record };
@@ -2970,29 +2981,29 @@ export function updateCollectionReminder(
     return validation;
   }
   if (!UUID_RE.test(invoiceId.trim())) {
-    return { ok: false, error: "Некоректний ідентифікатор рахунку." };
+    return { ok: false, error: i18n.t("promise.error.invalidInvoiceId", { ns: "finance" }) };
   }
   const reminderId = (input.reminderId ?? "").trim();
   if (!reminderId) {
-    return { ok: false, error: "Некоректний ідентифікатор нагадування." };
+    return { ok: false, error: i18n.t("reminder.error.invalidReminderId", { ns: "finance" }) };
   }
 
   const storage = options?.storage === undefined ? defaultStorage() : options.storage;
   const now = options?.now ?? new Date();
   const existing = readPromiseFromStorage(invoiceId, storage);
   if (!existing) {
-    return { ok: false, error: "Кейс стягнення для цього рахунку не знайдено." };
+    return { ok: false, error: i18n.t("promise.error.caseNotFound", { ns: "finance" }) };
   }
 
   const index = existing.reminders.findIndex((item) => item.id === reminderId);
   if (index < 0) {
-    return { ok: false, error: "Нагадування не знайдено." };
+    return { ok: false, error: i18n.t("reminder.error.notFound", { ns: "finance" }) };
   }
   const previous = existing.reminders[index]!;
   if (!isOpenCollectionReminder(previous)) {
     return {
       ok: false,
-      error: "Завершене або скасоване нагадування не можна редагувати."
+      error: i18n.t("reminder.error.closedReadOnly", { ns: "finance" })
     };
   }
 
@@ -3035,7 +3046,7 @@ export function updateCollectionReminder(
   };
 
   if (storage && !writePromiseToStorage(record, storage)) {
-    return { ok: false, error: "Не вдалося оновити нагадування у браузері." };
+    return { ok: false, error: i18n.t("reminder.error.updateFailed", { ns: "finance" }) };
   }
 
   return { ok: true, record };
@@ -3050,30 +3061,30 @@ export function completeCollectionReminder(
   options?: { storage?: Storage | null; now?: Date }
 ): { ok: true; record: PromiseToPayRecord } | { ok: false; error: string } {
   if (!UUID_RE.test(invoiceId.trim())) {
-    return { ok: false, error: "Некоректний ідентифікатор рахунку." };
+    return { ok: false, error: i18n.t("promise.error.invalidInvoiceId", { ns: "finance" }) };
   }
   const id = reminderId.trim();
   if (!id) {
-    return { ok: false, error: "Некоректний ідентифікатор нагадування." };
+    return { ok: false, error: i18n.t("reminder.error.invalidReminderId", { ns: "finance" }) };
   }
 
   const storage = options?.storage === undefined ? defaultStorage() : options.storage;
   const now = options?.now ?? new Date();
   const existing = readPromiseFromStorage(invoiceId, storage);
   if (!existing) {
-    return { ok: false, error: "Кейс стягнення для цього рахунку не знайдено." };
+    return { ok: false, error: i18n.t("promise.error.caseNotFound", { ns: "finance" }) };
   }
 
   const index = existing.reminders.findIndex((item) => item.id === id);
   if (index < 0) {
-    return { ok: false, error: "Нагадування не знайдено." };
+    return { ok: false, error: i18n.t("reminder.error.notFound", { ns: "finance" }) };
   }
   const previous = existing.reminders[index]!;
   if (previous.status === "completed") {
     return { ok: true, record: existing };
   }
   if (previous.status === "cancelled") {
-    return { ok: false, error: "Скасоване нагадування не можна завершити." };
+    return { ok: false, error: i18n.t("reminder.error.cancelledCannotComplete", { ns: "finance" }) };
   }
 
   const at = now.toISOString();
@@ -3105,7 +3116,7 @@ export function completeCollectionReminder(
   };
 
   if (storage && !writePromiseToStorage(record, storage)) {
-    return { ok: false, error: "Не вдалося завершити нагадування у браузері." };
+    return { ok: false, error: i18n.t("reminder.error.completeFailed", { ns: "finance" }) };
   }
 
   return { ok: true, record };
@@ -3120,30 +3131,30 @@ export function cancelCollectionReminder(
   options?: { storage?: Storage | null; now?: Date }
 ): { ok: true; record: PromiseToPayRecord } | { ok: false; error: string } {
   if (!UUID_RE.test(invoiceId.trim())) {
-    return { ok: false, error: "Некоректний ідентифікатор рахунку." };
+    return { ok: false, error: i18n.t("promise.error.invalidInvoiceId", { ns: "finance" }) };
   }
   const id = reminderId.trim();
   if (!id) {
-    return { ok: false, error: "Некоректний ідентифікатор нагадування." };
+    return { ok: false, error: i18n.t("reminder.error.invalidReminderId", { ns: "finance" }) };
   }
 
   const storage = options?.storage === undefined ? defaultStorage() : options.storage;
   const now = options?.now ?? new Date();
   const existing = readPromiseFromStorage(invoiceId, storage);
   if (!existing) {
-    return { ok: false, error: "Кейс стягнення для цього рахунку не знайдено." };
+    return { ok: false, error: i18n.t("promise.error.caseNotFound", { ns: "finance" }) };
   }
 
   const index = existing.reminders.findIndex((item) => item.id === id);
   if (index < 0) {
-    return { ok: false, error: "Нагадування не знайдено." };
+    return { ok: false, error: i18n.t("reminder.error.notFound", { ns: "finance" }) };
   }
   const previous = existing.reminders[index]!;
   if (previous.status === "cancelled") {
     return { ok: true, record: existing };
   }
   if (previous.status === "completed") {
-    return { ok: false, error: "Завершене нагадування не можна скасувати." };
+    return { ok: false, error: i18n.t("reminder.error.completedCannotCancel", { ns: "finance" }) };
   }
 
   const at = now.toISOString();
@@ -3175,7 +3186,7 @@ export function cancelCollectionReminder(
   };
 
   if (storage && !writePromiseToStorage(record, storage)) {
-    return { ok: false, error: "Не вдалося скасувати нагадування у браузері." };
+    return { ok: false, error: i18n.t("reminder.error.cancelFailed", { ns: "finance" }) };
   }
 
   return { ok: true, record };
@@ -3230,7 +3241,7 @@ export function addCollectionAttachment(
     return validation;
   }
   if (!UUID_RE.test(invoiceId.trim())) {
-    return { ok: false, error: "Некоректний ідентифікатор рахунку." };
+    return { ok: false, error: i18n.t("promise.error.invalidInvoiceId", { ns: "finance" }) };
   }
 
   const storage = options?.storage === undefined ? defaultStorage() : options.storage;
@@ -3257,7 +3268,7 @@ export function addCollectionAttachment(
   };
 
   if (storage && !writePromiseToStorage(record, storage)) {
-    return { ok: false, error: "Не вдалося зберегти вкладення у браузері." };
+    return { ok: false, error: i18n.t("attachment.error.saveFailed", { ns: "finance" }) };
   }
 
   writeLastCollectionAttachmentAuthor(validation.uploadedBy, storage);
@@ -3273,29 +3284,29 @@ export function updateCollectionAttachment(
   options?: { storage?: Storage | null; now?: Date }
 ): { ok: true; record: PromiseToPayRecord } | { ok: false; error: string } {
   if (!UUID_RE.test(invoiceId.trim())) {
-    return { ok: false, error: "Некоректний ідентифікатор рахунку." };
+    return { ok: false, error: i18n.t("promise.error.invalidInvoiceId", { ns: "finance" }) };
   }
   const attachmentId = (input.attachmentId ?? "").trim();
   if (!attachmentId) {
-    return { ok: false, error: "Некоректний ідентифікатор вкладення." };
+    return { ok: false, error: i18n.t("attachment.error.invalidAttachmentId", { ns: "finance" }) };
   }
 
   const storage = options?.storage === undefined ? defaultStorage() : options.storage;
   const now = options?.now ?? new Date();
   const existing = readPromiseFromStorage(invoiceId, storage);
   if (!existing) {
-    return { ok: false, error: "Кейс стягнення для цього рахунку не знайдено." };
+    return { ok: false, error: i18n.t("promise.error.caseNotFound", { ns: "finance" }) };
   }
 
   const index = existing.attachments.findIndex((item) => item.id === attachmentId);
   if (index < 0) {
-    return { ok: false, error: "Вкладення не знайдено." };
+    return { ok: false, error: i18n.t("attachment.error.notFound", { ns: "finance" }) };
   }
   const previous = existing.attachments[index]!;
   if (!isActiveCollectionAttachment(previous)) {
     return {
       ok: false,
-      error: "Архівоване вкладення не можна редагувати."
+      error: i18n.t("attachment.error.archivedReadOnly", { ns: "finance" })
     };
   }
 
@@ -3354,7 +3365,7 @@ export function updateCollectionAttachment(
   };
 
   if (storage && !writePromiseToStorage(record, storage)) {
-    return { ok: false, error: "Не вдалося оновити вкладення у браузері." };
+    return { ok: false, error: i18n.t("attachment.error.updateFailed", { ns: "finance" }) };
   }
 
   writeLastCollectionAttachmentAuthor(validation.uploadedBy, storage);
@@ -3370,23 +3381,23 @@ export function archiveCollectionAttachment(
   options?: { storage?: Storage | null; now?: Date }
 ): { ok: true; record: PromiseToPayRecord } | { ok: false; error: string } {
   if (!UUID_RE.test(invoiceId.trim())) {
-    return { ok: false, error: "Некоректний ідентифікатор рахунку." };
+    return { ok: false, error: i18n.t("promise.error.invalidInvoiceId", { ns: "finance" }) };
   }
   const id = attachmentId.trim();
   if (!id) {
-    return { ok: false, error: "Некоректний ідентифікатор вкладення." };
+    return { ok: false, error: i18n.t("attachment.error.invalidAttachmentId", { ns: "finance" }) };
   }
 
   const storage = options?.storage === undefined ? defaultStorage() : options.storage;
   const now = options?.now ?? new Date();
   const existing = readPromiseFromStorage(invoiceId, storage);
   if (!existing) {
-    return { ok: false, error: "Кейс стягнення для цього рахунку не знайдено." };
+    return { ok: false, error: i18n.t("promise.error.caseNotFound", { ns: "finance" }) };
   }
 
   const index = existing.attachments.findIndex((item) => item.id === id);
   if (index < 0) {
-    return { ok: false, error: "Вкладення не знайдено." };
+    return { ok: false, error: i18n.t("attachment.error.notFound", { ns: "finance" }) };
   }
   const previous = existing.attachments[index]!;
   if (!isActiveCollectionAttachment(previous)) {
@@ -3419,7 +3430,7 @@ export function archiveCollectionAttachment(
   };
 
   if (storage && !writePromiseToStorage(record, storage)) {
-    return { ok: false, error: "Не вдалося архівувати вкладення у браузері." };
+    return { ok: false, error: i18n.t("attachment.error.archiveFailed", { ns: "finance" }) };
   }
 
   return { ok: true, record };
